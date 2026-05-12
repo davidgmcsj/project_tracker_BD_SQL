@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { projectProgress, createDefaultEngineer, createDefaultIndicator, createDefaultImpediment } from "../utils/formulas";
+import { projectProgress, createDefaultEngineer, createDefaultIndicator, createDefaultImpediment, createDefaultMilestone, createDefaultComment } from "../utils/formulas";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -324,6 +324,153 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
   );
 }
 
+// ── Fechas clave estructuradas ────────────────────────────────────────────────
+
+function MilestoneList({ milestones, activities, onChange }) {
+  const items = Array.isArray(milestones) ? milestones : [];
+
+  const update = (i, field, val) => {
+    const next = items.map((m, idx) => idx === i ? { ...m, [field]: val } : m);
+    onChange(next);
+  };
+  const remove = (i) => onChange(items.filter((_, idx) => idx !== i));
+  const add    = () => onChange([...items, createDefaultMilestone()]);
+
+  // Agrupa por actividad para mostrarlas juntas
+  const byActivity = {};
+  items.forEach((m, i) => {
+    const key = m.activity || "__sin__";
+    if (!byActivity[key]) byActivity[key] = [];
+    byActivity[key].push({ ...m, _idx: i });
+  });
+
+  return (
+    <div className="field field--optional">
+      <div className="field__header">
+        <label className="field__label">📅 Fechas Clave</label>
+        <button type="button" className="btn-add-item" onClick={add}>+ Agregar fecha</button>
+      </div>
+
+      {items.length === 0 && (
+        <p className="act-list__empty">Sin fechas clave. Agrega la primera.</p>
+      )}
+
+      {Object.entries(byActivity).map(([actKey, group]) => (
+        <div key={actKey} className="milestone-group">
+          {actKey !== "__sin__" && (
+            <div className="milestone-group__header">
+              <span className="milestone-group__act">{actKey}</span>
+            </div>
+          )}
+          {group.map((m) => (
+            <div key={m._idx} className="milestone-row">
+              <div className="milestone-row__fields">
+                <div className="field" style={{ flex: 2, minWidth: 0 }}>
+                  <label className="field__label" style={{ fontSize: "11px" }}>Actividad</label>
+                  <select className="field__input" value={m.activity || ""}
+                    onChange={e => update(m._idx, "activity", e.target.value)}>
+                    <option value="">— Sin actividad —</option>
+                    {safeArr(activities).map((act, ai) => {
+                      const label = `${ai + 1}. ${act}`;
+                      return <option key={ai} value={label}>{label}</option>;
+                    })}
+                  </select>
+                </div>
+                <div className="field" style={{ flex: "0 0 160px" }}>
+                  <label className="field__label" style={{ fontSize: "11px" }}>Fecha</label>
+                  <input type="date" className="field__input" value={m.date || ""}
+                    onChange={e => update(m._idx, "date", e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 3, minWidth: 0 }}>
+                  <label className="field__label" style={{ fontSize: "11px" }}>Descripción / Hito</label>
+                  <input type="text" className="field__input" value={m.note || ""}
+                    placeholder="Ej: Entrega de back, Deploy a producción…"
+                    onChange={e => update(m._idx, "note", e.target.value)} />
+                </div>
+                <button type="button" className="milestone-row__remove btn btn--danger"
+                  onClick={() => remove(m._idx)} title="Eliminar">✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Comentarios estructurados ─────────────────────────────────────────────────
+
+function CommentList({ comments, activities, onChange }) {
+  const items = Array.isArray(comments) ? comments : [];
+
+  const update = (i, field, val) => {
+    const next = items.map((c, idx) => idx === i ? { ...c, [field]: val } : c);
+    onChange(next);
+  };
+  const remove = (i) => onChange(items.filter((_, idx) => idx !== i));
+  const add    = () => onChange([...items, createDefaultComment()]);
+
+  const byActivity = {};
+  items.forEach((c, i) => {
+    const key = c.activity || "__sin__";
+    if (!byActivity[key]) byActivity[key] = [];
+    byActivity[key].push({ ...c, _idx: i });
+  });
+
+  return (
+    <div className="field field--optional">
+      <div className="field__header">
+        <label className="field__label">💬 Comentarios</label>
+        <button type="button" className="btn-add-item" onClick={add}>+ Agregar comentario</button>
+      </div>
+
+      {items.length === 0 && (
+        <p className="act-list__empty">Sin comentarios. Agrega el primero.</p>
+      )}
+
+      {Object.entries(byActivity).map(([actKey, group]) => (
+        <div key={actKey} className="milestone-group">
+          {actKey !== "__sin__" && (
+            <div className="milestone-group__header">
+              <span className="milestone-group__act">{actKey}</span>
+            </div>
+          )}
+          {group.map((c) => (
+            <div key={c._idx} className="milestone-row">
+              <div className="milestone-row__fields">
+                <div className="field" style={{ flex: 2, minWidth: 0 }}>
+                  <label className="field__label" style={{ fontSize: "11px" }}>Actividad</label>
+                  <select className="field__input" value={c.activity || ""}
+                    onChange={e => update(c._idx, "activity", e.target.value)}>
+                    <option value="">— Sin actividad —</option>
+                    {safeArr(activities).map((act, ai) => {
+                      const label = `${ai + 1}. ${act}`;
+                      return <option key={ai} value={label}>{label}</option>;
+                    })}
+                  </select>
+                </div>
+                <div className="field" style={{ flex: "0 0 160px" }}>
+                  <label className="field__label" style={{ fontSize: "11px" }}>Fecha</label>
+                  <input type="date" className="field__input" value={c.date || ""}
+                    onChange={e => update(c._idx, "date", e.target.value)} />
+                </div>
+                <div className="field" style={{ flex: 3, minWidth: 0 }}>
+                  <label className="field__label" style={{ fontSize: "11px" }}>Comentario</label>
+                  <input type="text" className="field__input" value={c.text || ""}
+                    placeholder="Escribe el comentario…"
+                    onChange={e => update(c._idx, "text", e.target.value)} />
+                </div>
+                <button type="button" className="milestone-row__remove btn btn--danger"
+                  onClick={() => remove(c._idx)} title="Eliminar">✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Fila de indicador ─────────────────────────────────────────────────────────
 
 function IndicatorRow({ ind, index, onChange, onRemove }) {
@@ -587,16 +734,16 @@ export default function EditView({
             )}
           </div>
 
-          <div className="field">
-            <label className="field__label">📅 Fechas clave</label>
-            <textarea className="field__textarea" rows={2} value={p.milestones||""} placeholder="Hito, entrega, deadline…"
-              onChange={e => onUpdateProject(editingIdx, "milestones", e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="field__label">Comentarios</label>
-            <textarea className="field__textarea" rows={3} value={p.comments||""} placeholder="Comentario 1&#10;Comentario 2…"
-              onChange={e => onUpdateProject(editingIdx, "comments", e.target.value)} />
-          </div>
+          <MilestoneList
+            milestones={p.milestones}
+            activities={activities}
+            onChange={val => onUpdateProject(editingIdx, "milestones", val)}
+          />
+          <CommentList
+            comments={p.comments}
+            activities={activities}
+            onChange={val => onUpdateProject(editingIdx, "comments", val)}
+          />
 
           <div className="edit-panel__footer">
             <button className="btn btn--accent" onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>

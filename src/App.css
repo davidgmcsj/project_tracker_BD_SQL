@@ -1604,6 +1604,99 @@
   color: var(--red);
 }
 
+/* ═══ MILESTONE / COMMENT EDITOR (EditView) ═══ */
+.milestone-group {
+  margin-top: 10px;
+}
+.milestone-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--accent-bg);
+  border-left: 3px solid var(--azul-claro);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-bottom: 6px;
+}
+.milestone-group__act {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--azul-claro);
+}
+.milestone-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+.milestone-row__fields {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.milestone-row__remove {
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+  align-self: flex-end;
+  flex-shrink: 0;
+}
+
+/* ═══ MILESTONE / COMMENT REPORT (ReportView) ═══ */
+.rpt-section--full {
+  grid-column: 1 / -1;
+}
+.milestone-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.milestone-report__group {
+  border-left: 2px solid var(--teal);
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rpt-section--gray .milestone-report__group {
+  border-left-color: var(--text-3);
+}
+.milestone-report__act {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--teal);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+.rpt-section--gray .milestone-report__act {
+  color: var(--text-2);
+}
+.milestone-report__row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+.milestone-report__date {
+  background: var(--teal);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rpt-section--gray .milestone-report__date {
+  background: var(--text-2);
+}
+.milestone-report__note {
+  color: var(--text);
+  line-height: 1.45;
+}
+
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 600px) {
   .header {

@@ -22,9 +22,15 @@ const FIELD_CONFIG = {
   activities_identified: { label:"Actividades Identificadas",    icon:"📋", variant:"blue"    },
   weekly_achievements:   { label:"Qué se hizo esta semana",      icon:"✅", variant:"green"   },
   next_week_plan:        { label:"Plan para la próxima semana",  icon:"→",  variant:"blue"    },
-  milestones:            { label:"Fechas Clave",                 icon:"📅", variant:"teal"    },
-  comments:              { label:"Comentarios",                  icon:"💬", variant:"gray"    },
 };
+
+const MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+function fmtDate(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return dateStr;
+  return `${d} ${MONTHS_SHORT[m-1]} ${y}`;
+}
 
 function toLines(value) {
   if (!value) return [];
@@ -85,6 +91,120 @@ function ImpedimentSection({ impediments }) {
         );
       })}
     </>
+  );
+}
+
+function MilestoneSection({ milestones }) {
+  // Acepta array de objetos nuevo o string legado
+  if (!milestones || (Array.isArray(milestones) && !milestones.length)) return null;
+  if (typeof milestones === "string") {
+    const lines = milestones.split("\n").map(l=>l.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    return (
+      <div className="rpt-section rpt-section--teal">
+        <div className="rpt-section__header">
+          <span className="rpt-section__icon">📅</span>
+          <span className="rpt-section__label">Fechas Clave</span>
+          <span className="rpt-section__count">{lines.length}</span>
+        </div>
+        <ul className="rpt-bullets">{lines.map((l,i)=><li key={i} className="rpt-bullets__item">{l}</li>)}</ul>
+      </div>
+    );
+  }
+
+  // Agrupa por actividad
+  const byAct = {};
+  milestones.forEach(m => {
+    if (!m.date && !m.note) return;
+    const key = m.activity || "__sin__";
+    if (!byAct[key]) byAct[key] = [];
+    byAct[key].push(m);
+  });
+  const groups = Object.entries(byAct);
+  if (!groups.length) return null;
+
+  return (
+    <div className="rpt-section rpt-section--teal rpt-section--full">
+      <div className="rpt-section__header">
+        <span className="rpt-section__icon">📅</span>
+        <span className="rpt-section__label">Fechas Clave</span>
+        <span className="rpt-section__count">{milestones.filter(m=>m.date||m.note).length}</span>
+      </div>
+      <div className="milestone-report">
+        {groups.map(([actKey, items]) => (
+          <div key={actKey} className="milestone-report__group">
+            {actKey !== "__sin__" && (
+              <div className="milestone-report__act">{actKey}</div>
+            )}
+            {items.map((m, i) => (
+              <div key={i} className="milestone-report__row">
+                {m.date && (
+                  <span className="milestone-report__date">{fmtDate(m.date)}</span>
+                )}
+                {m.note && (
+                  <span className="milestone-report__note">{m.note}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CommentSection({ comments }) {
+  if (!comments || (Array.isArray(comments) && !comments.length)) return null;
+  if (typeof comments === "string") {
+    const lines = comments.split("\n").map(l=>l.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    return (
+      <div className="rpt-section rpt-section--gray">
+        <div className="rpt-section__header">
+          <span className="rpt-section__icon">💬</span>
+          <span className="rpt-section__label">Comentarios</span>
+          <span className="rpt-section__count">{lines.length}</span>
+        </div>
+        <ul className="rpt-bullets">{lines.map((l,i)=><li key={i} className="rpt-bullets__item">{l}</li>)}</ul>
+      </div>
+    );
+  }
+
+  const byAct = {};
+  comments.forEach(c => {
+    if (!c.text) return;
+    const key = c.activity || "__sin__";
+    if (!byAct[key]) byAct[key] = [];
+    byAct[key].push(c);
+  });
+  const groups = Object.entries(byAct);
+  if (!groups.length) return null;
+
+  return (
+    <div className="rpt-section rpt-section--gray rpt-section--full">
+      <div className="rpt-section__header">
+        <span className="rpt-section__icon">💬</span>
+        <span className="rpt-section__label">Comentarios</span>
+        <span className="rpt-section__count">{comments.filter(c=>c.text).length}</span>
+      </div>
+      <div className="milestone-report">
+        {groups.map(([actKey, items]) => (
+          <div key={actKey} className="milestone-report__group">
+            {actKey !== "__sin__" && (
+              <div className="milestone-report__act">{actKey}</div>
+            )}
+            {items.map((c, i) => (
+              <div key={i} className="milestone-report__row">
+                {c.date && (
+                  <span className="milestone-report__date">{fmtDate(c.date)}</span>
+                )}
+                <span className="milestone-report__note">{c.text}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -198,9 +318,9 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
                       <BulletSection fieldKey="next_week_plan"      value={p.next_week_plan} />
                     </>
                   )}
-                  <BulletSection fieldKey="milestones" value={p.milestones} />
-                  <BulletSection fieldKey="comments"   value={p.comments} />
                 </div>
+                <MilestoneSection milestones={p.milestones} />
+                <CommentSection   comments={p.comments} />
 
                 {engWithWeek.length > 0 && (
                   <div className="rpt-eng-section">

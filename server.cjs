@@ -39,7 +39,7 @@ function toArr(val) {
   return val.split('\n').map(s => s.trim()).filter(Boolean);
 }
 
-// Migra campos string→array si el data.json tiene formato legado
+// Migra campos string→array y string→objeto-estructurado si el data.json tiene formato legado
 async function migrateArrayFields() {
   const data = await readJson(DATA_FILE, null);
   if (!data?.projects?.length) return;
@@ -47,14 +47,27 @@ async function migrateArrayFields() {
   data.projects = data.projects.map(p => {
     const needsMigration = typeof p.activities_identified === 'string'
       || typeof p.weekly_achievements === 'string'
-      || typeof p.next_week_plan === 'string';
+      || typeof p.next_week_plan === 'string'
+      || typeof p.milestones === 'string'
+      || typeof p.comments === 'string';
     if (!needsMigration) return p;
     changed = true;
+    // Convierte milestones string → array de objetos (preserva texto como nota sin actividad ni fecha)
+    const milestonesRaw = p.milestones;
+    const milestonesArr = typeof milestonesRaw === 'string' && milestonesRaw.trim()
+      ? toArr(milestonesRaw).map(note => ({ activity: '', date: '', note }))
+      : (Array.isArray(milestonesRaw) ? milestonesRaw : []);
+    const commentsRaw = p.comments;
+    const commentsArr = typeof commentsRaw === 'string' && commentsRaw.trim()
+      ? toArr(commentsRaw).map(text => ({ activity: '', date: '', text }))
+      : (Array.isArray(commentsRaw) ? commentsRaw : []);
     return {
       ...p,
       activities_identified: toArr(p.activities_identified),
       weekly_achievements:   toArr(p.weekly_achievements),
       next_week_plan:        toArr(p.next_week_plan),
+      milestones:            milestonesArr,
+      comments:              commentsArr,
       engineers: (p.engineers || []).map(e => ({
         ...e,
         weekly_detail: toArr(e.weekly_detail),
@@ -63,7 +76,7 @@ async function migrateArrayFields() {
   });
   if (changed) {
     await writeJson(DATA_FILE, data);
-    console.log('Migración string→array completada');
+    console.log('Migración string→array/objeto completada');
   }
 }
 

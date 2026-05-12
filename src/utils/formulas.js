@@ -105,12 +105,20 @@ export function createDefaultProject() {
     weekly_achievements:   [],   // ["texto actividad seleccionada", ...]
     next_week_plan:        [],   // ["texto actividad seleccionada", ...]
     show_closing_fields:   false,
-    milestones:            "",
-    comments:              "",
+    milestones:  [],  // [{ activity: "1. texto", date: "YYYY-MM-DD", note: "" }, ...]
+    comments:    [],  // [{ activity: "1. texto", date: "YYYY-MM-DD", text: "" }, ...]
     engineers:   [],
     indicators:  [],
     impediments: [],
   };
+}
+
+export function createDefaultMilestone() {
+  return { activity: "", date: "", note: "" };
+}
+
+export function createDefaultComment() {
+  return { activity: "", date: "", text: "" };
 }
 
 export function createDefaultEngineer() {
@@ -240,8 +248,32 @@ function projectBlock(p, i) {
     if (ach.length)  txt += `✓ Qué se hizo esta semana:\n${arrToBullets(ach)}\n\n`;
     if (plan.length) txt += `→ Plan para la próxima semana:\n${arrToBullets(plan)}\n\n`;
   }
-  if (p.milestones) txt += `📅 Fechas clave:\n${arrToBullets(p.milestones)}\n`;
-  if (p.comments)   txt += `💬 Comentarios:\n${arrToBullets(p.comments)}\n`;
+  const milestones = Array.isArray(p.milestones) ? p.milestones.filter(m => m.date || m.note) : [];
+  if (milestones.length) {
+    txt += `📅 Fechas clave:\n`;
+    milestones.forEach(m => {
+      const actLabel = m.activity ? `${m.activity}` : "—";
+      txt += `  • [${m.date || "Sin fecha"}] ${actLabel}`;
+      if (m.note) txt += ` — ${m.note}`;
+      txt += `\n`;
+    });
+    txt += `\n`;
+  } else if (typeof p.milestones === "string" && p.milestones) {
+    txt += `📅 Fechas clave:\n${arrToBullets(p.milestones)}\n`;
+  }
+  const comments = Array.isArray(p.comments) ? p.comments.filter(c => c.text) : [];
+  if (comments.length) {
+    txt += `💬 Comentarios:\n`;
+    comments.forEach(c => {
+      const actLabel = c.activity ? `${c.activity}` : "—";
+      txt += `  • [${c.date || "Sin fecha"}] ${actLabel}`;
+      if (c.text) txt += `: ${c.text}`;
+      txt += `\n`;
+    });
+    txt += `\n`;
+  } else if (typeof p.comments === "string" && p.comments) {
+    txt += `💬 Comentarios:\n${arrToBullets(p.comments)}\n`;
+  }
   txt += "\n";
   return txt;
 }
