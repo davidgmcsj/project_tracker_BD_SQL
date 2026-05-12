@@ -1,80 +1,140 @@
 const express = require('express');
-const cors = require('cors');
-const fs = require('fs').promises;
-const path = require('path');
+const fs      = require('fs').promises;
+const path    = require('path');
 
-// En Azure App Service (Linux), /home es el directorio persistente entre reinicios.
-// En local, usamos el directorio del proyecto.
 function getDataDir() {
-  if (process.env.HOME === '/home') {
-    // Azure App Service Linux
-    return '/home/data';
-  }
+  if (process.env.HOME === '/home') return '/home/data'; // Azure App Service Linux
   return __dirname;
 }
 
-const DATA_FILE = path.join(getDataDir(), 'data.json');
-const distPath = path.join(__dirname, 'dist');
+const DATA_DIR     = getDataDir();
+const DATA_FILE    = path.join(DATA_DIR, 'data.json');
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+const DIST_PATH    = path.join(__dirname, 'dist');
+const PORT         = process.env.PORT || 3001;
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+app.use(express.json({ limit: '50mb' }));
 
-// En desarrollo necesitamos CORS abierto (Vite corre en :5173).
-// En producción (Azure), frontend y backend comparten dominio, no se necesita.
 if (process.env.NODE_ENV !== 'production') {
+  const cors = require('cors');
   app.use(cors());
 }
 
-app.use(express.json({ limit: '50mb' }));
+// ── Helpers de archivo ────────────────────────────────────────────────────────
 
-async function initDataFile() {
-  try {
-    // Crear directorio si no existe (necesario en Azure /home/data)
-    await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-    await fs.access(DATA_FILE);
-    console.log(`Datos cargados: ${DATA_FILE}`);
-  } catch {
-    console.log(`Creando archivo de datos: ${DATA_FILE}`);
-    await fs.writeFile(
-      DATA_FILE,
-      JSON.stringify({ projects: [], weekLabel: null, history: [] }, null, 2)
-    );
-  }
+async function readJson(file, def) {
+  try { return JSON.parse(await fs.readFile(file, 'utf-8')); }
+  catch { return def; }
 }
 
-app.get('/api/data', async (req, res) => {
+async function writeJson(file, data) {
+  await fs.writeFile(file, JSON.stringify(data, null, 2));
+}
+
+// ── Inicialización ────────────────────────────────────────────────────────────
+
+async function init() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+
+  // Si data.json no existe en el directorio de datos (Azure), copiarlo desde __dirname
   try {
-    const data = await fs.readFile(DATA_FILE, 'utf-8');
-    res.json(JSON.parse(data));
+    await fs.access(DATA_FILE);
   } catch {
-    res.status(500).json({ error: 'Error leyendo datos' });
+    const localData = path.join(__dirname, 'data.json');
+    try {
+      await fs.access(localData);
+      await fs.copyFile(localData, DATA_FILE);
+      console.log('data.json copiado al directorio de datos');
+    } catch {
+      await writeJson(DATA_FILE, { projects: [], weekLabel: null });
+    }
   }
+
+  if (!(await readJson(HISTORY_FILE, null))) {
+    await writeJson(HISTORY_FILE, { reports: [] });
+  }
+
+  console.log(`Datos en: ${DATA_DIR}`);
+}
+
+// ── API: Proyectos base ───────────────────────────────────────────────────────
+
+app.get('/api/projects', async (req, res) => {
+  try {
+    res.json(await readJson(DATA_FILE, { projects: [], weekLabel: null }));
+  } catch { res.status(500).json({ error: 'Error leyendo proyectos' }); }
 });
 
-app.post('/api/data', async (req, res) => {
+app.post('/api/projects', async (req, res) => {
   try {
-    await fs.writeFile(DATA_FILE, JSON.stringify(req.body, null, 2));
-    res.json({ message: 'OK' });
-  } catch {
-    res.status(500).json({ error: 'Error guardando datos' });
-  }
+    await writeJson(DATA_FILE, req.body);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: 'Error guardando proyectos' }); }
 });
 
-// Archivos estáticos del frontend (build de Vite)
-app.use(express.static(distPath));
+// ── API: Historial semanal ────────────────────────────────────────────────────
 
-// Fallback SPA: cualquier ruta no-API devuelve index.html
+// Calcula el lunes de una fecha YYYY-MM-DD (clave de semana)
+function getMondayOf(dateStr) {
+  const d   = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+// Upsert por semana (lunes) — consolida en un solo registro por semana,
+// pero guarda la fecha exacta del reporte para consultas por día.
+app.post('/api/report', async (req, res) => {
+  try {
+    const { projects, weekLabel, saved_at } = req.body;
+    if (!projects?.length) return res.status(400).json({ error: 'Sin proyectos' });
+
+    const reportDate = projects[0].report_date || new Date().toISOString().slice(0, 10);
+    const weekKey    = getMondayOf(reportDate);   // lunes de esa semana
+    const data       = await readJson(HISTORY_FILE, { reports: [] });
+    const entry      = { week_key: weekKey, report_date: reportDate, weekLabel, saved_at: saved_at || new Date().toISOString(), projects };
+
+    // Upsert: buscar por semana, no por fecha exacta
+    const idx = data.reports.findIndex(r => (r.week_key || r.report_date) === weekKey);
+    if (idx >= 0) data.reports[idx] = entry;
+    else          data.reports.push(entry);
+
+    data.reports.sort((a, b) => b.week_key.localeCompare(a.week_key));
+    await writeJson(HISTORY_FILE, data);
+    res.json({ ok: true, report_date: reportDate, week_key: weekKey });
+  } catch { res.status(500).json({ error: 'Error guardando reporte' }); }
+});
+
+// Índice del historial (sin detalle de proyectos)
+app.get('/api/history', async (req, res) => {
+  try {
+    const data = await readJson(HISTORY_FILE, { reports: [] });
+    res.json({ reports: data.reports.map(r => ({ report_date: r.report_date, weekLabel: r.weekLabel, saved_at: r.saved_at })) });
+  } catch { res.status(500).json({ error: 'Error leyendo historial' }); }
+});
+
+// Snapshot completo de una fecha concreta
+app.get('/api/history/:date', async (req, res) => {
+  try {
+    const data  = await readJson(HISTORY_FILE, { reports: [] });
+    const entry = data.reports.find(r => r.report_date === req.params.date);
+    if (!entry) return res.status(404).json({ error: 'Fecha no encontrada' });
+    res.json(entry);
+  } catch { res.status(500).json({ error: 'Error leyendo historial' }); }
+});
+
+// ── Estáticos y SPA fallback ──────────────────────────────────────────────────
+
+app.use(express.static(DIST_PATH));
 app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api')) {
-    res.sendFile(path.join(distPath, 'index.html'));
-  } else {
-    next();
-  }
+    res.sendFile(path.join(DIST_PATH, 'index.html'), err => { if (err) next(err); });
+  } else next();
 });
 
-// Escuchar en 0.0.0.0 para que Azure pueda enrutar el tráfico
 app.listen(PORT, '0.0.0.0', async () => {
-  await initDataFile();
-  console.log(`Servidor iniciado en puerto ${PORT}`);
-  console.log(`Datos en: ${DATA_FILE}`);
+  await init();
+  console.log(`Servidor en puerto ${PORT}`);
 });

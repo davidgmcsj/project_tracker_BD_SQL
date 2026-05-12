@@ -7,35 +7,34 @@ function badgePctStyle(pct) {
 }
 
 export function GlobalMetricsTable({ projects }) {
-  const totalActivities = projects.reduce((s, p) => s + Number(p.totalActivities || 0), 0);
-  const totalCompleted  = projects.reduce((s, p) => s + Number(p.completedActivities || 0), 0);
-  const totalPending    = projects.reduce(
-    (s, p) => s + Math.max(0, p.totalActivities - p.completedActivities - p.inProgressActivities), 0
-  );
-  const avgPercent      = Math.round(globalProgress(projects));
-  const blockedProjects = projects.filter(p => p.blockers);
+  const totalAct   = projects.reduce((s,p) => s + Number(p.manual_metrics?.total_tasks       || 0), 0);
+  const totalDone  = projects.reduce((s,p) => s + Number(p.manual_metrics?.completed_tasks   || 0), 0);
+  const totalPend  = projects.reduce((s,p) => {
+    const m = p.manual_metrics || {};
+    return s + Math.max(0, (m.total_tasks||0) - (m.completed_tasks||0) - (m.in_progress_tasks||0));
+  }, 0);
+  const avgPct      = Math.round(globalProgress(projects));
+  const withBlocker = projects.filter(p => (p.impediments||[]).some(im => im.category==="blocker"));
 
   return (
     <div className="metrics-container">
       <table className="metrics-table">
-        <thead>
-          <tr><th>Métrica</th><th>Valor</th><th>Observaciones</th></tr>
-        </thead>
+        <thead><tr><th>Métrica</th><th>Valor</th><th>Observaciones</th></tr></thead>
         <tbody>
           <tr>
             <td>Avance Promedio</td>
-            <td><strong>{avgPercent}%</strong></td>
+            <td><strong>{avgPct}%</strong></td>
             <td>Promedio de avance de los proyectos con tareas definidas.</td>
           </tr>
           <tr>
             <td>Estado de Tareas</td>
-            <td><strong>{totalCompleted} de {totalActivities}</strong></td>
-            <td>{totalPending} no iniciado{totalPending !== 1 ? "s" : ""}{totalPending > 0 ? "." : " — todo al día."}</td>
+            <td><strong>{totalDone} de {totalAct}</strong></td>
+            <td>{totalPend} no iniciado{totalPend!==1?"s":""}{totalPend>0?" .":" — todo al día."}</td>
           </tr>
           <tr>
-            <td>Riesgos Activos</td>
-            <td><strong>{blockedProjects.length}</strong></td>
-            <td>{blockedProjects.length === 0 ? "Sin bloqueantes activos." : blockedProjects.map(p => p.name).join(", ")}</td>
+            <td>Con bloqueantes</td>
+            <td><strong>{withBlocker.length}</strong></td>
+            <td>{withBlocker.length===0 ? "Sin bloqueantes activos." : withBlocker.map(p=>p.project_name).join(", ")}</td>
           </tr>
         </tbody>
       </table>
@@ -48,23 +47,19 @@ function IndicatorRows({ indicators }) {
   if (!indicators.length) return null;
   return (
     <>
-      <tr className="metrics-table__section-header">
-        <td colSpan={3}>Indicadores</td>
-      </tr>
+      <tr className="metrics-table__section-header"><td colSpan={3}>Indicadores</td></tr>
       {indicators.map((ind, i) => {
-        const indPct    = Math.round(projectProgress(ind.total, ind.completed, ind.inProgress));
-        const indNoInit = Math.max(0, ind.total - ind.completed - ind.inProgress);
+        const pct    = Math.round(projectProgress(ind.total, ind.completed, ind.in_progress));
+        const noInit = Math.max(0, ind.total - ind.completed - ind.in_progress);
         return (
           <tr key={i} className="metrics-table__indicator-row">
-            <td>{ind.name || `Indicador ${i + 1}`}</td>
-            <td><span className="ind-pct-badge" style={badgePctStyle(indPct)}>{indPct}%</span></td>
+            <td>{ind.name || `Indicador ${i+1}`}</td>
+            <td><span className="ind-pct-badge" style={badgePctStyle(pct)}>{pct}%</span></td>
             <td>
-              <span className="eng-badge eng-badge--done">{ind.completed} ✓</span>
-              {" "}
-              <span className="eng-badge eng-badge--wip">{ind.inProgress} ↻</span>
-              {" "}
-              <span className="eng-badge eng-badge--pending">{indNoInit} ○</span>
-              <span style={{ marginLeft: 8, fontSize: "11px", color: "var(--text-3)" }}>de {ind.total}</span>
+              <span className="eng-badge eng-badge--done">{ind.completed} ✓</span>{" "}
+              <span className="eng-badge eng-badge--wip">{ind.in_progress} ↻</span>{" "}
+              <span className="eng-badge eng-badge--pending">{noInit} ○</span>
+              <span style={{ marginLeft:8, fontSize:"11px", color:"var(--text-3)" }}>de {ind.total}</span>
             </td>
           </tr>
         );
@@ -74,34 +69,33 @@ function IndicatorRows({ indicators }) {
 }
 
 export function ProjectMetricsTableCompact({ project }) {
-  const p          = project;
-  const pct        = Math.round(projectProgress(p.totalActivities, p.completedActivities, p.inProgressActivities));
-  const pending    = Math.max(0, p.totalActivities - p.completedActivities - p.inProgressActivities);
-  const hasBlockers = !!p.blockers;
+  const p       = project;
+  const m       = p.manual_metrics || {};
+  const pct     = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
+  const pending = Math.max(0, (m.total_tasks||0) - (m.completed_tasks||0) - (m.in_progress_tasks||0));
+  const blockers = (p.impediments||[]).filter(im=>im.category==="blocker");
 
   return (
     <div className="metrics-container">
       <table className="metrics-table metrics-table--project">
-        <thead>
-          <tr><th>Métrica</th><th>Valor</th><th>Observaciones</th></tr>
-        </thead>
+        <thead><tr><th>Métrica</th><th>Valor</th><th>Observaciones</th></tr></thead>
         <tbody>
           <tr>
             <td>Avance</td>
             <td><strong>{pct}%</strong></td>
-            <td>{p.completedActivities} completadas · {p.inProgressActivities} en proceso (basado en tareas identificadas).</td>
+            <td>{m.completed_tasks} completadas · {m.in_progress_tasks} en proceso.</td>
           </tr>
           <tr>
             <td>Estado de Tareas</td>
-            <td><strong>{p.completedActivities} de {p.totalActivities}</strong></td>
-            <td>{pending} no iniciada{pending !== 1 ? "s" : ""}{pending === 0 ? " — todo completado." : "."}</td>
+            <td><strong>{m.completed_tasks} de {m.total_tasks}</strong></td>
+            <td>{pending} no iniciada{pending!==1?"s":""}{pending===0?" — todo completado.":"."}</td>
           </tr>
           <tr>
-            <td>Riesgos Activos</td>
-            <td><strong>{hasBlockers ? 1 : 0}</strong></td>
-            <td>{hasBlockers ? p.blockers.split("\n").filter(Boolean)[0] : "Sin bloqueantes."}</td>
+            <td>Bloqueantes</td>
+            <td><strong>{blockers.length}</strong></td>
+            <td>{blockers.length===0 ? "Sin bloqueantes." : blockers[0].description.split("\n")[0]}</td>
           </tr>
-          <IndicatorRows indicators={p.indicators || []} />
+          <IndicatorRows indicators={p.indicators||[]} />
         </tbody>
       </table>
       <p className="metrics-note">* El porcentaje de avance se calcula según las tareas identificadas.</p>
@@ -111,33 +105,34 @@ export function ProjectMetricsTableCompact({ project }) {
 
 export function ProjectMetricsTable({ project }) {
   const p          = project;
-  const pct        = Math.round(projectProgress(p.totalActivities, p.completedActivities, p.inProgressActivities));
-  const pending    = Math.max(0, p.totalActivities - p.completedActivities - p.inProgressActivities);
-  const hasBlockers = !!p.blockers;
+  const m          = p.manual_metrics || {};
+  const pct        = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
+  const pending    = Math.max(0, (m.total_tasks||0) - (m.completed_tasks||0) - (m.in_progress_tasks||0));
+  const blockers   = (p.impediments||[]).filter(im=>im.category==="blocker");
+  const risks      = (p.impediments||[]).filter(im=>im.category==="risk");
+  const nonConf    = (p.impediments||[]).filter(im=>im.category==="non_conformity");
   const engineers  = p.engineers  || [];
   const indicators = p.indicators || [];
 
   return (
     <div className="metrics-container">
       <table className="metrics-table metrics-table--project">
-        <thead>
-          <tr><th>Métrica</th><th>Valor</th><th>Observaciones</th></tr>
-        </thead>
+        <thead><tr><th>Métrica</th><th>Valor</th><th>Observaciones</th></tr></thead>
         <tbody>
           <tr>
             <td>Avance</td>
             <td><strong>{pct}%</strong></td>
-            <td>{p.completedActivities} completadas · {p.inProgressActivities} en proceso (basado en tareas identificadas).</td>
+            <td>{m.completed_tasks} completadas · {m.in_progress_tasks} en proceso.</td>
           </tr>
           <tr>
             <td>Estado de Tareas</td>
-            <td><strong>{p.completedActivities} de {p.totalActivities}</strong></td>
-            <td>{pending} no iniciada{pending !== 1 ? "s" : ""}{pending === 0 ? " — todo completado." : "."}</td>
+            <td><strong>{m.completed_tasks} de {m.total_tasks}</strong></td>
+            <td>{pending} no iniciada{pending!==1?"s":""}{pending===0?" — todo completado.":"."}</td>
           </tr>
           <tr>
-            <td>Riesgos Activos</td>
-            <td><strong>{hasBlockers ? 1 : 0}</strong></td>
-            <td>{hasBlockers ? p.blockers.split("\n").filter(Boolean)[0] : "Sin bloqueantes."}</td>
+            <td>Bloqueantes</td>
+            <td><strong>{blockers.length}</strong></td>
+            <td>{blockers.length===0 ? "Sin bloqueantes." : blockers[0].description.split("\n")[0]}</td>
           </tr>
 
           <IndicatorRows indicators={indicators} />
@@ -146,63 +141,55 @@ export function ProjectMetricsTable({ project }) {
             <tr className="metrics-table__section-header">
               <td colSpan={3}>
                 Ingenieros
-                {p.sharedTasks > 0 && (
-                  <span style={{ fontWeight: 400, fontSize: "11px", marginLeft: 10, opacity: 0.85 }}>
-                    ({engineers.reduce((s, e) => s + Number(e.assigned || 0), 0)} asignadas − {p.sharedTasks} compartidas = {engineers.reduce((s, e) => s + Number(e.assigned || 0), 0) - p.sharedTasks} reales)
+                {(m.shared_tasks_discount||0) > 0 && (
+                  <span style={{ fontWeight:400, fontSize:"11px", marginLeft:10, opacity:0.85 }}>
+                    ({engineers.reduce((s,e)=>s+Number(e.assigned||0),0)} asignadas − {m.shared_tasks_discount} compartidas = {engineers.reduce((s,e)=>s+Number(e.assigned||0),0)-m.shared_tasks_discount} reales)
                   </span>
                 )}
               </td>
             </tr>
           )}
           {engineers.map((eng, i) => {
-            const engName      = eng.name === "Otro..." ? (eng.customName || "—") : (eng.name || "—");
-            const noInitGlobal = Math.max(0, eng.assigned - eng.completed - eng.inProgress);
+            const name   = eng.engineer_id==="Otro..."?(eng.custom_name||"—"):(eng.engineer_id||"—");
+            const noInit = Math.max(0, eng.assigned - eng.completed - eng.in_progress);
             return (
               <tr key={i} className="metrics-table__engineer-row">
-                <td style={{ fontWeight: 700 }}>{engName}</td>
+                <td style={{ fontWeight:700 }}>{name}</td>
                 <td>
-                  <div style={{ fontSize: "11px", color: "var(--text-3)", marginBottom: 3 }}>Global</div>
-                  <strong>{eng.completed}</strong>
-                  <span className="eng-stat"> / {eng.assigned}</span>
+                  <div style={{ fontSize:"11px", color:"var(--text-3)", marginBottom:3 }}>Global</div>
+                  <strong>{eng.completed}</strong><span className="eng-stat"> / {eng.assigned}</span>
                 </td>
                 <td>
-                  <div style={{ fontSize: "11px", color: "var(--text-3)", marginBottom: 3 }}>Global</div>
-                  <span className="eng-badge eng-badge--done">{eng.completed} ✓</span>
-                  {" "}
-                  <span className="eng-badge eng-badge--wip">{eng.inProgress} ↻</span>
-                  {" "}
-                  <span className="eng-badge eng-badge--pending">{noInitGlobal} ○</span>
+                  <div style={{ fontSize:"11px", color:"var(--text-3)", marginBottom:3 }}>Global</div>
+                  <span className="eng-badge eng-badge--done">{eng.completed} ✓</span>{" "}
+                  <span className="eng-badge eng-badge--wip">{eng.in_progress} ↻</span>{" "}
+                  <span className="eng-badge eng-badge--pending">{noInit} ○</span>
                 </td>
               </tr>
             );
           })}
-          {engineers.some(e => e.weekTotal > 0 || e.weekActivities) && engineers.map((eng, i) => {
-            const engName = eng.name === "Otro..." ? (eng.customName || "—") : (eng.name || "—");
-            if (!eng.weekTotal && !eng.weekActivities) return null;
+          {engineers.some(e=>e.weekly_total>0||e.weekly_detail) && engineers.map((eng,i) => {
+            const name = eng.engineer_id==="Otro..."?(eng.custom_name||"—"):(eng.engineer_id||"—");
+            if (!eng.weekly_total && !eng.weekly_detail) return null;
             return (
               <tr key={`week-${i}`} className="metrics-table__engineer-row metrics-table__engineer-week">
-                <td style={{ paddingLeft: 20, color: "var(--text-2)", fontSize: "12px" }}>↳ semana</td>
-                <td>
-                  <strong>{eng.weekTotal || 0}</strong>
-                  <span className="eng-stat"> tareas</span>
-                </td>
-                <td style={{ color: "var(--text-2)", fontSize: "12px", whiteSpace: "pre-wrap" }}>
-                  {eng.weekActivities || "—"}
-                </td>
+                <td style={{ paddingLeft:20, color:"var(--text-2)", fontSize:"12px" }}>↳ semana</td>
+                <td><strong>{eng.weekly_total||0}</strong><span className="eng-stat"> tareas</span></td>
+                <td style={{ color:"var(--text-2)", fontSize:"12px", whiteSpace:"pre-wrap" }}>{eng.weekly_detail||"—"}</td>
               </tr>
             );
           })}
 
-          {p.nonConformances && (
+          {nonConf.length > 0 && (
             <>
               <tr className="metrics-table__section-header"><td colSpan={3}>Salidas no conformes</td></tr>
-              <tr><td colSpan={3} className="metrics-table__text-cell">{p.nonConformances}</td></tr>
+              {nonConf.map((nc,i) => <tr key={i}><td colSpan={3} className="metrics-table__text-cell">{nc.description}</td></tr>)}
             </>
           )}
-          {p.risks && (
+          {risks.length > 0 && (
             <>
               <tr className="metrics-table__section-header"><td colSpan={3}>Riesgos</td></tr>
-              <tr><td colSpan={3} className="metrics-table__text-cell">{p.risks}</td></tr>
+              {risks.map((r,i) => <tr key={i}><td colSpan={3} className="metrics-table__text-cell">{r.description}{r.impact?` — ${r.impact}`:""}</td></tr>)}
             </>
           )}
         </tbody>
