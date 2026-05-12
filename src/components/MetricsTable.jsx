@@ -168,14 +168,19 @@ export function ProjectMetricsTable({ project }) {
               </tr>
             );
           })}
-          {engineers.some(e=>e.weekly_total>0||e.weekly_detail) && engineers.map((eng,i) => {
+          {engineers.some(e=>e.weekly_total>0||(Array.isArray(e.weekly_detail)?e.weekly_detail.length:e.weekly_detail)) && engineers.map((eng,i) => {
             const name = eng.engineer_id==="Otro..."?(eng.custom_name||"—"):(eng.engineer_id||"—");
-            if (!eng.weekly_total && !eng.weekly_detail) return null;
+            const detail = Array.isArray(eng.weekly_detail) ? eng.weekly_detail : (eng.weekly_detail ? eng.weekly_detail.split("\n").map(l=>l.trim()).filter(Boolean) : []);
+            if (!eng.weekly_total && !detail.length) return null;
             return (
               <tr key={`week-${i}`} className="metrics-table__engineer-row metrics-table__engineer-week">
                 <td style={{ paddingLeft:20, color:"var(--text-2)", fontSize:"12px" }}>↳ semana</td>
                 <td><strong>{eng.weekly_total||0}</strong><span className="eng-stat"> tareas</span></td>
-                <td style={{ color:"var(--text-2)", fontSize:"12px", whiteSpace:"pre-wrap" }}>{eng.weekly_detail||"—"}</td>
+                <td style={{ color:"var(--text-2)", fontSize:"12px" }}>
+                  {detail.length > 0
+                    ? <ul style={{ margin:0, padding:"0 0 0 14px", listStyle:"disc" }}>{detail.map((d,di)=><li key={di}>{d}</li>)}</ul>
+                    : "—"}
+                </td>
               </tr>
             );
           })}

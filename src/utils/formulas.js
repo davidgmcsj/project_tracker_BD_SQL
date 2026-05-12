@@ -94,22 +94,22 @@ export function createDefaultProject() {
     project_name: "",
     status:       "on-track",
     planner_url:  "",
-    report_date:  getCurrentFriday(),
+    report_date:  getToday(),
     manual_metrics: {
       total_tasks:          0,
       completed_tasks:      0,
       in_progress_tasks:    0,
       shared_tasks_discount: 0,
     },
-    activities_identified: "",
-    weekly_achievements:   "",
-    next_week_plan:        "",
+    activities_identified: [],   // ["texto actividad", ...]
+    weekly_achievements:   [],   // ["texto actividad seleccionada", ...]
+    next_week_plan:        [],   // ["texto actividad seleccionada", ...]
     show_closing_fields:   false,
     milestones:            "",
     comments:              "",
     engineers:   [],
     indicators:  [],
-    impediments: [],   // [{ category: 'blocker'|'risk'|'non_conformity', description, impact }]
+    impediments: [],
   };
 }
 
@@ -121,7 +121,7 @@ export function createDefaultEngineer() {
     completed:    0,
     in_progress:  0,
     weekly_total: 0,
-    weekly_detail:"",
+    weekly_detail: [],  // ["N. texto actividad", ...]
   };
 }
 
@@ -140,9 +140,20 @@ const STATUS_ICONS  = { "on-track": "🟡", "at-risk": "🟠", blocked: "🔴", 
 const CAT_LABELS    = { blocker: "Bloqueante", risk: "Riesgo", non_conformity: "Salida no conforme" };
 
 function col(str, w) { return String(str).padEnd(w); }
-function toBullets(text) {
-  if (!text) return "";
-  return text.split("\n").filter(l => l.trim()).map(l => `  • ${l.trim()}`).join("\n");
+
+// Convierte array o string a líneas de viñetas para el reporte ASCII
+function arrToBullets(val) {
+  if (!val) return "";
+  const items = Array.isArray(val)
+    ? val.filter(Boolean)
+    : val.split("\n").map(l => l.trim()).filter(Boolean);
+  return items.map(l => `  • ${l}`).join("\n");
+}
+
+// Formatea array de actividades numeradas: "1. texto\n2. texto\n..."
+function arrToNumbered(arr) {
+  if (!Array.isArray(arr) || !arr.length) return "";
+  return arr.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
 }
 
 function projectBlock(p, i) {
@@ -155,6 +166,7 @@ function projectBlock(p, i) {
   const icon    = STATUS_ICONS[p.status]  || "🟡";
   const label   = STATUS_LABELS[p.status] || p.status;
   const blockers = (p.impediments || []).filter(im => im.category === "blocker");
+  const acts     = Array.isArray(p.activities_identified) ? p.activities_identified : [];
 
   let txt = `──── ${icon} ${p.project_name || `Proyecto ${i + 1}`} ────\n`;
   txt += `Estado: ${label}   |   Fecha de reporte: ${p.report_date || "—"}\n`;
@@ -180,8 +192,8 @@ function projectBlock(p, i) {
   }
 
   if (p.engineers?.length) {
-    const shared    = Number(m.shared_tasks_discount || 0);
-    const assigned  = p.engineers.reduce((s,e) => s+Number(e.assigned||0), 0);
+    const shared   = Number(m.shared_tasks_discount || 0);
+    const assigned = p.engineers.reduce((s,e) => s+Number(e.assigned||0), 0);
     txt += `INGENIEROS — GLOBAL\n${"─".repeat(88)}\n`;
     txt += `${col("Ingeniero",28)}${col("Asignadas",12)}${col("Completadas",14)}${col("En proceso",13)}No iniciadas\n${"─".repeat(88)}\n`;
     p.engineers.forEach(e => {
@@ -193,20 +205,23 @@ function projectBlock(p, i) {
       txt += `${col("Total real",28)}${col(assigned-shared,12)}\n`;
     }
     txt += `${"─".repeat(88)}\n\n`;
-    const hasWeek = p.engineers.some(e => e.weekly_total>0 || e.weekly_detail);
+    const hasWeek = p.engineers.some(e => e.weekly_total>0 || (Array.isArray(e.weekly_detail)?e.weekly_detail.length:e.weekly_detail));
     if (hasWeek) {
       txt += `INGENIEROS — ESTA SEMANA\n${"─".repeat(60)}\n${col("Ingeniero",28)}Tareas sem.\n${"─".repeat(60)}\n`;
       p.engineers.forEach(e => {
-        if (!e.weekly_total && !e.weekly_detail) return;
+        const detail = Array.isArray(e.weekly_detail) ? e.weekly_detail : [];
+        if (!e.weekly_total && !detail.length) return;
         const name = e.engineer_id==="Otro..."?(e.custom_name||"—"):(e.engineer_id||"—");
         txt += `${col(name,28)}${e.weekly_total||0}\n`;
-        if (e.weekly_detail) txt += `${toBullets(e.weekly_detail)}\n`;
+        if (detail.length) txt += `${arrToBullets(detail)}\n`;
       });
       txt += `${"─".repeat(60)}\n\n`;
     }
   }
 
-  if (p.activities_identified) txt += `• Actividades Identificadas:\n${toBullets(p.activities_identified)}\n`;
+  if (acts.length) {
+    txt += `• Actividades Identificadas:\n${arrToNumbered(acts)}\n\n`;
+  }
 
   const byCategory = {};
   (p.impediments||[]).forEach(im => { (byCategory[im.category]||=[]).push(im); });
@@ -220,11 +235,13 @@ function projectBlock(p, i) {
   }
 
   if (p.show_closing_fields) {
-    if (p.weekly_achievements) txt += `✓ Qué se hizo esta semana:\n${toBullets(p.weekly_achievements)}\n`;
-    if (p.next_week_plan)      txt += `→ Plan para la próxima semana:\n${toBullets(p.next_week_plan)}\n`;
+    const ach = Array.isArray(p.weekly_achievements) ? p.weekly_achievements : [];
+    const plan = Array.isArray(p.next_week_plan) ? p.next_week_plan : [];
+    if (ach.length)  txt += `✓ Qué se hizo esta semana:\n${arrToBullets(ach)}\n\n`;
+    if (plan.length) txt += `→ Plan para la próxima semana:\n${arrToBullets(plan)}\n\n`;
   }
-  if (p.milestones) txt += `📅 Fechas clave:\n${toBullets(p.milestones)}\n`;
-  if (p.comments)   txt += `💬 Comentarios:\n${toBullets(p.comments)}\n`;
+  if (p.milestones) txt += `📅 Fechas clave:\n${arrToBullets(p.milestones)}\n`;
+  if (p.comments)   txt += `💬 Comentarios:\n${arrToBullets(p.comments)}\n`;
   txt += "\n";
   return txt;
 }

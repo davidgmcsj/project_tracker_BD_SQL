@@ -32,6 +32,41 @@ async function writeJson(file, data) {
   await fs.writeFile(file, JSON.stringify(data, null, 2));
 }
 
+// Convierte string con saltos de línea a array limpio
+function toArr(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  return val.split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+// Migra campos string→array si el data.json tiene formato legado
+async function migrateArrayFields() {
+  const data = await readJson(DATA_FILE, null);
+  if (!data?.projects?.length) return;
+  let changed = false;
+  data.projects = data.projects.map(p => {
+    const needsMigration = typeof p.activities_identified === 'string'
+      || typeof p.weekly_achievements === 'string'
+      || typeof p.next_week_plan === 'string';
+    if (!needsMigration) return p;
+    changed = true;
+    return {
+      ...p,
+      activities_identified: toArr(p.activities_identified),
+      weekly_achievements:   toArr(p.weekly_achievements),
+      next_week_plan:        toArr(p.next_week_plan),
+      engineers: (p.engineers || []).map(e => ({
+        ...e,
+        weekly_detail: toArr(e.weekly_detail),
+      })),
+    };
+  });
+  if (changed) {
+    await writeJson(DATA_FILE, data);
+    console.log('Migración string→array completada');
+  }
+}
+
 // ── Inicialización ────────────────────────────────────────────────────────────
 
 async function init() {
@@ -50,6 +85,8 @@ async function init() {
       await writeJson(DATA_FILE, { projects: [], weekLabel: null });
     }
   }
+
+  await migrateArrayFields();
 
   if (!(await readJson(HISTORY_FILE, null))) {
     await writeJson(HISTORY_FILE, { reports: [] });

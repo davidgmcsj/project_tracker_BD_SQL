@@ -28,13 +28,20 @@ const ENGINEER_LIST = [
   "Otro...",
 ];
 
-// UI label → category key
 const IMPEDIMENT_TYPES = [
   { category: "blocker",        label: "Bloqueante",         icon: "🚫", hasImpact: true  },
   { category: "risk",           label: "Riesgo",             icon: "🔶", hasImpact: true  },
   { category: "non_conformity", label: "Salida no conforme", icon: "⚠️", hasImpact: false },
 ];
 const IMPEDIMENT_META = Object.fromEntries(IMPEDIMENT_TYPES.map(t => [t.category, t]));
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function safeArr(val) {
+  if (Array.isArray(val)) return val;
+  if (!val) return [];
+  return val.split("\n").map(s => s.trim()).filter(Boolean);
+}
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
 
@@ -69,45 +76,148 @@ function DeleteConfirmModal({ projectName, onConfirm, onCancel }) {
   );
 }
 
-function ListField({ label, value, onChange, addLabel, placeholder, rows = 4 }) {
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft]   = useState("");
+// ── Lista de actividades numeradas ────────────────────────────────────────────
 
-  const confirm = () => {
-    const trimmed = draft.trim();
-    if (trimmed) {
-      const current = value ? value.trimEnd() : "";
-      onChange(current ? current + "\n" + trimmed : trimmed);
-    }
+function ActivitiesList({ activities, onChange }) {
+  const [draft, setDraft]       = useState("");
+  const [adding, setAdding]     = useState(false);
+  const [editIdx, setEditIdx]   = useState(null);
+  const [editVal, setEditVal]   = useState("");
+
+  const acts = safeArr(activities);
+
+  const confirmAdd = () => {
+    const t = draft.trim();
+    if (t) onChange([...acts, t]);
     setDraft(""); setAdding(false);
   };
-  const cancel = () => { setDraft(""); setAdding(false); };
+
+  const startEdit = (i) => { setEditIdx(i); setEditVal(acts[i]); };
+  const confirmEdit = () => {
+    const t = editVal.trim();
+    if (t) { const next = [...acts]; next[editIdx] = t; onChange(next); }
+    setEditIdx(null); setEditVal("");
+  };
+  const removeAct = (i) => onChange(acts.filter((_, idx) => idx !== i));
 
   return (
     <div className="field">
       <div className="field__header">
-        <label className="field__label">{label}</label>
+        <label className="field__label">
+          Actividades Identificadas
+          {acts.length > 0 && <span className="act-count">{acts.length}</span>}
+        </label>
         {!adding && (
           <button type="button" className="btn-add-item" onClick={() => setAdding(true)}>
-            + {addLabel}
+            + Agregar actividad
           </button>
         )}
       </div>
+
       {adding && (
         <div className="list-field-draft">
           <input className="field__input list-field-draft__input" autoFocus value={draft}
-            placeholder="Escribe y presiona Enter o ✓…"
+            placeholder="Descripción de la actividad… (Enter para confirmar)"
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirm(); } if (e.key === "Escape") cancel(); }} />
-          <button type="button" className="list-field-draft__ok"     onClick={confirm} title="Confirmar">✓</button>
-          <button type="button" className="list-field-draft__cancel" onClick={cancel}  title="Cancelar">✕</button>
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmAdd(); } if (e.key === "Escape") { setDraft(""); setAdding(false); } }} />
+          <button type="button" className="list-field-draft__ok"     onClick={confirmAdd}                        title="Confirmar">✓</button>
+          <button type="button" className="list-field-draft__cancel" onClick={() => { setDraft(""); setAdding(false); }} title="Cancelar">✕</button>
         </div>
       )}
-      <textarea className="field__textarea" rows={rows} value={value || ""} placeholder={placeholder}
-        onChange={e => onChange(e.target.value)} />
+
+      {acts.length > 0 && (
+        <ol className="act-list">
+          {acts.map((act, i) => (
+            <li key={i} className="act-list__item">
+              {editIdx === i ? (
+                <div className="list-field-draft" style={{ flex: 1 }}>
+                  <input className="field__input list-field-draft__input" autoFocus value={editVal}
+                    onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); confirmEdit(); } if (e.key === "Escape") setEditIdx(null); }} />
+                  <button type="button" className="list-field-draft__ok"     onClick={confirmEdit}          title="Guardar">✓</button>
+                  <button type="button" className="list-field-draft__cancel" onClick={() => setEditIdx(null)} title="Cancelar">✕</button>
+                </div>
+              ) : (
+                <>
+                  <span className="act-list__num">{i + 1}.</span>
+                  <span className="act-list__text">{act}</span>
+                  <button type="button" className="act-list__edit"   onClick={() => startEdit(i)} title="Editar">✎</button>
+                  <button type="button" className="act-list__remove" onClick={() => removeAct(i)} title="Eliminar">✕</button>
+                </>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {acts.length === 0 && !adding && (
+        <p className="act-list__empty">Sin actividades aún. Agrega la primera.</p>
+      )}
     </div>
   );
 }
+
+// ── Selector de actividades (multi-select con límite) ─────────────────────────
+
+function ActivitySelector({ label, activities, selected, limit, onChange }) {
+  const acts     = safeArr(activities);
+  const selArr   = safeArr(selected);
+
+  const toggle = (item) => {
+    const idx = selArr.indexOf(item);
+    if (idx >= 0) {
+      onChange(selArr.filter(s => s !== item));
+    } else {
+      if (limit && selArr.length >= limit) return;
+      onChange([...selArr, item]);
+    }
+  };
+
+  if (!acts.length) return (
+    <p style={{ fontSize: "12px", color: "var(--text-3)", margin: "4px 0" }}>
+      Primero agrega actividades identificadas para poder seleccionarlas aquí.
+    </p>
+  );
+
+  return (
+    <div className="act-selector">
+      <div className="act-selector__header">
+        <span className="act-selector__label">{label}</span>
+        {limit && (
+          <span className={`act-selector__count ${selArr.length >= limit ? "act-selector__count--full" : ""}`}>
+            {selArr.length}/{limit} seleccionadas
+          </span>
+        )}
+      </div>
+      <div className="act-selector__list">
+        {acts.map((act, i) => {
+          const item     = `${i + 1}. ${act}`;
+          const checked  = selArr.includes(item);
+          const disabled = !checked && limit && selArr.length >= limit;
+          return (
+            <label key={i} className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""}`}>
+              <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(item)} />
+              <span className="act-selector__num">{i + 1}.</span>
+              <span className="act-selector__text">{act}</span>
+            </label>
+          );
+        })}
+      </div>
+      {selArr.length > 0 && (
+        <div className="act-selector__selected">
+          <span className="act-selector__selected-label">Seleccionadas:</span>
+          {selArr.map((s, i) => (
+            <span key={i} className="act-selector__chip">
+              {s}
+              <button type="button" onClick={() => toggle(s)} title="Quitar">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Fila de impedimento ───────────────────────────────────────────────────────
 
 function ImpedimentRow({ item, index, onChange, onRemove }) {
   const meta = IMPEDIMENT_META[item.category] || IMPEDIMENT_TYPES[0];
@@ -136,22 +246,13 @@ function ImpedimentRow({ item, index, onChange, onRemove }) {
   );
 }
 
-function EngineerRow({ eng, index, onChange, onRemove }) {
-  const [addingWeek, setAddingWeek] = useState(false);
-  const [weekDraft,  setWeekDraft]  = useState("");
+// ── Fila de ingeniero ─────────────────────────────────────────────────────────
 
+function EngineerRow({ eng, index, onChange, onRemove, activities }) {
   const noInitGlobal = Math.max(0, eng.assigned - eng.completed - eng.in_progress);
   const isOverGlobal = eng.completed + eng.in_progress > eng.assigned;
-  const displayName  = eng.engineer_id === "Otro..." ? (eng.custom_name || "este ingeniero") : (eng.engineer_id || "este ingeniero");
-
-  const confirmWeek = () => {
-    const trimmed = weekDraft.trim();
-    if (trimmed) {
-      const current = (eng.weekly_detail || "").trimEnd();
-      onChange(index, "weekly_detail", current ? current + "\n" + trimmed : trimmed);
-    }
-    setWeekDraft(""); setAddingWeek(false);
-  };
+  const weeklyArr    = safeArr(eng.weekly_detail);
+  const limit        = eng.weekly_total > 0 ? eng.weekly_total : undefined;
 
   return (
     <div className="engineer-card">
@@ -200,38 +301,30 @@ function EngineerRow({ eng, index, onChange, onRemove }) {
         <div className="engineer-section">
           <div className="engineer-section__title">Esta semana</div>
           <div className="engineer-week-simple">
-            <label className="field__label" style={{ fontSize: "11px" }}>Tareas semana</label>
+            <label className="field__label" style={{ fontSize: "11px" }}>
+              Tareas semana
+              {limit && <span style={{ fontSize:"10px", color:"var(--text-3)", marginLeft:6 }}>(selecciona hasta {limit})</span>}
+            </label>
             <input className="field__input engineer-week-simple__num" type="number" min="0"
               value={eng.weekly_total || 0} onFocus={e => e.target.select()}
               onChange={e => onChange(index, "weekly_total", e.target.value === "" ? "" : Number(e.target.value))} />
           </div>
-          <div className="field" style={{ marginTop: 8 }}>
-            <div className="field__header">
-              <label className="field__label" style={{ fontSize: "11px" }}>Actividades de la semana</label>
-              {!addingWeek && (
-                <button type="button" className="btn-add-item" onClick={() => setAddingWeek(true)}>+ Agregar actividad</button>
-              )}
-            </div>
-            {addingWeek && (
-              <div className="list-field-draft">
-                <input className="field__input list-field-draft__input" autoFocus value={weekDraft}
-                  placeholder="Escribe y presiona Enter o ✓…"
-                  onChange={e => setWeekDraft(e.target.value)}
-                  onKeyDown={e => { if (e.key==="Enter"&&!e.shiftKey){e.preventDefault();confirmWeek();} if(e.key==="Escape"){setWeekDraft("");setAddingWeek(false);} }} />
-                <button type="button" className="list-field-draft__ok"     onClick={confirmWeek}                                title="Confirmar">✓</button>
-                <button type="button" className="list-field-draft__cancel" onClick={()=>{setWeekDraft("");setAddingWeek(false);}} title="Cancelar">✕</button>
-              </div>
-            )}
-            <textarea className="field__textarea" rows={3}
-              placeholder={`Actividades de ${displayName} esta semana…\nUna por línea`}
-              value={eng.weekly_detail || ""}
-              onChange={e => onChange(index, "weekly_detail", e.target.value)} />
+          <div style={{ marginTop: 8 }}>
+            <ActivitySelector
+              label="Actividades de la semana"
+              activities={activities}
+              selected={weeklyArr}
+              limit={limit}
+              onChange={val => onChange(index, "weekly_detail", val)}
+            />
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+// ── Fila de indicador ─────────────────────────────────────────────────────────
 
 function IndicatorRow({ ind, index, onChange, onRemove }) {
   const pct    = Math.round(projectProgress(ind.total, ind.completed, ind.in_progress));
@@ -298,6 +391,7 @@ export default function EditView({
   const engineers   = p?.engineers   || [];
   const indicators  = p?.indicators  || [];
   const impediments = p?.impediments || [];
+  const activities  = safeArr(p?.activities_identified);
 
   const updateMetric = (field, val) =>
     onUpdateProject(editingIdx, "manual_metrics", { ...m, [field]: val === "" ? "" : Number(val) });
@@ -313,11 +407,6 @@ export default function EditView({
   const addImpediment    = (cat) => onUpdateProject(editingIdx, "impediments", [...impediments, createDefaultImpediment(cat)]);
   const updateImpediment = (i, f, v) => onUpdateProject(editingIdx, "impediments", impediments.map((im,idx) => idx===i ? {...im,[f]:v} : im));
   const removeImpediment = (i) => onUpdateProject(editingIdx, "impediments", impediments.filter((_,idx) => idx!==i));
-
-  const listField = (label, field, addLabel, placeholder, rows) => (
-    <ListField label={label} value={p[field]||""} onChange={v => onUpdateProject(editingIdx, field, v)}
-      addLabel={addLabel} placeholder={placeholder} rows={rows} />
-  );
 
   return (
     <div className="edit-view">
@@ -369,7 +458,7 @@ export default function EditView({
             </div>
           </div>
 
-          {/* ══ 2. Métricas manuales (datos de Planner) ══ */}
+          {/* ══ 2. Métricas manuales ══ */}
           <div className="field field--optional">
             <label className="field__label" style={{ marginBottom:10 }}>
               Métricas de Avance
@@ -399,7 +488,13 @@ export default function EditView({
             {isOverLimit && <div style={{ color:"var(--red)", fontSize:"12px", fontWeight:600 }}>⚠ La suma de completadas y en proceso supera el total.</div>}
           </div>
 
-          {/* ══ 3. Indicadores ══ */}
+          {/* ══ 3. Actividades identificadas (lista numerada) ══ */}
+          <ActivitiesList
+            activities={activities}
+            onChange={val => onUpdateProject(editingIdx, "activities_identified", val)}
+          />
+
+          {/* ══ 4. Indicadores ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Indicadores</label>
@@ -412,10 +507,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 4. Actividades ══ */}
-          {listField("Actividades Identificadas", "activities_identified", "Agregar actividad", "Actividad 1\nActividad 2…")}
-
-          {/* ══ 5. Impedimentos (bloqueantes, riesgos, no conformidades) ══ */}
+          {/* ══ 5. Impedimentos ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Impedimentos y Riesgos</label>
@@ -443,7 +535,11 @@ export default function EditView({
             </div>
             {engineers.length > 0 && (
               <>
-                {engineers.map((eng,i) => <EngineerRow key={i} eng={eng} index={i} onChange={updateEngineer} onRemove={removeEngineer} />)}
+                {engineers.map((eng,i) => (
+                  <EngineerRow key={i} eng={eng} index={i}
+                    onChange={updateEngineer} onRemove={removeEngineer}
+                    activities={activities} />
+                ))}
                 <div className="shared-tasks-row">
                   <span className="shared-tasks-row__label">Tareas compartidas entre ingenieros</span>
                   <input className="field__input shared-tasks-row__input" type="number" min="0"
@@ -464,30 +560,43 @@ export default function EditView({
                 Habilitar campos
               </label>
             </div>
-            <div className="edit-row edit-row--2col" style={{ marginTop:"12px", opacity: p.show_closing_fields?1:0.5 }}>
-              <div className="field">
-                <label className="field__label">→ Plan para la próxima semana</label>
-                {p.show_closing_fields
-                  ? <ListField label="" value={p.next_week_plan||""} addLabel="Agregar actividad"
-                      placeholder="Objetivos para la próxima semana…"
-                      onChange={v => onUpdateProject(editingIdx, "next_week_plan", v)} rows={4} />
-                  : <textarea className="field__textarea" rows={4} disabled value={p.next_week_plan||""} placeholder="Objetivos para la próxima semana…" onChange={()=>{}} />
-                }
+            {p.show_closing_fields && (
+              <div className="edit-row edit-row--2col" style={{ marginTop:"12px" }}>
+                <div className="field">
+                  <label className="field__label">→ Plan para la próxima semana</label>
+                  <ActivitySelector
+                    label="Selecciona las actividades planificadas"
+                    activities={activities}
+                    selected={safeArr(p.next_week_plan)}
+                    onChange={val => onUpdateProject(editingIdx, "next_week_plan", val)}
+                  />
+                </div>
+                <div className="field">
+                  <label className="field__label">✓ ¿Qué se hizo esta semana?</label>
+                  <ActivitySelector
+                    label="Selecciona las actividades completadas"
+                    activities={activities}
+                    selected={safeArr(p.weekly_achievements)}
+                    onChange={val => onUpdateProject(editingIdx, "weekly_achievements", val)}
+                  />
+                </div>
               </div>
-              <div className="field">
-                <label className="field__label">✓ ¿Qué se hizo esta semana?</label>
-                {p.show_closing_fields
-                  ? <ListField label="" value={p.weekly_achievements||""} addLabel="Agregar logro"
-                      placeholder="Logros y avances concretos…"
-                      onChange={v => onUpdateProject(editingIdx, "weekly_achievements", v)} rows={4} />
-                  : <textarea className="field__textarea" rows={4} disabled value={p.weekly_achievements||""} placeholder="Logros y avances concretos…" onChange={()=>{}} />
-                }
-              </div>
-            </div>
+            )}
+            {!p.show_closing_fields && (
+              <p style={{ fontSize:"12px", color:"var(--text-3)", marginTop:8 }}>Activa esta sección para registrar el cierre semanal.</p>
+            )}
           </div>
 
-          {listField("📅 Fechas clave", "milestones", "Agregar fecha",      "Hito, entrega, deadline…", 2)}
-          {listField("Comentarios",     "comments",   "Agregar comentario", "Comentario 1\nComentario 2…", 3)}
+          <div className="field">
+            <label className="field__label">📅 Fechas clave</label>
+            <textarea className="field__textarea" rows={2} value={p.milestones||""} placeholder="Hito, entrega, deadline…"
+              onChange={e => onUpdateProject(editingIdx, "milestones", e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field__label">Comentarios</label>
+            <textarea className="field__textarea" rows={3} value={p.comments||""} placeholder="Comentario 1&#10;Comentario 2…"
+              onChange={e => onUpdateProject(editingIdx, "comments", e.target.value)} />
+          </div>
 
           <div className="edit-panel__footer">
             <button className="btn btn--accent" onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>

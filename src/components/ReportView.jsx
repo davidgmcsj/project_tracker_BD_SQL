@@ -26,10 +26,17 @@ const FIELD_CONFIG = {
   comments:              { label:"Comentarios",                  icon:"💬", variant:"gray"    },
 };
 
+function toLines(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value.split("\n").map(l => l.trim()).filter(Boolean);
+}
+
 function BulletSection({ fieldKey, value }) {
-  if (!value) return null;
-  const cfg   = FIELD_CONFIG[fieldKey] || { label: fieldKey, icon:"•", variant:"gray" };
-  const lines = value.split("\n").map(l => l.trim()).filter(Boolean);
+  const lines = toLines(value);
+  if (!lines.length) return null;
+  const cfg = FIELD_CONFIG[fieldKey] || { label: fieldKey, icon:"•", variant:"gray" };
+  const isNumbered = fieldKey === "activities_identified";
   return (
     <div className={`rpt-section rpt-section--${cfg.variant}`}>
       <div className="rpt-section__header">
@@ -37,9 +44,15 @@ function BulletSection({ fieldKey, value }) {
         <span className="rpt-section__label">{cfg.label}</span>
         <span className="rpt-section__count">{lines.length}</span>
       </div>
-      <ul className="rpt-bullets">
-        {lines.map((line,i) => <li key={i} className="rpt-bullets__item">{line}</li>)}
-      </ul>
+      {isNumbered ? (
+        <ol className="rpt-bullets rpt-bullets--numbered">
+          {lines.map((line,i) => <li key={i} className="rpt-bullets__item rpt-bullets__item--numbered">{line}</li>)}
+        </ol>
+      ) : (
+        <ul className="rpt-bullets">
+          {lines.map((line,i) => <li key={i} className="rpt-bullets__item">{line}</li>)}
+        </ul>
+      )}
     </div>
   );
 }
@@ -77,7 +90,7 @@ function ImpedimentSection({ impediments }) {
 
 function EngineerWeekCard({ eng }) {
   const name  = eng.engineer_id==="Otro..."?(eng.custom_name||"—"):(eng.engineer_id||"—");
-  const lines = (eng.weekly_detail||"").split("\n").map(l=>l.trim()).filter(Boolean);
+  const lines = toLines(eng.weekly_detail);
   if (!eng.weekly_total && !lines.length) return null;
   return (
     <div className="rpt-eng-card">
@@ -144,7 +157,7 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
             const m   = p.manual_metrics || {};
             const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
             const st  = STATUS[p.status] || STATUS["on-track"];
-            const engWithWeek = (p.engineers||[]).filter(e => e.weekly_total>0 || (e.weekly_detail||"").trim());
+            const engWithWeek = (p.engineers||[]).filter(e => e.weekly_total>0 || (Array.isArray(e.weekly_detail)?e.weekly_detail.length:(e.weekly_detail||"").trim()));
 
             return (
               <div key={p.id} className="report-project">
