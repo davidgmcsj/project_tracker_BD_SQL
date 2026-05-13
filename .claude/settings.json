@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Users\\\\DavidGM\\\\Downloads\\\\seguimiento_proyectos-main\\\\seguimiento_proyectos-main\\\\project_tracker_BD\\\\src\" -Recurse -Include \"*.jsx\", \"*.js\", \"*.css\")",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

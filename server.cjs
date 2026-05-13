@@ -1,66 +1,62 @@
-const express = require('express');
-const fs      = require('fs').promises;
-const path    = require('path');
+const express = require("express");
+const fs      = require("fs").promises;
+const path    = require("path");
+
+// ── Configuración ─────────────────────────────────────────────────────────────
 
 function getDataDir() {
-  if (process.env.HOME === '/home') return '/home/data'; // Azure App Service Linux
-  return __dirname;
+  return process.env.HOME === "/home" ? "/home/data" : __dirname; // Azure App Service Linux
 }
 
 const DATA_DIR     = getDataDir();
-const DATA_FILE    = path.join(DATA_DIR, 'data.json');
-const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
-const DIST_PATH    = path.join(__dirname, 'dist');
+const DATA_FILE    = path.join(DATA_DIR, "data.json");
+const HISTORY_FILE = path.join(DATA_DIR, "history.json");
+const DIST_PATH    = path.join(__dirname, "dist");
 const PORT         = process.env.PORT || 3001;
-
-const app = express();
-app.use(express.json({ limit: '50mb' }));
-
-if (process.env.NODE_ENV !== 'production') {
-  const cors = require('cors');
-  app.use(cors());
-}
 
 // ── Helpers de archivo ────────────────────────────────────────────────────────
 
-async function readJson(file, def) {
-  try { return JSON.parse(await fs.readFile(file, 'utf-8')); }
-  catch { return def; }
+async function readJson(file, fallback) {
+  try { return JSON.parse(await fs.readFile(file, "utf-8")); }
+  catch { return fallback; }
 }
 
 async function writeJson(file, data) {
   await fs.writeFile(file, JSON.stringify(data, null, 2));
 }
 
-// Convierte string con saltos de línea a array limpio
 function toArr(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val.filter(Boolean);
-  return val.split('\n').map(s => s.trim()).filter(Boolean);
+  return val.split("\n").map(s => s.trim()).filter(Boolean);
 }
 
-// Migra campos string→array y string→objeto-estructurado si el data.json tiene formato legado
+// ── Migración de datos legados (string → array/objeto) ────────────────────────
+
 async function migrateArrayFields() {
   const data = await readJson(DATA_FILE, null);
   if (!data?.projects?.length) return;
+
   let changed = false;
   data.projects = data.projects.map(p => {
-    const needsMigration = typeof p.activities_identified === 'string'
-      || typeof p.weekly_achievements === 'string'
-      || typeof p.next_week_plan === 'string'
-      || typeof p.milestones === 'string'
-      || typeof p.comments === 'string';
+    const needsMigration =
+      typeof p.activities_identified === "string" ||
+      typeof p.weekly_achievements   === "string" ||
+      typeof p.next_week_plan        === "string" ||
+      typeof p.milestones            === "string" ||
+      typeof p.comments              === "string";
+
     if (!needsMigration) return p;
     changed = true;
-    // Convierte milestones string → array de objetos (preserva texto como nota sin actividad ni fecha)
-    const milestonesRaw = p.milestones;
-    const milestonesArr = typeof milestonesRaw === 'string' && milestonesRaw.trim()
-      ? toArr(milestonesRaw).map(note => ({ activity: '', date: '', note }))
-      : (Array.isArray(milestonesRaw) ? milestonesRaw : []);
-    const commentsRaw = p.comments;
-    const commentsArr = typeof commentsRaw === 'string' && commentsRaw.trim()
-      ? toArr(commentsRaw).map(text => ({ activity: '', date: '', text }))
-      : (Array.isArray(commentsRaw) ? commentsRaw : []);
+
+    const milestonesArr = typeof p.milestones === "string" && p.milestones.trim()
+      ? toArr(p.milestones).map(note => ({ activity: "", date: "", note }))
+      : (Array.isArray(p.milestones) ? p.milestones : []);
+
+    const commentsArr = typeof p.comments === "string" && p.comments.trim()
+      ? toArr(p.comments).map(text => ({ activity: "", date: "", text }))
+      : (Array.isArray(p.comments) ? p.comments : []);
+
     return {
       ...p,
       activities_identified: toArr(p.activities_identified),
@@ -74,9 +70,10 @@ async function migrateArrayFields() {
       })),
     };
   });
+
   if (changed) {
     await writeJson(DATA_FILE, data);
-    console.log('Migración string→array/objeto completada');
+    console.log("Migración string→array/objeto completada");
   }
 }
 
@@ -85,15 +82,14 @@ async function migrateArrayFields() {
 async function init() {
   await fs.mkdir(DATA_DIR, { recursive: true });
 
-  // Si data.json no existe en el directorio de datos (Azure), copiarlo desde __dirname
   try {
     await fs.access(DATA_FILE);
   } catch {
-    const localData = path.join(__dirname, 'data.json');
+    const localData = path.join(__dirname, "data.json");
     try {
       await fs.access(localData);
       await fs.copyFile(localData, DATA_FILE);
-      console.log('data.json copiado al directorio de datos');
+      console.log("data.json copiado al directorio de datos");
     } catch {
       await writeJson(DATA_FILE, { projects: [], weekLabel: null });
     }
@@ -108,45 +104,55 @@ async function init() {
   console.log(`Datos en: ${DATA_DIR}`);
 }
 
+// ── Express ───────────────────────────────────────────────────────────────────
+
+const app = express();
+app.use(express.json({ limit: "50mb" }));
+
+if (process.env.NODE_ENV !== "production") {
+  const cors = require("cors");
+  app.use(cors());
+}
+
 // ── API: Proyectos base ───────────────────────────────────────────────────────
 
-app.get('/api/projects', async (req, res) => {
+app.get("/api/projects", async (req, res) => {
   try {
     res.json(await readJson(DATA_FILE, { projects: [], weekLabel: null }));
-  } catch { res.status(500).json({ error: 'Error leyendo proyectos' }); }
+  } catch {
+    res.status(500).json({ error: "Error leyendo proyectos" });
+  }
 });
 
-app.post('/api/projects', async (req, res) => {
+app.post("/api/projects", async (req, res) => {
   try {
     await writeJson(DATA_FILE, req.body);
     res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'Error guardando proyectos' }); }
+  } catch {
+    res.status(500).json({ error: "Error guardando proyectos" });
+  }
 });
 
 // ── API: Historial semanal ────────────────────────────────────────────────────
 
-// Calcula el lunes de una fecha YYYY-MM-DD (clave de semana)
 function getMondayOf(dateStr) {
-  const d   = new Date(dateStr + 'T12:00:00');
-  const day = d.getDay();
+  const d    = new Date(dateStr + "T12:00:00");
+  const day  = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
 }
 
-// Upsert por semana (lunes) — consolida en un solo registro por semana,
-// pero guarda la fecha exacta del reporte para consultas por día.
-app.post('/api/report', async (req, res) => {
+app.post("/api/report", async (req, res) => {
   try {
     const { projects, weekLabel, saved_at } = req.body;
-    if (!projects?.length) return res.status(400).json({ error: 'Sin proyectos' });
+    if (!projects?.length) return res.status(400).json({ error: "Sin proyectos" });
 
     const reportDate = projects[0].report_date || new Date().toISOString().slice(0, 10);
-    const weekKey    = getMondayOf(reportDate);   // lunes de esa semana
+    const weekKey    = getMondayOf(reportDate);
     const data       = await readJson(HISTORY_FILE, { reports: [] });
     const entry      = { week_key: weekKey, report_date: reportDate, weekLabel, saved_at: saved_at || new Date().toISOString(), projects };
 
-    // Upsert: buscar por semana, no por fecha exacta
     const idx = data.reports.findIndex(r => (r.week_key || r.report_date) === weekKey);
     if (idx >= 0) data.reports[idx] = entry;
     else          data.reports.push(entry);
@@ -154,37 +160,49 @@ app.post('/api/report', async (req, res) => {
     data.reports.sort((a, b) => b.week_key.localeCompare(a.week_key));
     await writeJson(HISTORY_FILE, data);
     res.json({ ok: true, report_date: reportDate, week_key: weekKey });
-  } catch { res.status(500).json({ error: 'Error guardando reporte' }); }
+  } catch {
+    res.status(500).json({ error: "Error guardando reporte" });
+  }
 });
 
-// Índice del historial (sin detalle de proyectos)
-app.get('/api/history', async (req, res) => {
+app.get("/api/history", async (req, res) => {
   try {
     const data = await readJson(HISTORY_FILE, { reports: [] });
-    res.json({ reports: data.reports.map(r => ({ report_date: r.report_date, weekLabel: r.weekLabel, saved_at: r.saved_at })) });
-  } catch { res.status(500).json({ error: 'Error leyendo historial' }); }
+    res.json({
+      reports: data.reports.map(r => ({
+        report_date: r.report_date,
+        weekLabel:   r.weekLabel,
+        saved_at:    r.saved_at,
+      })),
+    });
+  } catch {
+    res.status(500).json({ error: "Error leyendo historial" });
+  }
 });
 
-// Snapshot completo de una fecha concreta
-app.get('/api/history/:date', async (req, res) => {
+app.get("/api/history/:date", async (req, res) => {
   try {
     const data  = await readJson(HISTORY_FILE, { reports: [] });
     const entry = data.reports.find(r => r.report_date === req.params.date);
-    if (!entry) return res.status(404).json({ error: 'Fecha no encontrada' });
+    if (!entry) return res.status(404).json({ error: "Fecha no encontrada" });
     res.json(entry);
-  } catch { res.status(500).json({ error: 'Error leyendo historial' }); }
+  } catch {
+    res.status(500).json({ error: "Error leyendo historial" });
+  }
 });
 
 // ── Estáticos y SPA fallback ──────────────────────────────────────────────────
 
 app.use(express.static(DIST_PATH));
 app.use((req, res, next) => {
-  if (req.method === 'GET' && !req.path.startsWith('/api')) {
-    res.sendFile(path.join(DIST_PATH, 'index.html'), err => { if (err) next(err); });
-  } else next();
+  if (req.method === "GET" && !req.path.startsWith("/api")) {
+    res.sendFile(path.join(DIST_PATH, "index.html"), err => { if (err) next(err); });
+  } else {
+    next();
+  }
 });
 
-app.listen(PORT, '0.0.0.0', async () => {
+app.listen(PORT, "0.0.0.0", async () => {
   await init();
   console.log(`Servidor en puerto ${PORT}`);
 });

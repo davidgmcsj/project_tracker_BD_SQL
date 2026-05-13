@@ -4,21 +4,39 @@ import EditView     from "./components/EditView";
 import ReportView   from "./components/ReportView";
 import ProgressRing from "./components/ProgressRing";
 import {
-  globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel, isSameWeek, createDefaultProject,
+  globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
+  isSameWeek, createDefaultProject,
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
 } from "./utils/storage";
 import "./App.css";
 
+const STAT_CARDS = [
+  { dot: "done",     label: "Completadas"  },
+  { dot: "wip",      label: "En proceso"   },
+  { dot: "pending",  label: "No iniciados" },
+  { dot: "projects", label: "Proyectos"    },
+];
+
+function getStatValue(dot, stats, projects) {
+  switch (dot) {
+    case "done":     return stats.completed;
+    case "wip":      return stats.inProgress;
+    case "pending":  return stats.total - stats.completed - stats.inProgress;
+    case "projects": return projects.length;
+  }
+}
+
 export default function App() {
-  const [projects, setProjects]             = useState([]);
-  const [view, setView]                     = useState("dashboard");
-  const [editingIdx, setEditingIdx]         = useState(null);
-  const [weekLabel, setWeekLabel]           = useState(getWeekLabel());
-  const [reportDate, setReportDate]         = useState(getToday());
-  const [hasUnsavedChanges, setHasUnsaved]  = useState(false);
-  const [reportProjectIdx, setReportProjectIdx] = useState(null);
+  const [projects,          setProjects]          = useState([]);
+  const [view,              setView]              = useState("dashboard");
+  const [editingIdx,        setEditingIdx]        = useState(null);
+  const [weekLabel,         setWeekLabel]         = useState(getWeekLabel());
+  const [reportDate,        setReportDate]        = useState(getToday());
+  const [hasUnsavedChanges, setHasUnsaved]        = useState(false);
+  const [reportProjectIdx,  setReportProjectIdx]  = useState(null);
+  const [saveToast,         setSaveToast]         = useState("");
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -35,12 +53,6 @@ export default function App() {
     init();
   }, []);
 
-  const handleWeekLabelChange = async (label) => {
-    setWeekLabel(label);
-    storeWeekLabel(label);
-    await saveProjects(projects, label);
-  };
-
   // ── Persistencia ───────────────────────────────────────────────────────────
   const persist = useCallback(async (data) => {
     setProjects(data);
@@ -48,17 +60,17 @@ export default function App() {
     setHasUnsaved(false);
   }, [weekLabel]);
 
-  // ── Limpiado semanal (campos no permanentes) ──────────────────────────────
+  // ── Limpiado de campos semanales ───────────────────────────────────────────
   const applyWeekReset = async (newDate, newLabel) => {
     await saveWeekReport(projects, weekLabel);
     const next = projects.map(p => ({
       ...p,
       report_date:         newDate,
-      weekly_achievements: "",
-      next_week_plan:      "",
+      weekly_achievements: [],
+      next_week_plan:      [],
       show_closing_fields: false,
       impediments: (p.impediments || []).filter(im => im.category !== "blocker"),
-      engineers:   (p.engineers   || []).map(e => ({ ...e, weekly_total: 0, weekly_detail: "" })),
+      engineers:   (p.engineers   || []).map(e => ({ ...e, weekly_total: 0, weekly_detail: [] })),
     }));
     setReportDate(newDate);
     setWeekLabel(newLabel);
@@ -66,18 +78,16 @@ export default function App() {
     await persist(next);
   };
 
-  // ── Cambio de fecha del reporte ───────────────────────────────────────────
+  // ── Cambio de fecha del reporte ────────────────────────────────────────────
   const handleReportDateChange = async (date) => {
     if (date === reportDate) return;
 
     if (isSameWeek(date, reportDate)) {
-      // Misma semana — cambia la fecha directamente, sin confirmación
       const updated = projects.map(p => ({ ...p, report_date: date }));
       setReportDate(date);
       setProjects(updated);
       await saveProjects(updated, weekLabel);
     } else {
-      // Semana diferente — borra campos semanales
       const ok = window.confirm(
         `⚠ Cambiar a una semana diferente borrará los campos semanales de todos los proyectos:\n\n` +
         `  • Logros de esta semana\n` +
@@ -92,8 +102,7 @@ export default function App() {
     }
   };
 
-  // ── Guardar reporte (snapshot sin limpiar campos) ─────────────────────────
-  const [saveToast, setSaveToast] = useState("");
+  // ── Guardar snapshot ───────────────────────────────────────────────────────
   const handleSaveReport = async () => {
     const range = getWeekRangeLabel(reportDate);
     const ok = window.confirm(
@@ -127,7 +136,7 @@ export default function App() {
   };
 
   const addProject = () => {
-    const p = { ...createDefaultProject(), report_date: reportDate };
+    const p    = { ...createDefaultProject(), report_date: reportDate };
     const next = [...projects, p];
     setProjects(next);
     setHasUnsaved(true);
@@ -138,8 +147,8 @@ export default function App() {
   const removeProject = (idx) => {
     const next = projects.filter((_, i) => i !== idx);
     persist(next);
-    if (editingIdx === idx)      { setEditingIdx(null); setView("dashboard"); }
-    else if (editingIdx > idx)     setEditingIdx(editingIdx - 1);
+    if (editingIdx === idx)   { setEditingIdx(null); setView("dashboard"); }
+    else if (editingIdx > idx)  setEditingIdx(editingIdx - 1);
   };
 
   const reorderProjects = (fromIdx, toIdx) => {
@@ -188,8 +197,7 @@ export default function App() {
               <div className="header__date-group">
                 <label className="header__date-label">Fecha del Reporte</label>
                 <input
-                  type="date"
-                  className="header__date-input"
+                  type="date" className="header__date-input"
                   value={reportDate}
                   onChange={e => handleReportDateChange(e.target.value)}
                   title="Fecha del reporte — cambia dentro de la semana sin perder datos"
@@ -204,9 +212,15 @@ export default function App() {
         </div>
 
         <div className="header__actions">
-          <button className={`tab-btn ${view==="dashboard"?"tab-btn--active":""}`} onClick={() => navigateTo("dashboard")}>Dashboard</button>
-          <button className={`tab-btn ${view==="edit"     ?"tab-btn--active":""}`} onClick={() => navigateTo("edit")}>Editar</button>
-          <button className={`tab-btn ${view==="report"   ?"tab-btn--active":""}`} onClick={() => navigateTo("report")}>Reporte</button>
+          {["dashboard", "edit", "report"].map(v => (
+            <button
+              key={v}
+              className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
+              onClick={() => navigateTo(v)}
+            >
+              {v === "dashboard" ? "Dashboard" : v === "edit" ? "Editar" : "Reporte"}
+            </button>
+          ))}
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
         </div>
       </header>
@@ -222,15 +236,13 @@ export default function App() {
               </div>
             </div>
             <div className="summary__stats">
-              {[
-                { dot: "done",    num: stats.completed,                                     label: "Completadas" },
-                { dot: "wip",     num: stats.inProgress,                                    label: "En proceso"  },
-                { dot: "pending", num: stats.total - stats.completed - stats.inProgress,    label: "No iniciados"},
-                { dot: "projects",num: projects.length,                                     label: "Proyectos"   },
-              ].map(({ dot, num, label }) => (
+              {STAT_CARDS.map(({ dot, label }) => (
                 <div key={dot} className="stat-card">
                   <span className={`stat-card__dot stat-card__dot--${dot}`} />
-                  <div><div className="stat-card__num">{num}</div><div className="stat-card__label">{label}</div></div>
+                  <div>
+                    <div className="stat-card__num">{getStatValue(dot, stats, projects)}</div>
+                    <div className="stat-card__label">{label}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -248,7 +260,8 @@ export default function App() {
           <Dashboard
             projects={projects}
             onEdit={idx => { setEditingIdx(idx); setView("edit"); }}
-            onAdd={addProject} onViewReport={viewProjectReport}
+            onAdd={addProject}
+            onViewReport={viewProjectReport}
           />
         )}
         {view === "edit" && (

@@ -40,9 +40,6 @@
   max-width: 100%;
   margin: 0 auto;
 }
-.main-content-wrapper {
-  flex: 1;
-}
 
 /* ═══ HEADER ═══ */
 .header {
@@ -87,13 +84,6 @@
   font-size: 13px;
   color: var(--dorado);
   font-weight: 600;
-  display: block;
-}
-.header__week {
-  font-size: 14px;
-  color: var(--dorado);
-  font-weight: 600;
-  margin-top: 4px;
   display: block;
 }
 .header__actions {
@@ -413,43 +403,6 @@
   line-height: 1.3;
   margin: 0;
 }
-.project-card__progress {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.project-card__stats {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.project-card__count {
-  font-size: 13px;
-  color: var(--text-2);
-  font-weight: 500;
-}
-.project-card__wip {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.project-card__note {
-  font-size: 12px;
-  color: var(--text-2);
-  line-height: 1.5;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.project-card__note-icon {
-  color: var(--teal);
-  margin-right: 6px;
-}
-.project-card__note--dates {
-  color: var(--azul-claro);
-  font-weight: 600;
-}
 
 /* ═══ ADD CARD ═══ */
 .add-card {
@@ -703,46 +656,6 @@
   color: var(--text-2);
   margin-bottom: 12px;
   font-weight: 500;
-}
-.report-project__details {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.report-item__label {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--dorado);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.report-item__text {
-  font-size: 14px;
-  color: var(--text);
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.bullet-list {
-  display: block;
-  padding-left: 4px;
-}
-.bullet-list::first-line {
-  line-height: 1;
-}
-.bullet-list {
-  white-space: pre-line;
-}
-/* Estilo para simular viñetas en el HTML */
-.bullet-list::before {
-  content: "";
-}
-/* Usaremos una aproximación simple procesando el texto o via CSS */
-.report-item__text.bullet-list {
-  border-left: 3px solid var(--accent-bg);
-  padding-left: 12px;
-  font-style: italic;
 }
 
 /* ═══ HEADER META (etiqueta semana + fecha reporte) ═══ */
@@ -1177,14 +1090,6 @@
   flex-shrink: 0;
 }
 
-/* ═══ REPORT ITEM IMPACT ═══ */
-.report-item--impact .report-item__label {
-  color: var(--red);
-}
-.report-item--impact .report-item__text {
-  border-left-color: var(--red-bg);
-}
-
 /* ═══ TOAST ═══ */
 .toast {
   background: var(--green);
@@ -1578,30 +1483,43 @@
   color: var(--azul-claro);
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 3px 4px 3px 10px;
   border-radius: 20px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 200px;
+  gap: 0;
+  max-width: 280px;
+  white-space: nowrap;
+}
+.act-selector__chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
-.act-selector__chip button {
-  background: none;
+.act-selector__chip-remove {
+  background: rgba(43, 95, 170, 0.15);
   border: none;
   color: var(--azul-claro);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 800;
   cursor: pointer;
   padding: 0;
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   line-height: 1;
-  opacity: 0.6;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
 }
-.act-selector__chip button:hover {
-  opacity: 1;
-  color: var(--red);
+.act-selector__chip-remove:hover {
+  background: var(--red);
+  color: white;
 }
 
 /* ═══ MILESTONE / COMMENT EDITOR (EditView) ═══ */

@@ -1,10 +1,10 @@
 import { GlobalMetricsTable, ProjectMetricsTableCompact } from "./MetricsTable";
 
 const STATUS = {
-  "on-track": { label:"En curso",   cssClass:"on-track", icon:"🟡" },
-  "at-risk":  { label:"En riesgo",  cssClass:"at-risk",  icon:"🟠" },
-  blocked:    { label:"Bloqueado",  cssClass:"blocked",  icon:"🔴" },
-  completed:  { label:"Completado", cssClass:"completed",icon:"🟢" },
+  "on-track": { label: "En curso",   cssClass: "on-track", icon: "🟡" },
+  "at-risk":  { label: "En riesgo",  cssClass: "at-risk",  icon: "🟠" },
+  blocked:    { label: "Bloqueado",  cssClass: "blocked",  icon: "🔴" },
+  completed:  { label: "Completado", cssClass: "completed",icon: "🟢" },
 };
 
 export default function Dashboard({ projects, onEdit, onAdd, onViewReport }) {
@@ -24,8 +24,8 @@ export default function Dashboard({ projects, onEdit, onAdd, onViewReport }) {
             <div key={p.id} className="project-card" onClick={() => onEdit(i)}>
               <div className="project-card__header">
                 <h3 className="project-card__name">
-                  <span style={{ marginRight:6 }}>{st.icon}</span>
-                  {p.project_name || `Proyecto ${i+1}`}
+                  <span style={{ marginRight: 6 }}>{st.icon}</span>
+                  {p.project_name || `Proyecto ${i + 1}`}
                 </h3>
                 <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
               </div>
@@ -33,7 +33,7 @@ export default function Dashboard({ projects, onEdit, onAdd, onViewReport }) {
                 <ProjectMetricsTableCompact project={p} />
               </div>
               <div className="project-card__actions" onClick={e => e.stopPropagation()}>
-                <button className="btn btn--card-report" onClick={() => onViewReport(i)} title="Ver reporte individual">
+                <button className="btn btn--card-report" onClick={() => onViewReport(i)}>
                   📄 Ver reporte
                 </button>
               </div>
