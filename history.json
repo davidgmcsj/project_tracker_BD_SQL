@@ -3,7 +3,7 @@
     {
       "report_date": "2026-05-14",
       "weekLabel": "Semana 19 — 13 May 2026",
-      "saved_at": "2026-05-14T16:51:15.861Z",
+      "saved_at": "2026-05-14T17:09:32.454Z",
       "projects": [
         {
           "id": "mp1pu3nh4va",
@@ -147,7 +147,33 @@
             }
           ],
           "indicators": [],
-          "impediments": []
+          "impediments": [],
+          "task_status": {
+            "completed": [
+              "1. Mejora Reportes GTH",
+              "11. Indice electrónico (archivo digital)",
+              "12. Mejoras en declinaciones de permisos"
+            ],
+            "in_progress": [
+              "2. Cambio funcionalidad en actuación de nombramiento (manejo de escaleras)",
+              "3. Actuación Traslados",
+              "4. Actuación Desvinculación por Traslado",
+              "5. Módulo de carga de actas de posesión físicas",
+              "6. Creación de actuación disfrute de vacaciones",
+              "7. Creación de actuación permiso de estudio.",
+              "8. Habilitación Eliminación Actuaciones de Nombramientos",
+              "9. Visualización en novedades del estado de traslados o nombramientos",
+              "10. Marca o indicador para saber si las actuaciones se crearon en el módulo histórico.",
+              "18. Mejora visual ficha servidor"
+            ],
+            "not_started": [
+              "13. Desarrollo certificados para personas desvinculadas",
+              "14. Análisis para separar los campos de distrito, sala y especialidad para filtrar en magistrados de tribunal.",
+              "15. Mejora en actuaciones respecto a declinaciones (comisiones)",
+              "16. Análisis para evaluar desvinculación sometida a plazo o condición.",
+              "17. Automatización cálculo de días restantes en las novedades de permisos"
+            ]
+          }
         },
         {
           "id": "mp1pu3nhi8h",
@@ -594,9 +620,9 @@
           "planner_url": "https://planner.cloud.microsoft/webui/v1/plan/7Dc17HwgRkCBndeL4ssuUmQAA3fw?tid=622cba98-80f8-41f3-8df5-8eb99901598b",
           "report_date": "2026-05-14",
           "manual_metrics": {
-            "total_tasks": 25,
+            "total_tasks": 27,
             "completed_tasks": 19,
-            "in_progress_tasks": 4,
+            "in_progress_tasks": 6,
             "shared_tasks_discount": 9
           },
           "activities_identified": [
@@ -625,7 +651,9 @@
             "Pruebas subsanación",
             "Verificar y asegurar la conectividad del servidor de ESAV con el bus de servicios",
             "Obtener documento soporte en el envío a Corte Constitucional: Obtener documento",
-            "Inicio de Pruebas con usuario final"
+            "Inicio de Pruebas con usuario final",
+            "Obtener fecha de actuación del fallo: Validar que haya actuación de notificación de fallo. Si la hay tomar fecha de notificación de fallo de esa actuación. Para segunda instancia buscar la actuación de notificación del fallo de segunda instancia. Si no se ha notificado no se envía.",
+            "Revisar y habilitar pantalla de consulta de procesos enviados."
           ],
           "weekly_achievements": [],
           "next_week_plan": [],
@@ -721,7 +749,9 @@
               "19. Apoyo en el proceso de puesta en producción de envío de tutelas",
               "20. Visualizar mensaje en tabla: Mostrar mensaje de resultado de consumo de servicio de envío a Corte Constitucional dentro de la tabla de trazabilidad desde el momento de envío",
               "21. Habilitar opciones de subsanación y retiro: Habilitar en ambientes no productivos las opciones de subsanación y retiro de expediente",
-              "22. Realizar informe de desarrollos: Realizar documento con informe de desarrollos realizados"
+              "22. Realizar informe de desarrollos: Realizar documento con informe de desarrollos realizados",
+              "27. Obtener fecha de actuación del fallo: Validar que haya actuación de notificación de fallo. Si la hay tomar fecha de notificación de fallo de esa actuación. Para segunda instancia buscar la actuación de notificación del fallo de segunda instancia. Si no se ha notificado no se envía.",
+              "28. Revisar y habilitar pantalla de consulta de procesos enviados."
             ]
           }
         },
@@ -784,6 +814,39 @@
               "18. Puesta en producción del aplicativo"
             ]
           }
+        },
+        {
+          "id": "mp5qsnbi6nvt0",
+          "project_name": "PRO-29-Migracion Directorio Activo",
+          "status": "on-track",
+          "planner_url": "https://planner.cloud.microsoft/webui/v1/plan/raTwCp9DvEOgK2lvgDRljWQADkuN?tid=622cba98-80f8-41f3-8df5-8eb99901598b",
+          "report_date": "2026-05-14",
+          "manual_metrics": {
+            "total_tasks": 2,
+            "completed_tasks": 2,
+            "in_progress_tasks": 0,
+            "shared_tasks_discount": 0
+          },
+          "activities_identified": [
+            "Reunión de Levantamiento y definición de arquitectura",
+            "Diagrama estado actual del infraestructura"
+          ],
+          "weekly_achievements": [],
+          "next_week_plan": [],
+          "show_closing_fields": false,
+          "task_status": {
+            "completed": [
+              "1. Reunión de Levantamiento y definición de arquitectura",
+              "2. Diagrama estado actual del infraestructura"
+            ],
+            "in_progress": [],
+            "not_started": []
+          },
+          "milestones": [],
+          "comments": [],
+          "engineers": [],
+          "indicators": [],
+          "impediments": []
         },
         {
           "id": "mp1pu3nhsru",
