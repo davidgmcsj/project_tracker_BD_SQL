@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator,
@@ -529,6 +529,110 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
   );
 }
 
+// ── Combobox de actividad con búsqueda integrada ──────────────────────────────
+
+function ActivitySelect({ value, activities, onChange }) {
+  const [open,  setOpen]  = useState(false);
+  const [query, setQuery] = useState("");
+  const rootRef  = useRef(null);
+  const inputRef = useRef(null);
+
+  const opts = safeArr(activities).map((act, ai) => `${ai + 1}. ${act}`);
+  const visible = opts.filter(o => matchesSearch(o, query));
+
+  const select = (opt) => {
+    onChange(opt);
+    setOpen(false);
+    setQuery("");
+  };
+
+  const clear = (e) => {
+    e.stopPropagation();
+    onChange("");
+    setOpen(false);
+    setQuery("");
+  };
+
+  // Cierra el dropdown al hacer clic fuera
+  useEffect(() => {
+    const handler = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleOpen = () => {
+    setOpen(true);
+    setQuery("");
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  return (
+    <div className="act-entry-select" ref={rootRef}>
+      {/* Trigger — muestra el valor seleccionado */}
+      <div
+        className={`act-entry-select__trigger ${open ? "act-entry-select__trigger--open" : ""}`}
+        onClick={handleOpen}
+        tabIndex={0}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(); } }}
+      >
+        <span className={`act-entry-select__trigger-text ${!value ? "act-entry-select__trigger-text--placeholder" : ""}`}>
+          {value || "— Sin actividad —"}
+        </span>
+        <div className="act-entry-select__trigger-icons">
+          {value && (
+            <button type="button" className="act-entry-select__x" onClick={clear} title="Quitar selección">✕</button>
+          )}
+          <span className="act-entry-select__arrow">{open ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="act-entry-select__dropdown">
+          <div className="act-entry-select__search">
+            <input
+              ref={inputRef}
+              className="act-entry-select__search-input"
+              type="text" placeholder="Buscar actividad…"
+              value={query} onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Escape") setOpen(false);
+                if (e.key === "Enter" && visible.length === 1) select(visible[0]);
+              }}
+            />
+            {query && (
+              <button type="button" className="act-entry-select__search-clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
+            )}
+          </div>
+          <ul className="act-entry-select__list">
+            <li
+              className={`act-entry-select__opt act-entry-select__opt--none ${!value ? "act-entry-select__opt--active" : ""}`}
+              onMouseDown={() => select("")}
+            >
+              — Sin actividad —
+            </li>
+            {visible.length === 0 ? (
+              <li className="act-entry-select__opt act-entry-select__opt--empty">Sin coincidencias</li>
+            ) : (
+              visible.map((opt) => (
+                <li
+                  key={opt}
+                  className={`act-entry-select__opt ${value === opt ? "act-entry-select__opt--active" : ""}`}
+                  onMouseDown={() => select(opt)}
+                >
+                  {opt}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Fechas clave estructuradas ────────────────────────────────────────────────
 
 function ActivityEntryList({ items, activities, textField, placeholder, onChange }) {
@@ -556,16 +660,11 @@ function ActivityEntryList({ items, activities, textField, placeholder, onChange
               <div className="milestone-row__fields">
                 <div className="field" style={{ flex: 2, minWidth: 0 }}>
                   <label className="field__label" style={{ fontSize: "11px" }}>Actividad</label>
-                  <select
-                    className="field__input" value={item.activity || ""}
-                    onChange={e => update(item._idx, "activity", e.target.value)}
-                  >
-                    <option value="">— Sin actividad —</option>
-                    {safeArr(activities).map((act, ai) => {
-                      const lbl = `${ai + 1}. ${act}`;
-                      return <option key={ai} value={lbl}>{lbl}</option>;
-                    })}
-                  </select>
+                  <ActivitySelect
+                    value={item.activity || ""}
+                    activities={activities}
+                    onChange={val => update(item._idx, "activity", val)}
+                  />
                 </div>
                 <div className="field" style={{ flex: "0 0 160px" }}>
                   <label className="field__label" style={{ fontSize: "11px" }}>Fecha</label>
