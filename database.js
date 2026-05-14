@@ -1,17 +1,18 @@
-const sql = require('mssql');
+import sql from 'mssql';
+import 'dotenv/config';
 
 const config = {
-    user: 'project_tracker', // El usuario que creaste
-    password: 'David..2248098', // La contraseña que pusiste
-    server: 'localhost', 
-    database: 'DB_SeguimientoProyectos',
+    user:     process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server:   process.env.DB_SERVER,
+    database: process.env.DB_NAME,
     options: {
-        encrypt: false, // Ponlo en false si es local
-        trustServerCertificate: true // Necesario para desarrollo local
+        encrypt: false,
+        trustServerCertificate: true,
     }
 };
 
-async function getConnection() {
+export async function getConnection() {
     try {
         const pool = await sql.connect(config);
         return pool;
@@ -20,7 +21,4 @@ async function getConnection() {
     }
 }
 
-module.exports = {
-    sql,
-    getConnection
-};
+export { sql };

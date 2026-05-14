@@ -1,6 +1,12 @@
 const express = require("express");
 const fs      = require("fs").promises;
 const path    = require("path");
+require("dotenv/config");
+
+const { saveWeekReportToDB } = (() => {
+  try { return require("./db-operations.cjs"); }
+  catch { console.warn("db-operations no disponible — solo JSON"); return { saveWeekReportToDB: null }; }
+})();
 
 // ── Configuración ─────────────────────────────────────────────────────────────
 
@@ -159,6 +165,13 @@ app.post("/api/report", async (req, res) => {
 
     data.reports.sort((a, b) => b.week_key.localeCompare(a.week_key));
     await writeJson(HISTORY_FILE, data);
+
+    // Escritura dual — SQL Server en paralelo, fallo silencioso
+    if (saveWeekReportToDB) {
+      saveWeekReportToDB(projects, weekLabel, entry.saved_at)
+        .catch(e => console.error("[SQL] Error guardando reporte:", e.message));
+    }
+
     res.json({ ok: true, report_date: reportDate, week_key: weekKey });
   } catch {
     res.status(500).json({ error: "Error guardando reporte" });

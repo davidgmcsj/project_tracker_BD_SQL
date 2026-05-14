@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Credenciales — nunca subir al repositorio
+.env
+
 # Datos locales — en Azure viven en /home/data/data.json
 data.json
 data.json.bak
