@@ -206,6 +206,37 @@ function CommentSection({ comments }) {
   );
 }
 
+function TaskStatusSection({ taskStatus }) {
+  if (!taskStatus || typeof taskStatus !== "object") return null;
+  const done = (taskStatus.completed   || []).filter(Boolean);
+  const wip  = (taskStatus.in_progress || []).filter(Boolean);
+  const not  = (taskStatus.not_started || []).filter(Boolean);
+  if (!done.length && !wip.length && !not.length) return null;
+
+  const cols = [
+    { items: done, label: "Completadas",  icon: "✅", variant: "green" },
+    { items: wip,  label: "En proceso",   icon: "🔄", variant: "amber" },
+    { items: not,  label: "No iniciadas", icon: "○",  variant: "gray"  },
+  ].filter(c => c.items.length > 0);
+
+  return (
+    <div className="rpt-task-status">
+      {cols.map(col => (
+        <div key={col.label} className={`rpt-section rpt-section--${col.variant}`}>
+          <div className="rpt-section__header">
+            <span className="rpt-section__icon">{col.icon}</span>
+            <span className="rpt-section__label">{col.label}</span>
+            <span className="rpt-section__count">{col.items.length}</span>
+          </div>
+          <ul className="rpt-bullets">
+            {col.items.map((item, i) => <li key={i} className="rpt-bullets__item">{item}</li>)}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EngineerWeekCard({ eng }) {
   const name  = eng.engineer_id === "Otro..." ? (eng.custom_name || "—") : (eng.engineer_id || "—");
   const lines = toLines(eng.weekly_detail);
@@ -265,6 +296,8 @@ function ProjectReport({ p, i }) {
       <div className="report-project__metrics">
         <ProjectMetricsTable project={p} />
       </div>
+
+      <TaskStatusSection taskStatus={p.task_status} />
 
       <div className="rpt-sections-grid">
         <BulletSection fieldKey="activities_identified" value={p.activities_identified} />

@@ -94,6 +94,7 @@ export function createDefaultProject() {
     weekly_achievements:   [],
     next_week_plan:        [],
     show_closing_fields:   false,
+    task_status: { completed: [], in_progress: [], not_started: [] },
     milestones:  [],
     comments:    [],
     engineers:   [],
@@ -200,6 +201,17 @@ function projectBlock(p, i) {
   }
 
   if (acts.length) txt += `• Actividades Identificadas:\n${arrToNumbered(acts)}\n\n`;
+
+  const ts = p.task_status || {};
+  const tsDone = Array.isArray(ts.completed)   ? ts.completed.filter(Boolean)   : [];
+  const tsWip  = Array.isArray(ts.in_progress) ? ts.in_progress.filter(Boolean) : [];
+  const tsNot  = Array.isArray(ts.not_started) ? ts.not_started.filter(Boolean) : [];
+  if (tsDone.length || tsWip.length || tsNot.length) {
+    txt += `ESTADO DE ACTIVIDADES\n${"─".repeat(60)}\n`;
+    if (tsDone.length) { txt += `✅ Completadas (${tsDone.length}):\n${arrToBullets(tsDone)}\n\n`; }
+    if (tsWip.length)  { txt += `🔄 En proceso (${tsWip.length}):\n${arrToBullets(tsWip)}\n\n`; }
+    if (tsNot.length)  { txt += `○ No iniciadas (${tsNot.length}):\n${arrToBullets(tsNot)}\n\n`; }
+  }
 
   const byCategory = {};
   (p.impediments || []).forEach(im => { (byCategory[im.category] ||= []).push(im); });

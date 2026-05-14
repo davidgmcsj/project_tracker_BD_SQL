@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator,
@@ -45,6 +45,29 @@ function safeArr(val) {
   if (Array.isArray(val)) return val;
   if (!val) return [];
   return val.split("\n").map(s => s.trim()).filter(Boolean);
+}
+
+// Filtra items: todas las palabras del query deben aparecer en el texto (case-insensitive)
+function matchesSearch(text, query) {
+  if (!query.trim()) return true;
+  const lower = text.toLowerCase();
+  return query.trim().toLowerCase().split(/\s+/).every(word => lower.includes(word));
+}
+
+// Hook para drag-and-drop de reordenamiento dentro de una lista
+function useDragSort(items, onChange) {
+  const dragIdx = useRef(null);
+  const onDragStart = useCallback((i) => { dragIdx.current = i; }, []);
+  const onDrop      = useCallback((i) => {
+    const src = dragIdx.current;
+    if (src === null || src === i) return;
+    const next = [...items];
+    const [moved] = next.splice(src, 1);
+    next.splice(i, 0, moved);
+    onChange(next);
+    dragIdx.current = null;
+  }, [items, onChange]);
+  return { onDragStart, onDrop };
 }
 
 // ── Modal de confirmación de eliminación ──────────────────────────────────────
@@ -179,6 +202,7 @@ function ActivitiesList({ activities, onChange }) {
 // ── Selector de actividades (multi-select con límite) ─────────────────────────
 
 function ActivitySelector({ label, activities, selected, limit, onChange }) {
+  const [query, setQuery] = useState("");
   const acts   = safeArr(activities);
   const selArr = safeArr(selected);
 
@@ -188,6 +212,10 @@ function ActivitySelector({ label, activities, selected, limit, onChange }) {
     onChange([...selArr, item]);
   };
   const toggle = (item) => selArr.includes(item) ? deselect(item) : select(item);
+
+  const { onDragStart, onDrop } = useDragSort(selArr, onChange);
+
+  const visible = acts.filter(act => matchesSearch(`${act}`, query));
 
   return (
     <div className="act-selector">
@@ -201,23 +229,38 @@ function ActivitySelector({ label, activities, selected, limit, onChange }) {
       </div>
 
       {acts.length > 0 ? (
-        <div className="act-selector__list">
-          {acts.map((act, i) => {
-            const item     = `${i + 1}. ${act}`;
-            const checked  = selArr.includes(item);
-            const disabled = !checked && limit && selArr.length >= limit;
-            return (
-              <label
-                key={i}
-                className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""}`}
-              >
-                <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(item)} />
-                <span className="act-selector__num">{i + 1}.</span>
-                <span className="act-selector__text">{act}</span>
-              </label>
-            );
-          })}
-        </div>
+        <>
+          <div className="act-selector__search">
+            <input
+              className="act-selector__search-input"
+              type="text" placeholder="Buscar actividad…"
+              value={query} onChange={e => setQuery(e.target.value)}
+            />
+            {query && (
+              <button type="button" className="act-selector__search-clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
+            )}
+          </div>
+          <div className="act-selector__list">
+            {visible.length === 0 ? (
+              <p className="act-selector__empty">Sin coincidencias para "{query}"</p>
+            ) : visible.map((act) => {
+              const origIdx = acts.indexOf(act);
+              const item    = `${origIdx + 1}. ${act}`;
+              const checked  = selArr.includes(item);
+              const disabled = !checked && limit && selArr.length >= limit;
+              return (
+                <label
+                  key={origIdx}
+                  className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""}`}
+                >
+                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(item)} />
+                  <span className="act-selector__num">{origIdx + 1}.</span>
+                  <span className="act-selector__text">{act}</span>
+                </label>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <p className="act-selector__empty">
           Primero agrega actividades identificadas para poder seleccionarlas aquí.
@@ -228,7 +271,15 @@ function ActivitySelector({ label, activities, selected, limit, onChange }) {
         <div className="act-selector__selected">
           <span className="act-selector__selected-label">Seleccionadas:</span>
           {selArr.map((s, i) => (
-            <span key={i} className="act-selector__chip">
+            <span
+              key={i} className="act-selector__chip"
+              draggable
+              onDragStart={() => onDragStart(i)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => onDrop(i)}
+              title="Arrastra para reordenar"
+            >
+              <span className="act-selector__chip-grip">⠿</span>
               <span className="act-selector__chip-text">{s}</span>
               <button type="button" className="act-selector__chip-remove" onClick={() => deselect(s)} title="Quitar selección">✕</button>
             </span>
@@ -340,6 +391,30 @@ function IndicatorRow({ ind, index, onChange, onRemove }) {
   );
 }
 
+// ── Lista de seleccionadas con drag-to-reorder ────────────────────────────────
+
+function SelectedList({ items, onChange }) {
+  const { onDragStart, onDrop } = useDragSort(items, onChange);
+  return (
+    <ol className="engineer-selected__list">
+      {items.map((item, i) => (
+        <li
+          key={i} className="engineer-selected__item"
+          draggable
+          onDragStart={() => onDragStart(i)}
+          onDragOver={e => e.preventDefault()}
+          onDrop={() => onDrop(i)}
+          title="Arrastra para reordenar"
+        >
+          <span className="engineer-selected__grip">⠿</span>
+          <span className="engineer-selected__num">{i + 1}.</span>
+          <span className="engineer-selected__text">{item}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 // ── Fila de ingeniero ─────────────────────────────────────────────────────────
 
 function EngineerRow({ eng, index, onChange, onRemove, activities }) {
@@ -385,6 +460,7 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
       </div>
 
       <div className="engineer-card__sections">
+        {/* ── Global ── */}
         <div className="engineer-section">
           <div className="engineer-section__title">Global</div>
           <div className="engineer-header">
@@ -408,6 +484,7 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
           {isOverGlobal && <div style={{ color: "var(--red)", fontSize: "12px", fontWeight: 600 }}>⚠ Completadas + en proceso supera las asignadas.</div>}
         </div>
 
+        {/* ── Esta semana ── */}
         <div className="engineer-section">
           <div className="engineer-section__title">Esta semana</div>
           <div className="engineer-week-simple">
@@ -431,6 +508,21 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
               onChange={val => onChange(index, "weekly_detail", val)}
             />
           </div>
+        </div>
+
+        {/* ── Seleccionadas ── */}
+        <div className="engineer-section">
+          <div className="engineer-section__title">
+            Seleccionadas
+            {weeklyArr.length > 0 && (
+              <span className="engineer-selected__count">{weeklyArr.length}</span>
+            )}
+          </div>
+          {weeklyArr.length === 0 ? (
+            <p className="engineer-selected__empty">Selecciona actividades en "Esta semana"</p>
+          ) : (
+            <SelectedList items={weeklyArr} onChange={val => onChange(index, "weekly_detail", val)} />
+          )}
         </div>
       </div>
     </div>
@@ -502,6 +594,135 @@ function ActivityEntryList({ items, activities, textField, placeholder, onChange
         </div>
       ))}
     </>
+  );
+}
+
+// ── Clasificador de estado de actividades ─────────────────────────────────────
+
+const TASK_STATUS_COLS = [
+  { key: "completed",   label: "Completadas",  icon: "✅", variant: "green"  },
+  { key: "in_progress", label: "En proceso",   icon: "🔄", variant: "amber"  },
+  { key: "not_started", label: "No iniciadas", icon: "○",  variant: "gray"   },
+];
+
+function TaskStatusSelector({ taskStatus, activities, onChange }) {
+  const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
+  const acts = safeArr(activities);
+
+  // Todas las actividades ya asignadas en cualquier columna
+  const assigned = new Set([
+    ...safeArr(ts.completed),
+    ...safeArr(ts.in_progress),
+    ...safeArr(ts.not_started),
+  ]);
+
+  const update = (colKey, newArr) => onChange({ ...ts, [colKey]: newArr });
+
+  const move = (item, toKey) => {
+    const next = {
+      completed:   safeArr(ts.completed).filter(s => s !== item),
+      in_progress: safeArr(ts.in_progress).filter(s => s !== item),
+      not_started: safeArr(ts.not_started).filter(s => s !== item),
+    };
+    next[toKey] = [...next[toKey], item];
+    onChange(next);
+  };
+
+  const remove = (item) => onChange({
+    completed:   safeArr(ts.completed).filter(s => s !== item),
+    in_progress: safeArr(ts.in_progress).filter(s => s !== item),
+    not_started: safeArr(ts.not_started).filter(s => s !== item),
+  });
+
+  const add = (item, toKey) => {
+    if (assigned.has(item)) return;
+    onChange({ ...ts, [toKey]: [...safeArr(ts[toKey]), item] });
+  };
+
+  // Actividades sin asignar aún
+  const unassigned = acts.map((act, i) => `${i + 1}. ${act}`).filter(item => !assigned.has(item));
+
+  return (
+    <div className="task-status-board">
+      {/* Panel de actividades disponibles */}
+      {unassigned.length > 0 && (
+        <div className="task-status-unassigned">
+          <div className="task-status-unassigned__label">Actividades sin clasificar</div>
+          {unassigned.map((item, i) => (
+            <div key={i} className="task-status-unassigned__item">
+              <span className="task-status-unassigned__text">{item}</span>
+              <div className="task-status-unassigned__actions">
+                {TASK_STATUS_COLS.map(col => (
+                  <button
+                    key={col.key} type="button"
+                    className={`task-status-unassigned__btn task-status-unassigned__btn--${col.variant}`}
+                    title={`Mover a ${col.label}`}
+                    onClick={() => add(item, col.key)}
+                  >
+                    {col.icon}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tres columnas */}
+      <div className="task-status-cols">
+        {TASK_STATUS_COLS.map(col => {
+          const items = safeArr(ts[col.key]);
+          const { onDragStart: colDragStart, onDrop: colDrop } = useDragSort(items, (reordered) => update(col.key, reordered));
+          return (
+            <div key={col.key} className={`task-status-col task-status-col--${col.variant}`}>
+              <div className="task-status-col__header">
+                <span className="task-status-col__icon">{col.icon}</span>
+                <span className="task-status-col__label">{col.label}</span>
+                <span className="task-status-col__count">{items.length}</span>
+              </div>
+              {items.length === 0 ? (
+                <p className="task-status-col__empty">Sin actividades</p>
+              ) : (
+                <ul className="task-status-col__list">
+                  {items.map((item, i) => {
+                    const otherCols = TASK_STATUS_COLS.filter(c => c.key !== col.key);
+                    return (
+                      <li
+                        key={i} className="task-status-col__item"
+                        draggable
+                        onDragStart={() => colDragStart(i)}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={() => colDrop(i)}
+                        title="Arrastra para reordenar"
+                      >
+                        <span className="task-status-col__item__grip">⠿</span>
+                        <span className="task-status-col__item-text">{item}</span>
+                        <div className="task-status-col__item-actions">
+                          {otherCols.map(other => (
+                            <button
+                              key={other.key} type="button"
+                              className="task-status-col__move-btn"
+                              title={`Mover a ${other.label}`}
+                              onClick={() => move(item, other.key)}
+                            >
+                              {other.icon}
+                            </button>
+                          ))}
+                          <button
+                            type="button" className="task-status-col__remove-btn"
+                            title="Quitar de la lista" onClick={() => remove(item)}
+                          >✕</button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -686,7 +907,24 @@ export default function EditView({
             onChange={val => onUpdateProject(editingIdx, "activities_identified", val)}
           />
 
-          {/* ══ 4. Indicadores ══ */}
+          {/* ══ 4. Estado de actividades ══ */}
+          {activities.length > 0 && (
+            <div className="field field--optional">
+              <label className="field__label" style={{ marginBottom: 10 }}>
+                Estado de Actividades
+                <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
+                  Clasifica cada actividad en su estado actual
+                </span>
+              </label>
+              <TaskStatusSelector
+                taskStatus={p.task_status}
+                activities={activities}
+                onChange={val => onUpdateProject(editingIdx, "task_status", val)}
+              />
+            </div>
+          )}
+
+          {/* ══ 6. Indicadores ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Indicadores</label>
@@ -703,7 +941,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 5. Impedimentos ══ */}
+          {/* ══ 7. Impedimentos ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Impedimentos y Riesgos</label>
@@ -725,7 +963,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 6. Ingenieros ══ */}
+          {/* ══ 8. Ingenieros ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Equipo de Ingenieros</label>
@@ -753,7 +991,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 7. Cierre semanal ══ */}
+          {/* ══ 9. Cierre semanal ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Sección de Cierre</label>
@@ -793,14 +1031,14 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 8. Fechas clave ══ */}
+          {/* ══ 10. Fechas clave ══ */}
           <MilestoneList
             milestones={p.milestones}
             activities={activities}
             onChange={val => onUpdateProject(editingIdx, "milestones", val)}
           />
 
-          {/* ══ 9. Comentarios ══ */}
+          {/* ══ 11. Comentarios ══ */}
           <CommentList
             comments={p.comments}
             activities={activities}
