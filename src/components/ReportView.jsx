@@ -35,6 +35,7 @@ function fmtDate(dateStr) {
   return `${d} ${MONTHS_SHORT[m - 1]} ${y}`;
 }
 
+
 function toLines(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter(Boolean);
@@ -115,23 +116,7 @@ function ImpedimentSection({ impediments }) {
 }
 
 function MilestoneSection({ milestones }) {
-  if (!milestones || (Array.isArray(milestones) && !milestones.length)) return null;
-
-  if (typeof milestones === "string") {
-    const lines = milestones.split("\n").map(l => l.trim()).filter(Boolean);
-    if (!lines.length) return null;
-    return (
-      <div className="rpt-section rpt-section--teal">
-        <div className="rpt-section__header">
-          <span className="rpt-section__icon">📅</span>
-          <span className="rpt-section__label">Fechas Clave</span>
-          <span className="rpt-section__count">{lines.length}</span>
-        </div>
-        <ul className="rpt-bullets">{lines.map((l, i) => <li key={i} className="rpt-bullets__item">{l}</li>)}</ul>
-      </div>
-    );
-  }
-
+  if (!Array.isArray(milestones) || !milestones.length) return null;
   const validItems = milestones.filter(m => m.date || m.note);
   if (!validItems.length) return null;
   const groups = groupByActivity(validItems);
@@ -161,23 +146,7 @@ function MilestoneSection({ milestones }) {
 }
 
 function CommentSection({ comments }) {
-  if (!comments || (Array.isArray(comments) && !comments.length)) return null;
-
-  if (typeof comments === "string") {
-    const lines = comments.split("\n").map(l => l.trim()).filter(Boolean);
-    if (!lines.length) return null;
-    return (
-      <div className="rpt-section rpt-section--gray">
-        <div className="rpt-section__header">
-          <span className="rpt-section__icon">💬</span>
-          <span className="rpt-section__label">Comentarios</span>
-          <span className="rpt-section__count">{lines.length}</span>
-        </div>
-        <ul className="rpt-bullets">{lines.map((l, i) => <li key={i} className="rpt-bullets__item">{l}</li>)}</ul>
-      </div>
-    );
-  }
-
+  if (!Array.isArray(comments) || !comments.length) return null;
   const validItems = comments.filter(c => c.text);
   if (!validItems.length) return null;
   const groups = groupByActivity(validItems);

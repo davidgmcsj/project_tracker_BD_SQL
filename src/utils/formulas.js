@@ -1,3 +1,10 @@
+// formulas.js — Toda la lógica de cálculo y generación de texto del reporte.
+//
+// Si quieres cambiar CÓMO se calcula el avance → edita projectProgress().
+// Si quieres cambiar el TEXTO del reporte copiado al portapapeles → edita projectBlock() y generateReportText().
+// Si quieres cambiar las fechas/labels del encabezado → edita getWeekLabel() y getWeekRangeLabel().
+// Si quieres cambiar la estructura de un proyecto nuevo → edita createDefaultProject().
+
 // ── Fecha ────────────────────────────────────────────────────────────────────
 
 const MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -11,14 +18,6 @@ export function getWeekLabel() {
 
 export function getToday() {
   return new Date().toISOString().slice(0, 10);
-}
-
-export function getCurrentFriday() {
-  const now  = new Date();
-  const diff = now.getDay() <= 5 ? 5 - now.getDay() : 6;
-  const fri  = new Date(now);
-  fri.setDate(now.getDate() + diff);
-  return fri.toISOString().slice(0, 10);
 }
 
 export function getMondayOf(dateStr) {
@@ -35,6 +34,7 @@ export function isSameWeek(dateA, dateB) {
 export function getNextFriday() {
   const now  = new Date();
   const day  = now.getDay();
+  // Si hoy es antes del viernes, saltar al viernes de la PRÓXIMA semana
   const diff = day < 5 ? 5 - day + 7 : day === 5 ? 7 : 6;
   const fri  = new Date(now);
   fri.setDate(now.getDate() + diff);
@@ -53,11 +53,17 @@ export function getWeekRangeLabel(dateStr) {
 
 // ── Cálculos ──────────────────────────────────────────────────────────────────
 
+// FÓRMULA DE AVANCE POR PROYECTO:
+// Las tareas en proceso cuentan como 0.5 (medio punto) porque están iniciadas
+// pero no terminadas. Esto da un avance más realista que contar solo completadas.
+// Para cambiar el peso de "en proceso", modifica el 0.5 por el valor deseado.
 export function projectProgress(total, completed, inProgress) {
   if (!total || total <= 0) return 0;
   return Math.min(((Number(completed) + Number(inProgress) * 0.5) / Number(total)) * 100, 100);
 }
 
+// AVANCE GLOBAL: promedio simple de todos los proyectos que tienen tareas definidas.
+// Proyectos sin tareas (total_tasks = 0) se excluyen para no distorsionar el promedio.
 export function globalProgress(projects) {
   const active = projects.filter(p => Number(p.manual_metrics?.total_tasks || 0) > 0);
   if (!active.length) return 0;
@@ -77,6 +83,9 @@ export function globalStats(projects) {
 
 // ── Modelo de datos ───────────────────────────────────────────────────────────
 
+// ESTRUCTURA DE UN PROYECTO: aquí se definen todos los campos con sus valores por defecto.
+// Si necesitas agregar un campo nuevo a todos los proyectos, agrégalo aquí.
+// Los proyectos existentes NO tendrán el campo hasta que se editen y guarden.
 export function createDefaultProject() {
   return {
     id:           Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -118,6 +127,8 @@ export const createDefaultIndicator  = () => ({ name: "", total: 0, completed: 0
 export const createDefaultImpediment = (category = "blocker") => ({ category, description: "", impact: "" });
 
 // ── Reporte ASCII ─────────────────────────────────────────────────────────────
+// Estas funciones generan el texto plano que se copia al portapapeles.
+// Si quieres cambiar el formato del reporte exportado, edita projectBlock().
 
 const STATUS_LABELS = { "on-track": "En curso", "at-risk": "En riesgo", blocked: "Bloqueado", completed: "Completado" };
 const STATUS_ICONS  = { "on-track": "🟡", "at-risk": "🟠", blocked: "🔴", completed: "🟢" };
@@ -240,8 +251,6 @@ function projectBlock(p, i) {
       txt += `\n`;
     });
     txt += `\n`;
-  } else if (typeof p.milestones === "string" && p.milestones) {
-    txt += `📅 Fechas clave:\n${arrToBullets(p.milestones)}\n`;
   }
 
   const comments = Array.isArray(p.comments) ? p.comments.filter(c => c.text) : [];
@@ -253,8 +262,6 @@ function projectBlock(p, i) {
       txt += `\n`;
     });
     txt += `\n`;
-  } else if (typeof p.comments === "string" && p.comments) {
-    txt += `💬 Comentarios:\n${arrToBullets(p.comments)}\n`;
   }
 
   txt += "\n";

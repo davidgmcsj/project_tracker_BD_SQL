@@ -1,3 +1,15 @@
+// storage.js — Capa de persistencia de la aplicación.
+//
+// Estrategia de escritura dual:
+//   1. Siempre escribe en localStorage (instantáneo, sin red).
+//   2. Intenta sincronizar con el servidor Node (/api/...).
+//      Si el servidor no responde, el fallo es silencioso y localStorage
+//      actúa como caché offline hasta que vuelva a estar disponible.
+//
+// En carga inicial, el servidor tiene prioridad sobre localStorage.
+// Si el servidor devuelve datos válidos, los sobreescribe en localStorage
+// para que ambas fuentes queden sincronizadas.
+
 const LS_PROJECTS = "wt-projects";
 const LS_WEEK     = "wt-week";
 const LS_HISTORY  = "wt-history";
@@ -30,6 +42,7 @@ export async function loadProjects() {
 
   const cached = JSON.parse(localStorage.getItem(LS_PROJECTS) || "[]");
   if (!isNewFormat(cached)) {
+    // Datos en formato antiguo (pre-BD): limpiar para evitar errores de parse
     localStorage.removeItem(LS_PROJECTS);
     localStorage.removeItem(LS_WEEK);
     return { projects: [], weekLabel: null };
@@ -40,6 +53,8 @@ export async function loadProjects() {
 // ── Persistencia base ─────────────────────────────────────────────────────────
 
 export async function saveProjects(projects, weekLabel) {
+  // localStorage primero: garantiza que el usuario no pierde datos
+  // aunque la llamada al servidor falle
   localStorage.setItem(LS_PROJECTS, JSON.stringify(projects));
   if (weekLabel !== undefined) localStorage.setItem(LS_WEEK, weekLabel ?? "");
   try {
@@ -62,6 +77,7 @@ export async function saveWeekReport(projects, weekLabel) {
       body:    JSON.stringify(payload),
     });
   } catch {
+    // Si el servidor no está disponible, guardar el snapshot en localStorage
     const history    = JSON.parse(localStorage.getItem(LS_HISTORY) || "[]");
     const reportDate = projects[0]?.report_date ?? new Date().toISOString().slice(0, 10);
     const entry      = { report_date: reportDate, ...payload };

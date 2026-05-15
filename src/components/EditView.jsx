@@ -460,7 +460,6 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
       </div>
 
       <div className="engineer-card__sections">
-        {/* ── Global ── */}
         <div className="engineer-section">
           <div className="engineer-section__title">Global</div>
           <div className="engineer-header">
@@ -484,7 +483,6 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
           {isOverGlobal && <div style={{ color: "var(--red)", fontSize: "12px", fontWeight: 600 }}>⚠ Completadas + en proceso supera las asignadas.</div>}
         </div>
 
-        {/* ── Esta semana ── */}
         <div className="engineer-section">
           <div className="engineer-section__title">Esta semana</div>
           <div className="engineer-week-simple">
@@ -510,7 +508,6 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
           </div>
         </div>
 
-        {/* ── Seleccionadas ── */}
         <div className="engineer-section">
           <div className="engineer-section__title">
             Seleccionadas
@@ -901,23 +898,21 @@ export default function EditView({
   const updateImpediment = (i, f, v) => onUpdateProject(editingIdx, "impediments", impediments.map((im, idx) => idx === i ? { ...im, [f]: v } : im));
   const removeImpediment = (i)       => onUpdateProject(editingIdx, "impediments", impediments.filter((_, idx) => idx !== i));
 
-  // Cuando se edita o reordena activities_identified, propaga los cambios a todos
-  // los campos que almacenan referencias de actividad como texto "N. descripción".
+  // Propaga ediciones/eliminaciones/reordenamientos de actividades a todos los campos
+  // que almacenan referencias como "N. texto". Necesita dos mapas: uno por posición
+  // (renombrado de texto) y otro por contenido (cambio de número al reordenar).
   const handleActivitiesChange = (newActs) => {
     const oldActs = safeArr(p.activities_identified);
 
-    // Construir mapa de texto viejo → texto nuevo para cada posición que cambió
     const renameMap = {};
     const maxLen = Math.max(oldActs.length, newActs.length);
     for (let i = 0; i < maxLen; i++) {
       const oldKey = oldActs[i] != null ? `${i + 1}. ${oldActs[i]}` : null;
       const newKey = newActs[i] != null ? `${i + 1}. ${newActs[i]}` : null;
       if (oldKey && newKey && oldKey !== newKey) renameMap[oldKey] = newKey;
-      if (oldKey && !newKey) renameMap[oldKey] = null; // actividad eliminada
+      if (oldKey && !newKey) renameMap[oldKey] = null;
     }
-    // Si los índices cambiaron por reordenamiento también hay que remap por contenido.
-    // Caso: misma actividad movida de posición i a j → el número cambia.
-    // Construimos además un mapa por contenido (texto sin número).
+
     const contentMap = {};
     oldActs.forEach((text, i) => {
       const found = newActs.indexOf(text);
@@ -1087,7 +1082,7 @@ export default function EditView({
             </div>
           )}
 
-          {/* ══ 6. Indicadores ══ */}
+          {/* ══ 5. Indicadores ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Indicadores</label>
@@ -1104,7 +1099,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 7. Impedimentos ══ */}
+          {/* ══ 6. Impedimentos ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Impedimentos y Riesgos</label>
@@ -1126,7 +1121,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 8. Ingenieros ══ */}
+          {/* ══ 7. Ingenieros ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Equipo de Ingenieros</label>
@@ -1154,7 +1149,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 9. Cierre semanal ══ */}
+          {/* ══ 8. Cierre semanal ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Sección de Cierre</label>
@@ -1194,14 +1189,14 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 10. Fechas clave ══ */}
+          {/* ══ 9. Fechas clave ══ */}
           <MilestoneList
             milestones={p.milestones}
             activities={activities}
             onChange={val => onUpdateProject(editingIdx, "milestones", val)}
           />
 
-          {/* ══ 11. Comentarios ══ */}
+          {/* ══ 10. Comentarios ══ */}
           <CommentList
             comments={p.comments}
             activities={activities}

@@ -1,6 +1,22 @@
-// db-operations.cjs — Operaciones CRUD para SQL Server
-// Escritura dual: el servidor llama estas funciones en paralelo al JSON.
-// Si la BD falla, el error se loguea pero no rompe el flujo del app.
+// db-operations.cjs — Escritura de reportes semanales en SQL Server.
+//
+// Este módulo es llamado por server.cjs cada vez que el usuario guarda un reporte.
+// Opera en paralelo al guardado en JSON: si falla, el error es silencioso y el
+// usuario no lo nota. El JSON siempre es la fuente de verdad primaria.
+//
+// CONFIGURACIÓN (variables en .env):
+//   DB_SERVER   → nombre del servidor, ej: mi-servidor.database.windows.net
+//   DB_USER     → usuario SQL con permisos db_datareader + db_datawriter
+//   DB_PASSWORD → contraseña del usuario
+//   DB_NAME     → nombre de la base de datos
+//
+// TABLAS QUE USA:
+//   Proyectos, Ingenieros, Actividades, ReportesSemanales,
+//   Estado_Actividades_Reporte, Indicadores, Riesgos_Impedimentos,
+//   Eventos_Reporte, Estadisticas_Ingeniero_Semana
+//
+// NOTA SOBRE encrypt: true — Azure SQL requiere TLS obligatoriamente.
+// Para SQL Server local sin certificado, cambiar a: encrypt: false, trustServerCertificate: true
 
 "use strict";
 
@@ -15,9 +31,11 @@ const config = {
   server:   process.env.DB_SERVER || "localhost",
   database: process.env.DB_NAME,
   options:  { encrypt: true, trustServerCertificate: false },
+  // Pool de conexiones: reutiliza hasta 10 conexiones en paralelo
   pool:     { max: 10, min: 0, idleTimeoutMillis: 30000 },
 };
 
+// Singleton de pool: se crea una sola vez y se reutiliza en todas las llamadas
 let _pool = null;
 
 async function getPool() {

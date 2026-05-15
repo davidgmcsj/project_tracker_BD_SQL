@@ -1,3 +1,24 @@
+// server.cjs — Servidor Express que expone la API REST y sirve el frontend.
+//
+// RUTAS DE LA API:
+//   GET  /api/projects        → devuelve el estado actual (data.json)
+//   POST /api/projects        → sobreescribe el estado actual
+//   POST /api/report          → guarda un snapshot semanal (history.json + SQL Server)
+//   GET  /api/history         → lista de fechas de reportes guardados
+//   GET  /api/history/:date   → datos completos de un reporte por fecha
+//
+// ARCHIVOS DE DATOS:
+//   data.json    → estado actual de todos los proyectos (se sobreescribe en cada guardado)
+//   history.json → historial de snapshots semanales (nunca se borra, solo se acumula)
+//
+// ESCRITURA DUAL:
+//   Cada POST /api/report escribe en history.json Y en SQL Server en paralelo.
+//   Si SQL Server falla, el error se loguea pero NO interrumpe la respuesta al cliente.
+//   El JSON actúa como respaldo ante caídas de la BD.
+//
+// VARIABLE DE ENTORNO PORT: si no está definida, usa 3001 por defecto.
+// En Azure App Service, PORT se inyecta automáticamente.
+
 const express = require("express");
 const fs      = require("fs").promises;
 const path    = require("path");
@@ -5,13 +26,15 @@ require("dotenv/config");
 
 const { saveWeekReportToDB } = (() => {
   try { return require("./db-operations.cjs"); }
-  catch { console.warn("db-operations no disponible — solo JSON"); return { saveWeekReportToDB: null }; }
+  catch { return { saveWeekReportToDB: null }; }
 })();
 
 // ── Configuración ─────────────────────────────────────────────────────────────
 
 function getDataDir() {
-  return process.env.HOME === "/home" ? "/home/data" : __dirname; // Azure App Service Linux
+  // En Azure App Service Linux, HOME=/home y /home es el único directorio
+  // con escritura persistente entre reinicios. En local, usa el directorio del proyecto.
+  return process.env.HOME === "/home" ? "/home/data" : __dirname;
 }
 
 const DATA_DIR     = getDataDir();
@@ -38,6 +61,9 @@ function toArr(val) {
 }
 
 // ── Migración de datos legados (string → array/objeto) ────────────────────────
+// Esta función corre UNA SOLA VEZ al inicio si detecta datos en formato antiguo.
+// Una vez migrados, los datos tienen el campo en array y no vuelve a correr.
+// Se puede eliminar cuando se tenga certeza de que no hay datos pre-migración.
 
 async function migrateArrayFields() {
   const data = await readJson(DATA_FILE, null);
@@ -115,6 +141,8 @@ async function init() {
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 
+// CORS solo en desarrollo: en producción el frontend es servido por el mismo
+// servidor Express, por lo que no hay problema de origen cruzado.
 if (process.env.NODE_ENV !== "production") {
   const cors = require("cors");
   app.use(cors());
@@ -141,6 +169,9 @@ app.post("/api/projects", async (req, res) => {
 
 // ── API: Historial semanal ────────────────────────────────────────────────────
 
+// Normaliza cualquier fecha a su lunes de semana (YYYY-MM-DD).
+// Sirve como clave única por semana: dos reportes de la misma semana
+// se sobreescriben en lugar de duplicarse.
 function getMondayOf(dateStr) {
   const d    = new Date(dateStr + "T12:00:00");
   const day  = d.getDay();
@@ -159,6 +190,7 @@ app.post("/api/report", async (req, res) => {
     const data       = await readJson(HISTORY_FILE, { reports: [] });
     const entry      = { week_key: weekKey, report_date: reportDate, weekLabel, saved_at: saved_at || new Date().toISOString(), projects };
 
+    // UPSERT por semana: si ya existe un reporte de esa semana, lo reemplaza
     const idx = data.reports.findIndex(r => (r.week_key || r.report_date) === weekKey);
     if (idx >= 0) data.reports[idx] = entry;
     else          data.reports.push(entry);
@@ -166,7 +198,7 @@ app.post("/api/report", async (req, res) => {
     data.reports.sort((a, b) => b.week_key.localeCompare(a.week_key));
     await writeJson(HISTORY_FILE, data);
 
-    // Escritura dual — SQL Server en paralelo, fallo silencioso
+    // Escritura en SQL Server: fallo silencioso para no bloquear al usuario
     if (saveWeekReportToDB) {
       saveWeekReportToDB(projects, weekLabel, entry.saved_at)
         .catch(e => console.error("[SQL] Error guardando reporte:", e.message));
@@ -205,6 +237,9 @@ app.get("/api/history/:date", async (req, res) => {
 });
 
 // ── Estáticos y SPA fallback ──────────────────────────────────────────────────
+// En producción, Express sirve el build de React desde /dist.
+// Cualquier ruta que no sea /api se redirige a index.html para que React Router
+// maneje la navegación del lado del cliente.
 
 app.use(express.static(DIST_PATH));
 app.use((req, res, next) => {
