@@ -865,7 +865,7 @@ function CommentList({ comments, activities, onChange }) {
 
 export default function EditView({
   projects, editingIdx, hasUnsavedChanges,
-  onSelectProject, onUpdateProject, onSaveChanges,
+  onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges,
   onReorderProjects, onAddProject, onRemoveProject, onViewReport,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -900,6 +900,70 @@ export default function EditView({
   const addImpediment    = (cat) => onUpdateProject(editingIdx, "impediments", [...impediments, createDefaultImpediment(cat)]);
   const updateImpediment = (i, f, v) => onUpdateProject(editingIdx, "impediments", impediments.map((im, idx) => idx === i ? { ...im, [f]: v } : im));
   const removeImpediment = (i)       => onUpdateProject(editingIdx, "impediments", impediments.filter((_, idx) => idx !== i));
+
+  // Cuando se edita o reordena activities_identified, propaga los cambios a todos
+  // los campos que almacenan referencias de actividad como texto "N. descripción".
+  const handleActivitiesChange = (newActs) => {
+    const oldActs = safeArr(p.activities_identified);
+
+    // Construir mapa de texto viejo → texto nuevo para cada posición que cambió
+    const renameMap = {};
+    const maxLen = Math.max(oldActs.length, newActs.length);
+    for (let i = 0; i < maxLen; i++) {
+      const oldKey = oldActs[i] != null ? `${i + 1}. ${oldActs[i]}` : null;
+      const newKey = newActs[i] != null ? `${i + 1}. ${newActs[i]}` : null;
+      if (oldKey && newKey && oldKey !== newKey) renameMap[oldKey] = newKey;
+      if (oldKey && !newKey) renameMap[oldKey] = null; // actividad eliminada
+    }
+    // Si los índices cambiaron por reordenamiento también hay que remap por contenido.
+    // Caso: misma actividad movida de posición i a j → el número cambia.
+    // Construimos además un mapa por contenido (texto sin número).
+    const contentMap = {};
+    oldActs.forEach((text, i) => {
+      const found = newActs.indexOf(text);
+      if (found !== -1 && found !== i) {
+        contentMap[`${i + 1}. ${text}`] = `${found + 1}. ${text}`;
+      }
+    });
+    const fullMap = { ...contentMap, ...renameMap };
+
+    if (Object.keys(fullMap).length === 0) {
+      onUpdateProject(editingIdx, "activities_identified", newActs);
+      return;
+    }
+
+    const remap = (val) => {
+      if (val == null) return val;
+      return fullMap[val] !== undefined ? fullMap[val] : val;
+    };
+    const remapArr = (arr) =>
+      safeArr(arr).map(remap).filter(Boolean);
+
+    const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      task_status: {
+        completed:   remapArr(ts.completed),
+        in_progress: remapArr(ts.in_progress),
+        not_started: remapArr(ts.not_started),
+      },
+      weekly_achievements: remapArr(p.weekly_achievements),
+      next_week_plan:      remapArr(p.next_week_plan),
+      engineers: (p.engineers || []).map(eng => ({
+        ...eng,
+        weekly_detail: remapArr(eng.weekly_detail),
+      })),
+      milestones: (p.milestones || []).map(ms => ({
+        ...ms,
+        activity: remap(ms.activity) ?? "",
+      })),
+      comments: (p.comments || []).map(cm => ({
+        ...cm,
+        activity: remap(cm.activity) ?? "",
+      })),
+    });
+  };
 
   return (
     <div className="edit-view">
@@ -1003,7 +1067,7 @@ export default function EditView({
           {/* ══ 3. Actividades identificadas ══ */}
           <ActivitiesList
             activities={activities}
-            onChange={val => onUpdateProject(editingIdx, "activities_identified", val)}
+            onChange={handleActivitiesChange}
           />
 
           {/* ══ 4. Estado de actividades ══ */}

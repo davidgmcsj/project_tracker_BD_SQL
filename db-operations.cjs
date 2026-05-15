@@ -14,7 +14,7 @@ const config = {
   password: process.env.DB_PASSWORD,
   server:   process.env.DB_SERVER || "localhost",
   database: process.env.DB_NAME,
-  options:  { encrypt: false, trustServerCertificate: true },
+  options:  { encrypt: true, trustServerCertificate: false },
   pool:     { max: 10, min: 0, idleTimeoutMillis: 30000 },
 };
 

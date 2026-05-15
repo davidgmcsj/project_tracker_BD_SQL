@@ -3,7 +3,7 @@
     {
       "report_date": "2026-05-14",
       "weekLabel": "Semana 19 — 13 May 2026",
-      "saved_at": "2026-05-14T21:27:23.222Z",
+      "saved_at": "2026-05-15T18:02:33.419Z",
       "projects": [
         {
           "id": "mp1pu3nh4va",
@@ -182,10 +182,10 @@
           "planner_url": "https://planner.cloud.microsoft/webui/v1/plan/jgI6qgsQakCtFMWH5CnS82QAFsEk?tid=622cba98-80f8-41f3-8df5-8eb99901598b",
           "report_date": "2026-05-14",
           "manual_metrics": {
-            "total_tasks": 12,
-            "completed_tasks": 7,
-            "in_progress_tasks": 4,
-            "shared_tasks_discount": 7
+            "total_tasks": 15,
+            "completed_tasks": 11,
+            "in_progress_tasks": 1,
+            "shared_tasks_discount": 8
           },
           "activities_identified": [
             "Habilitar la búsqueda por CUI, poner el modal de búsqueda avanzada un nuevo campo para que permita esta búsqueda",
@@ -195,35 +195,52 @@
             "Facilitar que, en la barra de búsqueda, los usuarios externos comprendan los dos tipos de búsqueda disponibles.",
             "Incorporar la indexación de normas (leyes) en los resultados, de manera similar a la del aplicativo actual, ejemplo.",
             "Corrección del back para publicación",
-            "Publicación en entorno de pruebas",
+            "Publicación en entorno de producción",
             "Eliminar de la página el Super Supremo antiguo.",
             "Indexación de todos los datos de Lexis",
             "Respuesta al contratista Dataknow para el proyecto",
             "Revisión de los criterios de aceptación del proyecto DataKnow",
-            "Estudio y diseño de un flujo ETL para estadísticas"
+            "Estudio y diseño de un flujo ETL para estadísticas",
+            "Generación de reporte las recomendaciones del Supremo",
+            "Cambiar el nombre del aplicativo"
           ],
-          "weekly_achievements": [],
-          "next_week_plan": [],
-          "show_closing_fields": false,
+          "weekly_achievements": [
+            "7. Corrección del back para publicación",
+            "8. Publicación en entorno de producción",
+            "10. Indexación de todos los datos de Lexis",
+            "11. Respuesta al contratista Dataknow para el proyecto",
+            "12. Revisión de los criterios de aceptación del proyecto DataKnow"
+          ],
+          "next_week_plan": [
+            "14. Generación de reporte las recomendaciones del Supremo",
+            "13. Estudio y diseño de un flujo ETL para estadísticas"
+          ],
+          "show_closing_fields": true,
           "milestones": [
             {
-              "activity": "8. Publicación en entorno de pruebas",
+              "activity": "8. Publicación en entorno de producción",
               "date": "2026-05-11",
-              "note": "Sistema publicado en entorno de pruebas"
+              "note": "Sistema publicado en entorno de producción"
             }
           ],
-          "comments": "moisés pidió los logs a Juan Verano para revisar la comunicación con el solar, y encontrar el error que retrasa la publicación. \nCristian regresa de permiso el día lunes 11 de mayo, donde revisará el error, ajustará y se pretende salir a producción. ",
+          "comments": [
+            {
+              "activity": "15. Cambiar el nombre del aplicativo",
+              "date": "2026-05-15",
+              "text": "Buscar opción de cambio "
+            }
+          ],
           "engineers": [
             {
               "engineer_id": "Cristian Mauricio Ortegon Martinez",
               "custom_name": "",
-              "assigned": 12,
+              "assigned": 14,
               "completed": 7,
               "in_progress": 4,
               "weekly_total": 6,
               "weekly_detail": [
                 "7. Corrección del back para publicación",
-                "8. Publicación en entorno de pruebas",
+                "8. Publicación en entorno de producción",
                 "10. Indexación de todos los datos de Lexis",
                 "11. Respuesta al contratista Dataknow para el proyecto",
                 "12. Revisión de los criterios de aceptación del proyecto DataKnow",
@@ -239,7 +256,8 @@
               "weekly_total": 0,
               "weekly_detail": [
                 "12. Revisión de los criterios de aceptación del proyecto DataKnow",
-                "7. Corrección del back para publicación"
+                "7. Corrección del back para publicación",
+                "8. Publicación en entorno de producción"
               ]
             }
           ],
@@ -254,16 +272,18 @@
               "5. Facilitar que, en la barra de búsqueda, los usuarios externos comprendan los dos tipos de búsqueda disponibles.",
               "6. Incorporar la indexación de normas (leyes) en los resultados, de manera similar a la del aplicativo actual, ejemplo.",
               "7. Corrección del back para publicación",
-              "8. Publicación en entorno de pruebas"
-            ],
-            "not_started": [
-              "9. Eliminar de la página el Super Supremo antiguo."
-            ],
-            "in_progress": [
-              "10. Indexación de todos los datos de Lexis",
+              "8. Publicación en entorno de producción",
               "11. Respuesta al contratista Dataknow para el proyecto",
               "12. Revisión de los criterios de aceptación del proyecto DataKnow",
+              "10. Indexación de todos los datos de Lexis"
+            ],
+            "in_progress": [
               "13. Estudio y diseño de un flujo ETL para estadísticas"
+            ],
+            "not_started": [
+              "9. Eliminar de la página el Super Supremo antiguo.",
+              "14. Generación de reporte las recomendaciones del Supremo",
+              "15. Cambiar el nombre del aplicativo"
             ]
           }
         },
@@ -349,22 +369,43 @@
             "Hacer flujo con lo que se pide en la agenda",
             "Organización de la información de levantamiento de requerimientos para el flujo de la sala laboral - Doris",
             "Flujo de PQRS del despacho para inclusión en el gestor",
-            "Implementación del flujo de auto tramite",
+            "Digitalización del flujo de auto tramite",
             "Desarrollo de la lógica de flujo de auto trámite",
             "Corregir los usuarios quemados como 0C960BDD-B8AD-446A-93BF-21B63488671F",
             "Pruebas con el despacho de presidencia"
           ],
-          "weekly_achievements": [],
-          "next_week_plan": [],
-          "show_closing_fields": false,
+          "weekly_achievements": [
+            "36. Organización de la información de levantamiento de requerimientos para el flujo de la sala laboral - Doris",
+            "38. Digitalización del flujo de auto tramite"
+          ],
+          "next_week_plan": [
+            "39. Desarrollo de la lógica de flujo de auto trámite"
+          ],
+          "show_closing_fields": true,
           "milestones": [
             {
               "activity": "41. Pruebas con el despacho de presidencia",
               "date": "2026-04-29",
               "note": "Trabajo con Laura"
+            },
+            {
+              "activity": "39. Desarrollo de la lógica de flujo de auto trámite",
+              "date": "2026-06-03",
+              "note": "Entrega de la fase 1 del gestor de despacho"
+            },
+            {
+              "activity": "39. Desarrollo de la lógica de flujo de auto trámite",
+              "date": "2026-06-03",
+              "note": "Inicio de la actividad"
             }
           ],
-          "comments": "",
+          "comments": [
+            {
+              "activity": "37. Flujo de PQRS del despacho para inclusión en el gestor",
+              "date": "2026-05-15",
+              "text": "Este flujo se empezará a desarrollar al entregar la fase 2 del proyecto el 3/06/2026"
+            }
+          ],
           "engineers": [
             {
               "engineer_id": "Moises Bernardo Suarez Gamez",
@@ -375,9 +416,8 @@
               "weekly_total": 4,
               "weekly_detail": [
                 "36. Organización de la información de levantamiento de requerimientos para el flujo de la sala laboral - Doris",
-                "37. Flujo de PQRS del despacho para inclusión en el gestor",
-                "38. Implementación del flujo de auto tramite",
-                "39. Desarrollo de la lógica de flujo de auto trámite"
+                "39. Desarrollo de la lógica de flujo de auto trámite",
+                "38. Digitalización del flujo de auto tramite"
               ]
             },
             {
@@ -386,10 +426,8 @@
               "assigned": 19,
               "completed": 18,
               "in_progress": 1,
-              "weekly_total": 1,
-              "weekly_detail": [
-                "37. Flujo de PQRS del despacho para inclusión en el gestor"
-              ]
+              "weekly_total": 0,
+              "weekly_detail": []
             }
           ],
           "indicators": [],
@@ -438,15 +476,16 @@
               "34. Configuración de semáforos dependiendo del tipo de procesos (TipoDocumentoProyeccion)",
               "35. Hacer flujo con lo que se pide en la agenda",
               "40. Corregir los usuarios quemados como 0C960BDD-B8AD-446A-93BF-21B63488671F",
-              "41. Pruebas con el despacho de presidencia"
+              "41. Pruebas con el despacho de presidencia",
+              "36. Organización de la información de levantamiento de requerimientos para el flujo de la sala laboral - Doris",
+              "38. Digitalización del flujo de auto tramite"
             ],
             "in_progress": [
-              "36. Organización de la información de levantamiento de requerimientos para el flujo de la sala laboral - Doris",
-              "37. Flujo de PQRS del despacho para inclusión en el gestor",
-              "38. Implementación del flujo de auto tramite",
               "39. Desarrollo de la lógica de flujo de auto trámite"
             ],
-            "not_started": []
+            "not_started": [
+              "37. Flujo de PQRS del despacho para inclusión en el gestor"
+            ]
           }
         },
         {
@@ -663,6 +702,11 @@
               "activity": "26. Inicio de Pruebas con usuario final",
               "date": "2026-05-11",
               "note": "Pruebas con la Sala Civil"
+            },
+            {
+              "activity": "22. Realizar informe de desarrollos: Realizar documento con informe de desarrollos realizados",
+              "date": "2026-05-21",
+              "note": "Entrega de informe"
             }
           ],
           "comments": [
@@ -1060,11 +1104,23 @@
             "in_progress_tasks": 1,
             "shared_tasks_discount": 0
           },
-          "activities_identified": "Sesión de levantamiento con la sala civil\nCorreo con información organizada del levantamiento \nSesión de socialización con los ingenieros de desarrollo de ESAV\nPlantilla de avisos",
+          "activities_identified": [
+            "Sesión de levantamiento con la sala civil",
+            "Correo con información organizada del levantamiento",
+            "Sesión de socialización con los ingenieros de desarrollo de ESAV",
+            "Plantilla de avisos",
+            "Sesión de socialización con equipo de desarrollo"
+          ],
           "weekly_achievements": [],
           "next_week_plan": [],
           "show_closing_fields": false,
-          "milestones": "",
+          "milestones": [
+            {
+              "activity": "5. Sesión de socialización con equipo de desarrollo",
+              "date": "2026-05-19",
+              "note": "Reunión por teams a las 11 am"
+            }
+          ],
           "comments": "",
           "engineers": [
             {

@@ -135,6 +135,13 @@ export default function App() {
     setHasUnsaved(true);
   };
 
+  const updateProjectFull = (idx, updatedProject) => {
+    const next = [...projects];
+    next[idx] = updatedProject;
+    setProjects(next);
+    setHasUnsaved(true);
+  };
+
   const addProject = () => {
     const p    = { ...createDefaultProject(), report_date: reportDate };
     const next = [...projects, p];
@@ -270,6 +277,7 @@ export default function App() {
             hasUnsavedChanges={hasUnsavedChanges}
             onSelectProject={setEditingIdx}
             onUpdateProject={updateProject}
+            onUpdateProjectFull={updateProjectFull}
             onSaveChanges={() => persist(projects)}
             onReorderProjects={reorderProjects}
             onAddProject={addProject}
