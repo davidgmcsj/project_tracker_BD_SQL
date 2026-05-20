@@ -2,6 +2,7 @@ import { useState } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
 import { projectProgress, generateReportText, generateSingleProjectReportText } from "../utils/formulas";
+import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -228,7 +229,7 @@ function EngineerWeekCard({ eng }) {
   );
 }
 
-function ProjectReport({ p, i }) {
+function ProjectReport({ p, i, onGenerateInforme }) {
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
@@ -243,7 +244,7 @@ function ProjectReport({ p, i }) {
           <span className="report-project__icon">{st.icon}</span>
           {p.project_name || `Proyecto ${i + 1}`}
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {p.report_date && (
             <span style={{ fontSize: "12px", color: "var(--text-2)" }}>📅 {p.report_date}</span>
           )}
@@ -253,6 +254,13 @@ function ProjectReport({ p, i }) {
             </a>
           )}
           <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
+          <button
+            className="btn btn--informe"
+            onClick={() => onGenerateInforme(p)}
+            title="Generar Informe de Gestión (.docx)"
+          >
+            📄 Informe
+          </button>
         </div>
       </div>
 
@@ -300,7 +308,8 @@ function ProjectReport({ p, i }) {
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function ReportView({ projects, weekLabel, singleProjectIdx, onClearSingle }) {
-  const [toast, setToast] = useState("");
+  const [toast, setToast]           = useState("");
+  const [generating, setGenerating] = useState(false);
 
   const isSingle        = singleProjectIdx != null;
   const displayProjects = isSingle ? [projects[singleProjectIdx]] : projects;
@@ -312,6 +321,19 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
     navigator.clipboard.writeText(text)
       .then(() => { setToast("✓ Reporte copiado al portapapeles"); setTimeout(() => setToast(""), 2500); })
       .catch(() => setToast("No se pudo copiar"));
+  };
+
+  const handleGenerateInforme = async (project) => {
+    setGenerating(true);
+    try {
+      await generateQuarterlyReport(project);
+      setToast("✓ Informe de gestión generado");
+    } catch (e) {
+      setToast("Error generando informe: " + e.message);
+    } finally {
+      setGenerating(false);
+      setTimeout(() => setToast(""), 3000);
+    }
   };
 
   return (
@@ -329,7 +351,19 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               : "Reporte Semanal Consolidado"}
           </h2>
         </div>
-        <button className="btn btn--accent" onClick={handleCopy}>Copiar reporte ✎</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {isSingle && (
+            <button
+              className="btn btn--primary"
+              onClick={handleGenerateInforme}
+              disabled={generating}
+              title="Genera el Informe de Gestión institucional en formato Word (.docx)"
+            >
+              {generating ? "Generando..." : "📄 Generar Informe"}
+            </button>
+          )}
+          <button className="btn btn--accent" onClick={handleCopy}>Copiar reporte ✎</button>
+        </div>
       </div>
 
       {toast && <div className="toast">{toast}</div>}
@@ -344,7 +378,7 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} />)}
+          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} />)}
         </>
       )}
     </div>

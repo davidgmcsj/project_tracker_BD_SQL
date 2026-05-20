@@ -714,6 +714,20 @@
   background: var(--azul-medio);
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
+.btn--informe {
+  background: #1d6c3a;
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn--informe:hover  { background: #145229; }
+.btn--informe:active { background: #0e3a1c; }
 .btn--save-report {
   background: var(--dorado);
   color: white;
