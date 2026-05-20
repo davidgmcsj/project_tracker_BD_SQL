@@ -30,7 +30,7 @@ const config = {
   password: process.env.DB_PASSWORD,
   server:   process.env.DB_SERVER || "localhost",
   database: process.env.DB_NAME,
-  options:  { encrypt: true, trustServerCertificate: false },
+  options:  { encrypt: false, trustServerCertificate: true },
   // Pool de conexiones: reutiliza hasta 10 conexiones en paralelo
   pool:     { max: 10, min: 0, idleTimeoutMillis: 30000 },
 };
@@ -53,9 +53,13 @@ function safeArr(val) {
 }
 
 function getWeekNumber(dateStr) {
-  const d     = new Date(dateStr + "T12:00:00");
-  const start = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7);
+  // Cálculo ISO 8601: la semana empieza el lunes, la semana 1 contiene el primer jueves del año.
+  // Coincide exactamente con DATEPART(ISO_WEEK, ...) en SQL Server.
+  const d = new Date(dateStr + "T12:00:00");
+  const day = d.getDay() || 7; // domingo=7
+  d.setDate(d.getDate() + 4 - day);
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
 // Busca un ingeniero por match de al menos 1 nombre y 1 apellido.

@@ -29,8 +29,14 @@ const path    = require("path");
 require("dotenv/config");
 
 const { saveWeekReportToDB } = (() => {
-  try { return require("./db-operations.cjs"); }
-  catch { return { saveWeekReportToDB: null }; }
+  try {
+    const mod = require("./db-operations.cjs");
+    console.log("[DB] db-operations.cjs cargado correctamente");
+    return mod;
+  } catch (e) {
+    console.error("[DB] Error cargando db-operations.cjs:", e.message);
+    return { saveWeekReportToDB: null };
+  }
 })();
 
 // ── Configuración ─────────────────────────────────────────────────────────────
@@ -153,6 +159,34 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || "*",
 }));
 
+// ── API: Diagnóstico de conexión BD (solo desarrollo) ────────────────────────
+
+app.get("/api/db-ping", async (req, res) => {
+  if (!saveWeekReportToDB) {
+    return res.json({ ok: false, error: "db-operations.cjs no cargó (módulo no encontrado)" });
+  }
+  try {
+    const sql  = require("mssql");
+    require("dotenv/config");
+    const cfg = {
+      user:     process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      server:   process.env.DB_SERVER || "localhost",
+      database: process.env.DB_NAME,
+      options:  { encrypt: false, trustServerCertificate: true },
+      connectionTimeout: 5000,
+    };
+    console.log("[DB-PING] Intentando conectar con:", { server: cfg.server, database: cfg.database, user: cfg.user });
+    const pool   = await sql.connect(cfg);
+    const result = await pool.request().query("SELECT @@SERVERNAME AS srv, DB_NAME() AS db");
+    await pool.close();
+    res.json({ ok: true, ...result.recordset[0] });
+  } catch (e) {
+    console.error("[DB-PING] Fallo:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // ── API: Proyectos base ───────────────────────────────────────────────────────
 
 app.get("/api/projects", async (req, res) => {
@@ -200,18 +234,21 @@ app.post("/api/report", async (req, res) => {
     if (idx >= 0) data.reports[idx] = entry;
     else          data.reports.push(entry);
 
-    data.reports.sort((a, b) => b.week_key.localeCompare(a.week_key));
+    data.reports.sort((a, b) => (b.week_key || b.report_date || "").localeCompare(a.week_key || a.report_date || ""));
     await writeJson(HISTORY_FILE, data);
+    console.log("[API] Reporte guardado en history.json:", reportDate, weekKey);
 
     // Escritura en SQL Server: fallo silencioso para no bloquear al usuario
     if (saveWeekReportToDB) {
       saveWeekReportToDB(projects, weekLabel, entry.saved_at)
+        .then(() => console.log("[SQL] Reporte guardado en base de datos"))
         .catch(e => console.error("[SQL] Error guardando reporte:", e.message));
     }
 
     res.json({ ok: true, report_date: reportDate, week_key: weekKey });
-  } catch {
-    res.status(500).json({ error: "Error guardando reporte" });
+  } catch (e) {
+    console.error("[API] Error en POST /api/report:", e.message, e.stack);
+    res.status(500).json({ error: "Error guardando reporte", detail: e.message });
   }
 });
 
