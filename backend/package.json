@@ -1,0 +1,19 @@
+{
+  "name": "project-tracker-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.cjs",
+    "server": "node server.cjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mssql": "^12.5.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

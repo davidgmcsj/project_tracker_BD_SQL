@@ -1,4 +1,4 @@
-// server.cjs — Servidor Express que expone la API REST y sirve el frontend.
+// server.cjs — Servidor Express que expone la API REST.
 //
 // RUTAS DE LA API:
 //   GET  /api/projects        → devuelve el estado actual (data.json)
@@ -15,6 +15,10 @@
 //   Cada POST /api/report escribe en history.json Y en SQL Server en paralelo.
 //   Si SQL Server falla, el error se loguea pero NO interrumpe la respuesta al cliente.
 //   El JSON actúa como respaldo ante caídas de la BD.
+//
+// CORS:
+//   FRONTEND_URL en .env limita el origen permitido en producción.
+//   Si no está definido, acepta cualquier origen (útil en desarrollo local).
 //
 // VARIABLE DE ENTORNO PORT: si no está definida, usa 3001 por defecto.
 // En Azure App Service, PORT se inyecta automáticamente.
@@ -40,7 +44,6 @@ function getDataDir() {
 const DATA_DIR     = getDataDir();
 const DATA_FILE    = path.join(DATA_DIR, "data.json");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
-const DIST_PATH    = path.join(__dirname, "dist");
 const PORT         = process.env.PORT || 3001;
 
 // ── Helpers de archivo ────────────────────────────────────────────────────────
@@ -141,12 +144,14 @@ async function init() {
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 
-// CORS solo en desarrollo: en producción el frontend es servido por el mismo
-// servidor Express, por lo que no hay problema de origen cruzado.
-if (process.env.NODE_ENV !== "production") {
-  const cors = require("cors");
-  app.use(cors());
-}
+// CORS activo siempre: el frontend vive en un repo y servidor separado,
+// por lo que el navegador necesita permiso explícito para llamar a esta API.
+// FRONTEND_URL en .env limita el acceso a un origen específico en producción.
+// Si no está definido, permite cualquier origen (útil en desarrollo local).
+const cors = require("cors");
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "*",
+}));
 
 // ── API: Proyectos base ───────────────────────────────────────────────────────
 
@@ -233,20 +238,6 @@ app.get("/api/history/:date", async (req, res) => {
     res.json(entry);
   } catch {
     res.status(500).json({ error: "Error leyendo historial" });
-  }
-});
-
-// ── Estáticos y SPA fallback ──────────────────────────────────────────────────
-// En producción, Express sirve el build de React desde /dist.
-// Cualquier ruta que no sea /api se redirige a index.html para que React Router
-// maneje la navegación del lado del cliente.
-
-app.use(express.static(DIST_PATH));
-app.use((req, res, next) => {
-  if (req.method === "GET" && !req.path.startsWith("/api")) {
-    res.sendFile(path.join(DIST_PATH, "index.html"), err => { if (err) next(err); });
-  } else {
-    next();
   }
 });
 

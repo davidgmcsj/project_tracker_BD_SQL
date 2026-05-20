@@ -14,8 +14,13 @@ const LS_PROJECTS = "wt-projects";
 const LS_WEEK     = "wt-week";
 const LS_HISTORY  = "wt-history";
 
+// VITE_API_URL define la dirección del backend (ej: http://localhost:3001).
+// En desarrollo local se configura en frontend/.env; en producción, en el servidor de despliegue.
+// Si no está definida, las llamadas usan rutas relativas (funciona cuando front y back están en el mismo host).
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
 async function apiFetch(path, options) {
-  const res = await fetch(path, options);
+  const res = await fetch(`${API_BASE}${path}`, options);
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json();
 }

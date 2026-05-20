@@ -10,7 +10,7 @@ Desarrollada internamente por la Oficina de Tecnología de la Corte Suprema de J
 - **Dashboard**: vista de tarjetas con el estado y avance de cada proyecto.
 - **Editar**: formulario completo para cargar métricas, actividades, ingenieros, indicadores, impedimentos, fechas clave y comentarios de cada proyecto.
 - **Reporte**: vista consolidada o por proyecto. Incluye botón "Copiar reporte" que genera un texto formateado listo para pegar en correo o Teams.
-- **Nueva semana**: limpia los campos semanales (logros, plan, actividades de ingenieros) y guarda un snapshot en el historial antes de borrar.
+- **Nueva semana**: limpia los campos semanales y guarda un snapshot en el historial antes de borrar.
 
 ---
 
@@ -19,34 +19,40 @@ Desarrollada internamente por la Oficina de Tecnología de la Corte Suprema de J
 ```
 project_tracker_BD/
 │
-├── server.cjs              ← Servidor Express: API REST + sirve el frontend en producción
-├── db-operations.cjs       ← Escritura en SQL Server (Azure). Fallo silencioso si la BD no responde
-├── vite.config.js          ← Bundler: proxy /api → :3001 en desarrollo
-├── .env                    ← Credenciales de BD (NO subir a git, está en .gitignore)
+├── backend/                        ← Servidor Node.js + conexión a BD
+│   ├── server.cjs                  ← API REST + sirve el frontend en producción
+│   ├── db-operations.cjs           ← Escritura en Azure SQL Server
+│   ├── data.json                   ← Estado actual de proyectos (ignorado en git)
+│   ├── history.json                ← Historial de snapshots semanales (ignorado en git)
+│   ├── .env                        ← Credenciales de BD (ignorado en git)
+│   └── package.json                ← Dependencias: express, mssql, cors, dotenv
 │
-├── src/
-│   ├── App.jsx             ← Componente raíz: estado global, navegación entre vistas, lógica de semana
-│   ├── App.css             ← Todos los estilos de la aplicación (una sola hoja)
-│   ├── index.css           ← Reset global y variables CSS (colores, fuentes, espaciados)
-│   │
-│   ├── components/
-│   │   ├── Dashboard.jsx   ← Vista de tarjetas por proyecto
-│   │   ├── EditView.jsx    ← Formulario de edición completo (el componente más grande)
-│   │   ├── ReportView.jsx  ← Vista de reporte visual y botón de copia
-│   │   ├── MetricsTable.jsx← Tablas de métricas reutilizables (Global, Compacta, Completa)
-│   │   ├── MiniBar.jsx     ← Barra de progreso pequeña usada en tarjetas y reporte
-│   │   └── ProgressRing.jsx← Anillo de progreso SVG del encabezado
-│   │
-│   └── utils/
-│       ├── formulas.js     ← Toda la lógica de cálculo y generación del texto del reporte
-│       └── storage.js      ← Persistencia: localStorage + llamadas a la API del servidor
+├── frontend/                       ← Aplicación React
+│   ├── src/
+│   │   ├── App.jsx                 ← Componente raíz: estado global y navegación
+│   │   ├── App.css                 ← Todos los estilos de la aplicación
+│   │   ├── index.css               ← Reset global y variables CSS
+│   │   ├── components/
+│   │   │   ├── Dashboard.jsx       ← Vista de tarjetas por proyecto
+│   │   │   ├── EditView.jsx        ← Formulario de edición completo
+│   │   │   ├── ReportView.jsx      ← Vista de reporte y botón de copia
+│   │   │   ├── MetricsTable.jsx    ← Tablas de métricas reutilizables
+│   │   │   ├── MiniBar.jsx         ← Barra de progreso pequeña
+│   │   │   └── ProgressRing.jsx    ← Anillo de progreso SVG
+│   │   └── utils/
+│   │       ├── formulas.js         ← Lógica de cálculo y texto del reporte
+│   │       └── storage.js          ← Persistencia: localStorage + API
+│   ├── public/
+│   ├── imagenes/
+│   ├── index.html
+│   ├── vite.config.js              ← Bundler: proxy /api → :3001 en desarrollo
+│   ├── eslint.config.js
+│   └── package.json                ← Dependencias: react, vite, eslint
 │
-├── public/
-│   └── imagenes/
-│       └── logo_institucional.png
-│
-├── deploy.sh               ← Script de despliegue para Azure App Service
-└── .deployment             ← Le dice a Azure qué script ejecutar al hacer push
+├── .gitignore
+├── .deployment                     ← Le dice a Azure qué script ejecutar
+├── deploy.sh                       ← Script de despliegue para Azure App Service
+└── README.md
 ```
 
 ---
@@ -55,56 +61,73 @@ project_tracker_BD/
 
 | Quiero cambiar… | Archivo |
 |---|---|
-| La fórmula de avance (cómo se calcula el %) | `src/utils/formulas.js` → `projectProgress()` |
-| El texto del reporte que se copia | `src/utils/formulas.js` → `projectBlock()` y `generateReportText()` |
-| Los campos de un proyecto nuevo (agregar campo) | `src/utils/formulas.js` → `createDefaultProject()` |
-| Agregar o quitar un ingeniero de la lista | `src/components/EditView.jsx` → constante `ENGINEER_LIST` (línea ~17) |
-| Los estados de proyecto (En curso, Bloqueado…) | `src/components/EditView.jsx` → constante `STATUS_OPTIONS` (línea ~10) |
-| Los colores y estilos visuales | `src/App.css` y `src/index.css` |
-| El logo o nombre en el encabezado | `src/App.jsx` → sección `<header>` |
-| Las rutas de la API | `server.cjs` → secciones `app.get` / `app.post` |
-| La conexión a la base de datos | `.env` (credenciales) + `db-operations.cjs` (lógica) |
-| El puerto del servidor | `.env` → variable `PORT`, o `server.cjs` línea `const PORT` |
+| La fórmula de avance (cómo se calcula el %) | `frontend/src/utils/formulas.js` → `projectProgress()` |
+| El texto del reporte que se copia | `frontend/src/utils/formulas.js` → `projectBlock()` |
+| Los campos de un proyecto nuevo | `frontend/src/utils/formulas.js` → `createDefaultProject()` |
+| Agregar o quitar un ingeniero de la lista | `frontend/src/components/EditView.jsx` → constante `ENGINEER_LIST` |
+| Los estados de proyecto (En curso, Bloqueado…) | `frontend/src/components/EditView.jsx` → constante `STATUS_OPTIONS` |
+| Los colores y estilos visuales | `frontend/src/App.css` y `frontend/src/index.css` |
+| El logo o nombre en el encabezado | `frontend/src/App.jsx` → sección `<header>` |
+| Las rutas de la API | `backend/server.cjs` → secciones `app.get` / `app.post` |
+| La conexión a la base de datos | `backend/.env` (credenciales) + `backend/db-operations.cjs` (lógica) |
+| El puerto del servidor | `backend/.env` → variable `PORT` |
 
 ---
 
 ## Correr el proyecto localmente
 
-### Requisitos
-- Node.js 18 o superior → https://nodejs.org
-- SQL Server local (opcional, la app funciona sin BD usando solo JSON)
+### Instalación (primera vez)
 
-### Instalación
 ```bash
+# Instalar dependencias del backend
+cd backend
+npm install
+
+# Instalar dependencias del frontend
+cd ../frontend
 npm install
 ```
 
-### Modo desarrollo (frontend + backend separados)
-```bash
-# Terminal 1 — inicia el servidor Express en :3001
-npm run server
+### Modo desarrollo (dos terminales)
 
-# Terminal 2 — inicia Vite en :5173 con proxy a :3001
+```bash
+# Terminal 1 — desde la carpeta backend/
+cd backend
+npm run server
+# → Express arranca en http://localhost:3001
+
+# Terminal 2 — desde la carpeta frontend/
+cd frontend
 npm run dev
+# → Vite arranca en http://localhost:5173
 ```
-Abrir: `http://localhost:5173`
+
+Abrir en el navegador: `http://localhost:5173`
+
+Las llamadas a `/api/*` se redirigen automáticamente a `:3001` gracias al proxy de Vite.
 
 ### Modo producción (un solo proceso)
+
 ```bash
-npm run build        # compila el frontend a /dist
-npm start            # sirve todo desde :3001
+# Desde la carpeta frontend/
+cd frontend
+npm run build
+# → Genera frontend/dist/
+
+# Desde la carpeta backend/
+cd backend
+npm start
+# → Sirve la app completa en http://localhost:3001
 ```
-Abrir: `http://localhost:3001`
 
 ---
 
 ## Conexión a SQL Server / Azure SQL
 
-Los datos se guardan **siempre** en `data.json` y `history.json`.
-SQL Server es un destino adicional que recibe los mismos datos en paralelo.
-Si la BD no está disponible, la app sigue funcionando con normalidad.
+Los datos se guardan **siempre** en `backend/data.json` y `backend/history.json`.
+Azure SQL es un destino adicional en paralelo. Si la BD no responde, la app sigue funcionando.
 
-### Variables de entorno (archivo `.env`)
+### Archivo `backend/.env`
 ```env
 DB_SERVER=tu-servidor.database.windows.net
 DB_USER=project_tracker
@@ -121,24 +144,6 @@ DB_NAME=DB_SeguimientoProyectos
 
 ---
 
-## Despliegue en Azure App Service
-
-El archivo `.deployment` le indica a Azure que ejecute `deploy.sh` al recibir un push.
-`deploy.sh` instala dependencias y compila el frontend automáticamente.
-
-```bash
-# Configurar el remote de Azure (solo una vez)
-git remote add azure https://tu-app.scm.azurewebsites.net/tu-app.git
-
-# Desplegar
-git push azure main
-```
-
-Las variables de entorno (`DB_SERVER`, `DB_USER`, etc.) deben configurarse en:
-**Azure Portal → App Service → Configuration → Application Settings**
-
----
-
 ## Fórmulas de avance
 
 ### Por proyecto
@@ -146,7 +151,7 @@ Las variables de entorno (`DB_SERVER`, `DB_USER`, etc.) deben configurarse en:
 Avance = (Completadas + En_Proceso × 0.5) / Total × 100
 ```
 Las tareas en proceso valen 0.5 porque están iniciadas pero no terminadas.
-Para cambiar este peso, editar el `0.5` en `formulas.js → projectProgress()`.
+Para cambiar este peso, editar el `0.5` en `frontend/src/utils/formulas.js → projectProgress()`.
 
 ### Avance global
 ```
@@ -158,9 +163,8 @@ Los proyectos sin tareas (Total = 0) se excluyen del promedio.
 
 ## Flujo semanal de uso
 
-1. **Lunes**: abrir la app, revisar que los datos de la semana anterior estén correctos.
-2. **Durante la semana**: actualizar métricas, estado de actividades e impedimentos.
-3. **Viernes**: activar "Sección de Cierre" en cada proyecto → llenar logros y plan de próxima semana.
-4. **Al cerrar la semana**: botón **"💾 Guardar reporte"** → guarda snapshot en historial.
-5. **Inicio nueva semana**: botón **"↻ Nueva semana"** → limpia campos semanales y avanza la fecha.
-6. **Compartir**: pestaña **Reporte** → **"Copiar reporte ✎"** → pegar en correo o Teams.
+1. **Durante la semana**: actualizar métricas, estado de actividades e impedimentos.
+2. **Viernes**: activar "Sección de Cierre" → llenar logros y plan de próxima semana.
+3. **Al cerrar**: botón **"💾 Guardar reporte"** → guarda snapshot en historial.
+4. **Inicio nueva semana**: botón **"↻ Nueva semana"** → limpia campos semanales y avanza la fecha.
+5. **Compartir**: pestaña **Reporte** → **"Copiar reporte ✎"** → pegar en correo o Teams.
