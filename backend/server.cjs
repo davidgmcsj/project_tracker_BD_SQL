@@ -39,6 +39,15 @@ const { saveWeekReportToDB } = (() => {
   }
 })();
 
+const { generateReportWithAI } = (() => {
+  try {
+    return require("./gemini-report.cjs");
+  } catch (e) {
+    console.error("[AI] Error cargando gemini-report.cjs:", e.message);
+    return { generateReportWithAI: null };
+  }
+})();
+
 // ── Configuración ─────────────────────────────────────────────────────────────
 
 function getDataDir() {
@@ -275,6 +284,26 @@ app.get("/api/history/:date", async (req, res) => {
     res.json(entry);
   } catch {
     res.status(500).json({ error: "Error leyendo historial" });
+  }
+});
+
+// ── API: Generación de informe con IA ─────────────────────────────────────────
+
+app.post("/api/generate-report", async (req, res) => {
+  if (!generateReportWithAI) {
+    return res.status(503).json({ error: "Módulo de IA no disponible" });
+  }
+  try {
+    const { project, quarterLabel } = req.body;
+    if (!project) return res.status(400).json({ error: "Falta el proyecto" });
+
+    console.log("[AI] Generando informe para:", project.project_name);
+    const analysis = await generateReportWithAI(project, quarterLabel || "");
+    console.log("[AI] Informe generado OK");
+    res.json({ ok: true, analysis });
+  } catch (e) {
+    console.error("[AI] Error generando informe:", e.message);
+    res.status(500).json({ error: "Error generando informe con IA", detail: e.message });
   }
 });
 
