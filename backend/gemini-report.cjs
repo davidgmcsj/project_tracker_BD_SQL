@@ -1,6 +1,10 @@
-// gemini-report.cjs — Genera el análisis narrativo del informe de gestión usando Groq AI.
+// gemini-report.cjs — Genera el análisis narrativo del informe de gestión usando OpenRouter (con fallback a Groq).
 
 const Groq = require("groq-sdk");
+const https = require("https");
+
+// OpenRouter elige automáticamente el modelo más adecuado y disponible.
+const OPENROUTER_MODEL = "openrouter/auto";
 
 function getMainEngineer(engineers) {
   if (!engineers?.length) return "Equipo del proyecto";
@@ -220,30 +224,9 @@ PERIODO DEL INFORME: ${quarterLabel}
 }`;
 }
 
-async function generateReportWithAI(project, quarterLabel) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("GROQ_API_KEY no está configurada en .env");
+const SYSTEM_PROMPT = "Eres un Ingeniero de Software Senior y Gestor de Proyectos Tecnológicos Experto. Redactas informes de gestión ejecutivos con análisis técnico profundo, enfoque de mejora continua y visión estratégica. Tu vocabulario es constructivo: nunca usas 'crítico', 'errores', 'problemas', 'fallas' ni 'retrasos graves'. Siempre encuadras las desviaciones como oportunidades de mejora con mitigación inmediata. Respondes SIEMPRE con JSON válido y sin texto adicional fuera del JSON.";
 
-  const groq = new Groq({ apiKey });
-
-  const completion = await groq.chat.completions.create({
-    model:       "llama-3.3-70b-versatile",
-    temperature: 0.3,
-    messages: [
-      {
-        role:    "system",
-        content: "Eres un Ingeniero de Software Senior y Gestor de Proyectos Tecnológicos Experto. Redactas informes de gestión ejecutivos con análisis técnico profundo, enfoque de mejora continua y visión estratégica. Tu vocabulario es constructivo: nunca usas 'crítico', 'errores', 'problemas', 'fallas' ni 'retrasos graves'. Siempre encuadras las desviaciones como oportunidades de mejora con mitigación inmediata. Respondes SIEMPRE con JSON válido y sin texto adicional fuera del JSON.",
-      },
-      {
-        role:    "user",
-        content: buildPrompt(project, quarterLabel),
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const text = completion.choices[0]?.message?.content || "";
-
+function parseAIResponse(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -251,6 +234,81 @@ async function generateReportWithAI(project, quarterLabel) {
     if (match) return JSON.parse(match[0]);
     throw new Error("La IA no devolvió JSON válido");
   }
+}
+
+// Llama a un modelo de OpenRouter. Lanza error si falla (rate limit, cuota, etc.).
+function callOpenRouter(model, messages, apiKey) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model, temperature: 0.3, messages, response_format: { type: "json_object" } });
+    const req = https.request({
+      hostname: "openrouter.ai",
+      path:     "/api/v1/chat/completions",
+      method:   "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer":  "https://project-tracker-local",
+        "X-Title":       "Project Tracker",
+      },
+    }, (res) => {
+      let data = "";
+      res.on("data", chunk => { data += chunk; });
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.error) return reject(new Error(`OpenRouter [${model}]: ${json.error.message || JSON.stringify(json.error)}`));
+          const text = json.choices?.[0]?.message?.content || "";
+          if (!text) return reject(new Error(`OpenRouter [${model}]: respuesta vacía`));
+          resolve(text);
+        } catch (e) {
+          reject(new Error(`OpenRouter [${model}]: respuesta inválida — ${e.message}`));
+        }
+      });
+    });
+    req.on("error", e => reject(new Error(`OpenRouter [${model}]: error de red — ${e.message}`)));
+    req.write(body);
+    req.end();
+  });
+}
+
+// OpenRouter primero (auto-routing); si falla, Groq como respaldo.
+async function generateReportWithAI(project, quarterLabel) {
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user",   content: buildPrompt(project, quarterLabel) },
+  ];
+
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+
+  if (openrouterKey) {
+    try {
+      console.log("[AI] Usando OpenRouter (auto-routing)");
+      const text   = await callOpenRouter(OPENROUTER_MODEL, messages, openrouterKey);
+      const result = parseAIResponse(text);
+      console.log("[AI] OK con OpenRouter");
+      return result;
+    } catch (e) {
+      console.warn(`[AI] OpenRouter falló: ${e.message} — usando Groq como respaldo.`);
+    }
+  } else {
+    console.log("[AI] OPENROUTER_API_KEY no configurada. Usando Groq directamente.");
+  }
+
+  // Respaldo: Groq
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) throw new Error("Ni OPENROUTER_API_KEY ni GROQ_API_KEY están configuradas en .env");
+
+  console.log("[AI] Usando Groq (respaldo): llama-3.3-70b-versatile");
+  const groq       = new Groq({ apiKey: groqKey });
+  const completion = await groq.chat.completions.create({
+    model:           "llama-3.3-70b-versatile",
+    temperature:     0.3,
+    messages,
+    response_format: { type: "json_object" },
+  });
+
+  const text = completion.choices[0]?.message?.content || "";
+  return parseAIResponse(text);
 }
 
 module.exports = { generateReportWithAI };
