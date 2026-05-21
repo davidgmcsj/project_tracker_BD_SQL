@@ -229,7 +229,7 @@ function EngineerWeekCard({ eng }) {
   );
 }
 
-function ProjectReport({ p, i, onGenerateInforme }) {
+function ProjectReport({ p, i, onGenerateInforme, onExportText }) {
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
@@ -254,6 +254,13 @@ function ProjectReport({ p, i, onGenerateInforme }) {
             </a>
           )}
           <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
+          <button
+            className="btn btn--card-export"
+            onClick={() => onExportText(p)}
+            title="Copiar reporte de este proyecto al portapapeles"
+          >
+            📋 Exportar
+          </button>
           <button
             className="btn btn--informe"
             onClick={() => onGenerateInforme(p)}
@@ -323,6 +330,13 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
       .catch(() => setToast("No se pudo copiar"));
   };
 
+  const handleExportText = (project) => {
+    const text = generateSingleProjectReportText(project, weekLabel);
+    navigator.clipboard.writeText(text)
+      .then(() => { setToast(`✓ Reporte de "${project.project_name || "proyecto"}" copiado`); setTimeout(() => setToast(""), 2500); })
+      .catch(() => setToast("No se pudo copiar al portapapeles"));
+  };
+
   const handleGenerateInforme = async (project) => {
     setGenerating(true);
     try {
@@ -378,7 +392,7 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} />)}
+          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} />)}
         </>
       )}
     </div>

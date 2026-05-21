@@ -863,7 +863,7 @@ function CommentList({ comments, activities, onChange }) {
 export default function EditView({
   projects, editingIdx, hasUnsavedChanges,
   onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges,
-  onReorderProjects, onAddProject, onRemoveProject, onViewReport,
+  onReorderProjects, onAddProject, onRemoveProject, onViewReport, onExportReport,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
@@ -1205,6 +1205,7 @@ export default function EditView({
 
           <div className="edit-panel__footer">
             <button className="btn btn--accent"  onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>
+            <button className="btn btn--export"  onClick={() => onExportReport(editingIdx)}>📋 Exportar reporte</button>
             <button className="btn btn--danger"  onClick={() => setShowDeleteModal(true)}>Eliminar proyecto</button>
           </div>
 

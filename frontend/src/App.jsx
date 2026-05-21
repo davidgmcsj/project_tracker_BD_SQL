@@ -5,7 +5,7 @@ import ReportView   from "./components/ReportView";
 import ProgressRing from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
-  isSameWeek, createDefaultProject,
+  isSameWeek, createDefaultProject, generateSingleProjectReportText,
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
@@ -168,6 +168,17 @@ export default function App() {
 
   const viewProjectReport = (idx) => { setReportProjectIdx(idx); setView("report"); };
 
+  const exportProjectReport = (idx) => {
+    const text = generateSingleProjectReportText(projects[idx], weekLabel);
+    navigator.clipboard.writeText(text).then(() => {
+      setSaveToast(`✓ Reporte de "${projects[idx]?.project_name || "proyecto"}" copiado al portapapeles`);
+      setTimeout(() => setSaveToast(""), 2500);
+    }).catch(() => {
+      setSaveToast("No se pudo copiar al portapapeles");
+      setTimeout(() => setSaveToast(""), 2500);
+    });
+  };
+
   // ── Nueva semana ───────────────────────────────────────────────────────────
   const resetWeek = async () => {
     if (hasUnsavedChanges) {
@@ -269,6 +280,7 @@ export default function App() {
             onEdit={idx => { setEditingIdx(idx); setView("edit"); }}
             onAdd={addProject}
             onViewReport={viewProjectReport}
+            onExportReport={exportProjectReport}
           />
         )}
         {view === "edit" && (
@@ -283,6 +295,7 @@ export default function App() {
             onAddProject={addProject}
             onRemoveProject={removeProject}
             onViewReport={viewProjectReport}
+            onExportReport={exportProjectReport}
           />
         )}
       </main>

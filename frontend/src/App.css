@@ -199,19 +199,49 @@
   border-color: #dc2626;
 }
 .btn--card-report {
-  background: var(--accent-bg);
-  border: 1px solid var(--border-hl);
-  color: var(--azul-claro);
+  background: var(--azul-claro);
+  border: 1px solid var(--azul-claro);
+  color: white;
   font-size: 0.78rem;
   padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 .btn--card-report:hover {
+  background: #3b72c4;
+  border-color: #3b72c4;
+}
+.btn--card-export {
   background: var(--azul-claro);
+  border: 1px solid var(--azul-claro);
   color: white;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn--card-export:hover {
+  background: #3b72c4;
+  border-color: #3b72c4;
+}
+.btn--export {
+  background: var(--azul-claro);
+  border: 1px solid var(--azul-claro);
+  color: white;
+  font-size: 0.85rem;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn--export:hover {
+  background: #3b72c4;
+  border-color: #3b72c4;
 }
 
 /* ═══ DELETE CONFIRM MODAL ═══ */

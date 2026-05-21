@@ -7,7 +7,7 @@ const STATUS = {
   completed:  { label: "Completado", cssClass: "completed",icon: "🟢" },
 };
 
-export default function Dashboard({ projects, onEdit, onAdd, onViewReport }) {
+export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExportReport }) {
   return (
     <div>
       {projects.length > 0 && (
@@ -35,6 +35,9 @@ export default function Dashboard({ projects, onEdit, onAdd, onViewReport }) {
               <div className="project-card__actions" onClick={e => e.stopPropagation()}>
                 <button className="btn btn--card-report" onClick={() => onViewReport(i)}>
                   📄 Ver reporte
+                </button>
+                <button className="btn btn--card-export" onClick={() => onExportReport(i)}>
+                  📋 Exportar
                 </button>
               </div>
             </div>
