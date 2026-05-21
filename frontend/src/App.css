@@ -199,49 +199,52 @@
   border-color: #dc2626;
 }
 .btn--card-report {
-  background: var(--azul-claro);
-  border: 1px solid var(--azul-claro);
-  color: white;
-  font-size: 0.78rem;
-  padding: 4px 10px;
+  background: #dce8f7;
+  border: 1px solid #a8c4e8;
+  color: #1e3a7b;
+  font-size: 0.72rem;
+  padding: 3px 8px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .btn--card-report:hover {
-  background: #3b72c4;
-  border-color: #3b72c4;
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
 }
 .btn--card-export {
-  background: var(--azul-claro);
-  border: 1px solid var(--azul-claro);
-  color: white;
-  font-size: 0.78rem;
-  padding: 4px 10px;
+  background: #dce8f7;
+  border: 1px solid #a8c4e8;
+  color: #1e3a7b;
+  font-size: 0.72rem;
+  padding: 3px 8px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .btn--card-export:hover {
-  background: #3b72c4;
-  border-color: #3b72c4;
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
 }
 .btn--export {
-  background: var(--azul-claro);
-  border: 1px solid var(--azul-claro);
-  color: white;
-  font-size: 0.85rem;
-  padding: 6px 14px;
+  background: #dce8f7;
+  border: 1px solid #a8c4e8;
+  color: #1e3a7b;
+  font-size: 0.75rem;
+  padding: 5px 11px;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .btn--export:hover {
-  background: #3b72c4;
-  border-color: #3b72c4;
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
 }
 
 /* ═══ DELETE CONFIRM MODAL ═══ */
@@ -551,7 +554,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 13px;
   margin-top: 12px;
   padding-top: 20px;
   border-top: 1px solid var(--border);
@@ -874,6 +877,7 @@
 .project-card__actions {
   display: flex;
   justify-content: flex-end;
+  gap: 11px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border);

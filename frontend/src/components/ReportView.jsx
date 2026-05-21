@@ -259,7 +259,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText }) {
             onClick={() => onExportText(p)}
             title="Copiar reporte de este proyecto al portapapeles"
           >
-            📋 Exportar
+            📋 Copiar reporte
           </button>
           <button
             className="btn btn--informe"

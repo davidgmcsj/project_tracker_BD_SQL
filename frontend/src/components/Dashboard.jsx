@@ -37,7 +37,7 @@ export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExp
                   📄 Ver reporte
                 </button>
                 <button className="btn btn--card-export" onClick={() => onExportReport(i)}>
-                  📋 Exportar
+                  📋 Copiar reporte
                 </button>
               </div>
             </div>

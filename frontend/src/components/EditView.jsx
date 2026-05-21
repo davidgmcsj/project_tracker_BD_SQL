@@ -1205,7 +1205,7 @@ export default function EditView({
 
           <div className="edit-panel__footer">
             <button className="btn btn--accent"  onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>
-            <button className="btn btn--export"  onClick={() => onExportReport(editingIdx)}>📋 Exportar reporte</button>
+            <button className="btn btn--export"  onClick={() => onExportReport(editingIdx)}>📋 Copiar reporte</button>
             <button className="btn btn--danger"  onClick={() => setShowDeleteModal(true)}>Eliminar proyecto</button>
           </div>
 

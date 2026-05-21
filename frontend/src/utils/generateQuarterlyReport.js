@@ -212,13 +212,18 @@ export async function generateQuarterlyReport(project) {
     compression: "DEFLATE",
   });
 
-  // 4. Descargar
+  // 4. Descargar con nombre que incluye proyecto y fecha (sobreescribe si se genera el mismo día)
   const safeName = (project.project_name || "proyecto")
-    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ \-_]/g, "").trim();
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9 \-_]/g, "").trim()
+    .replace(/\s+/g, "_");
+  const exportDate = new Date().toISOString().slice(0, 10);
+  const fileName   = `informetrimestral_${safeName}_${exportDate}.docx`;
+
   const url = URL.createObjectURL(blob);
   const a   = document.createElement("a");
   a.href    = url;
-  a.download = `Informe de Gestion - ${safeName}.docx`;
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
