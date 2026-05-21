@@ -181,8 +181,9 @@ app.get("/api/db-ping", async (req, res) => {
       user:     process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       server:   process.env.DB_SERVER || "localhost",
+      port:     1433,
       database: process.env.DB_NAME,
-      options:  { encrypt: false, trustServerCertificate: true },
+      options:  { encrypt: true, trustServerCertificate: true },
       connectionTimeout: 5000,
     };
     console.log("[DB-PING] Intentando conectar con:", { server: cfg.server, database: cfg.database, user: cfg.user });
@@ -247,11 +248,14 @@ app.post("/api/report", async (req, res) => {
     await writeJson(HISTORY_FILE, data);
     console.log("[API] Reporte guardado en history.json:", reportDate, weekKey);
 
-    // Escritura en SQL Server: fallo silencioso para no bloquear al usuario
+    // Escritura en SQL Server: se espera pero el error no bloquea al usuario
     if (saveWeekReportToDB) {
-      saveWeekReportToDB(projects, weekLabel, entry.saved_at)
-        .then(() => console.log("[SQL] Reporte guardado en base de datos"))
-        .catch(e => console.error("[SQL] Error guardando reporte:", e.message));
+      try {
+        await saveWeekReportToDB(projects, weekLabel, entry.saved_at);
+        console.log("[SQL] ✓ Reporte guardado en base de datos:", reportDate);
+      } catch (e) {
+        console.error("[SQL] ✗ Error guardando reporte en BD:", e.message);
+      }
     }
 
     res.json({ ok: true, report_date: reportDate, week_key: weekKey });
