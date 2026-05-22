@@ -230,7 +230,7 @@ function EngineerWeekCard({ eng }) {
   );
 }
 
-function ProjectReport({ p, i, onGenerateInforme, onExportText }) {
+function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName }) {
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
@@ -265,10 +265,17 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText }) {
           <button
             className="btn btn--informe"
             onClick={() => onGenerateInforme(p)}
+            disabled={generating}
             title="Generar Informe de Gestión (.docx)"
           >
             📄 Informe
           </button>
+          {generating && generatingName === p.project_name && (
+            <span className="generating-inline">
+              <span className="generating-inline__spinner" />
+              Generando informe
+            </span>
+          )}
         </div>
       </div>
 
@@ -316,8 +323,9 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText }) {
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function ReportView({ projects, weekLabel, singleProjectIdx, onClearSingle }) {
-  const [toast, setToast]           = useState("");
-  const [generating, setGenerating] = useState(false);
+  const [toast, setToast]               = useState("");
+  const [generating, setGenerating]     = useState(false);
+  const [generatingName, setGeneratingName] = useState("");
 
   const isSingle        = singleProjectIdx != null;
   const displayProjects = isSingle ? [projects[singleProjectIdx]] : projects;
@@ -340,13 +348,15 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
 
   const handleGenerateInforme = async (project) => {
     setGenerating(true);
+    setGeneratingName(project.project_name || "proyecto");
     try {
       await generateQuarterlyReport(project);
-      setToast("✓ Informe de gestión generado");
+      setToast("✓ Informe de gestión generado y descargado");
     } catch (e) {
       setToast("Error generando informe: " + e.message);
     } finally {
       setGenerating(false);
+      setGeneratingName("");
       setTimeout(() => setToast(""), 3000);
     }
   };
@@ -366,16 +376,24 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               : "Reporte Semanal Consolidado"}
           </h2>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {isSingle && (
-            <button
-              className="btn btn--primary"
-              onClick={handleGenerateInforme}
-              disabled={generating}
-              title="Genera el Informe de Gestión institucional en formato Word (.docx)"
-            >
-              {generating ? "Generando..." : "📄 Generar Informe"}
-            </button>
+            <>
+              <button
+                className="btn btn--primary"
+                onClick={() => handleGenerateInforme(projects[singleProjectIdx])}
+                disabled={generating}
+                title="Genera el Informe de Gestión institucional en formato Word (.docx)"
+              >
+                📄 Generar Informe
+              </button>
+              {generating && (
+                <span className="generating-inline">
+                  <span className="generating-inline__spinner" />
+                  Generando informe
+                </span>
+              )}
+            </>
           )}
           <button className="btn btn--accent" onClick={handleCopy}>Copiar reporte ✎</button>
         </div>
@@ -393,7 +411,7 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} />)}
+          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} generating={generating} generatingName={generatingName} />)}
         </>
       )}
     </div>

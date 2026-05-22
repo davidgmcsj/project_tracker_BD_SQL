@@ -154,6 +154,9 @@ function buildReplacements(project, analysis) {
     ["[Nivel de cumplimiento de objetivos] ",    conc[1] || ""],
     ["[Aspectos a priorizar en el siguiente periodo]",
       [...prio, s6.enfoque_siguiente || ""].filter(Boolean).join(" ")],
+
+    // ── Firma ──────────────────────────────────────────────────────────────
+    ["Firma del líder de cada proceso", "Emirt Lorenzo Adams Saenz"],
   ];
 }
 

@@ -1146,6 +1146,29 @@
   flex-shrink: 0;
 }
 
+/* ═══ GENERATING INLINE ═══ */
+.generating-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--azul-claro);
+  white-space: nowrap;
+}
+.generating-inline__spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border);
+  border-top-color: var(--azul-claro);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ═══ TOAST ═══ */
 .toast {
   background: var(--green);
