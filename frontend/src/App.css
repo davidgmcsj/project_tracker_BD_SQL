@@ -483,10 +483,11 @@
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
-.status-pill--on-track  { background: var(--green-bg); color: var(--green); }
-.status-pill--at-risk   { background: var(--amber-bg); color: var(--amber); }
-.status-pill--blocked   { background: var(--red-bg);   color: var(--red); }
-.status-pill--completed { background: var(--accent-bg); color: var(--azul-claro); }
+.status-pill--on-track        { background: var(--green-bg);  color: var(--green); }
+.status-pill--at-risk         { background: var(--amber-bg);  color: var(--amber); }
+.status-pill--blocked         { background: var(--red-bg);    color: var(--red); }
+.status-pill--completed       { background: var(--accent-bg); color: var(--azul-claro); }
+.status-pill--mejora-continua { background: #dbeafe;          color: #1d4ed8; }
 
 /* ═══ EDIT VIEW ═══ */
 .project-tabs {
@@ -1072,11 +1073,8 @@
 }
 .engineer-card__sections {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
-}
-@media (max-width: 900px) {
-  .engineer-card__sections { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 600px) {
   .engineer-card__sections { grid-template-columns: 1fr; }

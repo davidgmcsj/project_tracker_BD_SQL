@@ -8,10 +8,11 @@ import {
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
-  { value: "on-track",  label: "En curso"   },
-  { value: "at-risk",   label: "En riesgo"  },
-  { value: "blocked",   label: "Bloqueado"  },
-  { value: "completed", label: "Completado" },
+  { value: "on-track",        label: "En curso"        },
+  { value: "at-risk",         label: "En riesgo"       },
+  { value: "blocked",         label: "Bloqueado"       },
+  { value: "completed",       label: "Completado"      },
+  { value: "mejora-continua", label: "Mejora Continua" },
 ];
 
 const ENGINEER_LIST = [
@@ -418,16 +419,8 @@ function SelectedList({ items, onChange }) {
 // ── Fila de ingeniero ─────────────────────────────────────────────────────────
 
 function EngineerRow({ eng, index, onChange, onRemove, activities }) {
-  const noInitGlobal = Math.max(0, eng.assigned - eng.completed - eng.in_progress);
-  const isOverGlobal = eng.completed + eng.in_progress > eng.assigned;
-  const weeklyArr    = safeArr(eng.weekly_detail);
-  const limit        = eng.weekly_total > 0 ? eng.weekly_total : undefined;
-
-  const numFields = [
-    { field: "assigned",    border: false          },
-    { field: "completed",   border: isOverGlobal   },
-    { field: "in_progress", border: isOverGlobal   },
-  ];
+  const weeklyArr = safeArr(eng.weekly_detail);
+  const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
 
   return (
     <div className="engineer-card">
@@ -460,29 +453,6 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
       </div>
 
       <div className="engineer-card__sections">
-        <div className="engineer-section">
-          <div className="engineer-section__title">Global</div>
-          <div className="engineer-header">
-            <span>Asignadas</span><span>Completadas</span><span>En proceso</span><span>No iniciadas</span>
-          </div>
-          <div className="engineer-row">
-            {numFields.map(({ field, border }) => (
-              <input
-                key={field} className="field__input" type="number" min="0"
-                value={eng[field]}
-                onFocus={e => e.target.select()}
-                style={{ borderColor: border ? "var(--red)" : undefined }}
-                onChange={e => onChange(index, field, e.target.value === "" ? "" : Number(e.target.value))}
-              />
-            ))}
-            <input
-              className="field__input" type="number" readOnly value={noInitGlobal}
-              style={{ background: "#f8fafc", fontWeight: "bold", color: isOverGlobal ? "var(--red)" : "var(--text)" }}
-            />
-          </div>
-          {isOverGlobal && <div style={{ color: "var(--red)", fontSize: "12px", fontWeight: 600 }}>⚠ Completadas + en proceso supera las asignadas.</div>}
-        </div>
-
         <div className="engineer-section">
           <div className="engineer-section__title">Esta semana</div>
           <div className="engineer-week-simple">
@@ -876,15 +846,28 @@ export default function EditView({
 
   const p          = editingIdx !== null ? projects[editingIdx] : null;
   const m          = p?.manual_metrics || {};
-  const pending    = p ? Math.max(0, (m.total_tasks || 0) - (m.completed_tasks || 0) - (m.in_progress_tasks || 0)) : 0;
-  const isOverLimit = p ? (Number(m.completed_tasks || 0) + Number(m.in_progress_tasks || 0)) > Number(m.total_tasks || 0) : false;
   const engineers   = p?.engineers   || [];
   const indicators  = p?.indicators  || [];
   const impediments = p?.impediments || [];
   const activities  = safeArr(p?.activities_identified);
 
+  // Métricas calculadas automáticamente desde actividades y estado de actividades
+  const ts              = p?.task_status || {};
+  const autoTotal       = activities.length;
+  const autoCompletadas = safeArr(ts.completed).length;
+  const autoEnProceso   = safeArr(ts.in_progress).length;
+  const autoNoIniciadas = Math.max(0, autoTotal - autoCompletadas - autoEnProceso);
+
   const updateMetric = (field, val) =>
     onUpdateProject(editingIdx, "manual_metrics", { ...m, [field]: val === "" ? "" : Number(val) });
+
+  // Recalcula total/completadas/en_proceso desde actividades y task_status
+  const buildAutoMetrics = (newActs, newTs) => ({
+    ...m,
+    total_tasks:       newActs.length,
+    completed_tasks:   safeArr(newTs.completed).length,
+    in_progress_tasks: safeArr(newTs.in_progress).length,
+  });
 
   const addEngineer    = () => onUpdateProject(editingIdx, "engineers",   [...engineers,   createDefaultEngineer()]);
   const updateEngineer = (i, f, v) => onUpdateProject(editingIdx, "engineers",   engineers.map((e, idx)   => idx === i ? { ...e,   [f]: v } : e));
@@ -935,16 +918,18 @@ export default function EditView({
       safeArr(arr).map(remap).filter(Boolean);
 
     const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+    const newTs = {
+      completed:   remapArr(ts.completed),
+      in_progress: remapArr(ts.in_progress),
+      not_started: remapArr(ts.not_started),
+    };
     onUpdateProjectFull(editingIdx, {
       ...p,
       activities_identified: newActs,
-      task_status: {
-        completed:   remapArr(ts.completed),
-        in_progress: remapArr(ts.in_progress),
-        not_started: remapArr(ts.not_started),
-      },
-      weekly_achievements: remapArr(p.weekly_achievements),
-      next_week_plan:      remapArr(p.next_week_plan),
+      task_status:           newTs,
+      manual_metrics:        buildAutoMetrics(newActs, newTs),
+      weekly_achievements:   remapArr(p.weekly_achievements),
+      next_week_plan:        remapArr(p.next_week_plan),
       engineers: (p.engineers || []).map(eng => ({
         ...eng,
         weekly_detail: remapArr(eng.weekly_detail),
@@ -1023,40 +1008,40 @@ export default function EditView({
             </div>
           </div>
 
-          {/* ══ 2. Métricas manuales ══ */}
+          {/* ══ 2. Métricas de avance (auto-calculadas) ══ */}
           <div className="field field--optional">
             <label className="field__label" style={{ marginBottom: 10 }}>
               Métricas de Avance
               <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
-                (valores manuales — datos de Planner)
+                (calculadas automáticamente desde actividades y estado)
               </span>
             </label>
             <div className="edit-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: "12px" }}>
               {[
-                { lbl: "Total actividades",   field: "total_tasks"           },
-                { lbl: "Completadas",         field: "completed_tasks"       },
-                { lbl: "En proceso",          field: "in_progress_tasks"     },
-                { lbl: "No iniciadas (Auto)", field: null                    },
-                { lbl: "Tareas compartidas",  field: "shared_tasks_discount" },
-              ].map(({ lbl, field }) => (
+                { lbl: "Total actividades",  val: autoTotal       },
+                { lbl: "Completadas",        val: autoCompletadas },
+                { lbl: "En proceso",         val: autoEnProceso   },
+                { lbl: "No iniciadas",       val: autoNoIniciadas },
+                { lbl: "Tareas compartidas", val: null            },
+              ].map(({ lbl, val }) => (
                 <div className="field" key={lbl}>
                   <label className="field__label" style={{ fontSize: "11px" }}>{lbl}</label>
-                  {field ? (
+                  {val === null ? (
                     <input
                       className="field__input" type="number" min="0"
-                      value={m[field] ?? 0} onFocus={e => e.target.select()}
-                      onChange={e => updateMetric(field, e.target.value)}
+                      value={m.shared_tasks_discount ?? 0}
+                      onFocus={e => e.target.select()}
+                      onChange={e => updateMetric("shared_tasks_discount", e.target.value)}
                     />
                   ) : (
                     <input
-                      className="field__input" type="number" readOnly value={pending}
-                      style={{ background: "#f8fafc", fontWeight: "bold", color: isOverLimit ? "var(--red)" : "var(--text)" }}
+                      className="field__input" type="number" readOnly value={val}
+                      style={{ background: "#f8fafc", fontWeight: "bold", color: "var(--text)" }}
                     />
                   )}
                 </div>
               ))}
             </div>
-            {isOverLimit && <div style={{ color: "var(--red)", fontSize: "12px", fontWeight: 600 }}>⚠ La suma de completadas y en proceso supera el total.</div>}
           </div>
 
           {/* ══ 3. Actividades identificadas ══ */}
@@ -1077,7 +1062,11 @@ export default function EditView({
               <TaskStatusSelector
                 taskStatus={p.task_status}
                 activities={activities}
-                onChange={val => onUpdateProject(editingIdx, "task_status", val)}
+                onChange={val => onUpdateProjectFull(editingIdx, {
+                  ...p,
+                  task_status:    val,
+                  manual_metrics: buildAutoMetrics(activities, val),
+                })}
               />
             </div>
           )}

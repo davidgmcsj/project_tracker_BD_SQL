@@ -1,10 +1,11 @@
 import { GlobalMetricsTable, ProjectMetricsTableCompact } from "./MetricsTable";
 
 const STATUS = {
-  "on-track": { label: "En curso",   cssClass: "on-track", icon: "🟡" },
-  "at-risk":  { label: "En riesgo",  cssClass: "at-risk",  icon: "🟠" },
-  blocked:    { label: "Bloqueado",  cssClass: "blocked",  icon: "🔴" },
-  completed:  { label: "Completado", cssClass: "completed",icon: "🟢" },
+  "on-track":        { label: "En curso",        cssClass: "on-track",        icon: "🟡" },
+  "at-risk":         { label: "En riesgo",       cssClass: "at-risk",         icon: "🟠" },
+  blocked:           { label: "Bloqueado",       cssClass: "blocked",         icon: "🔴" },
+  completed:         { label: "Completado",      cssClass: "completed",       icon: "🟢" },
+  "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
 export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExportReport }) {

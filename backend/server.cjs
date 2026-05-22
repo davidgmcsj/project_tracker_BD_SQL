@@ -248,17 +248,22 @@ app.post("/api/report", async (req, res) => {
     await writeJson(HISTORY_FILE, data);
     console.log("[API] Reporte guardado en history.json:", reportDate, weekKey);
 
-    // Escritura en SQL Server: se espera pero el error no bloquea al usuario
-    if (saveWeekReportToDB) {
-      try {
-        await saveWeekReportToDB(projects, weekLabel, entry.saved_at);
-        console.log("[SQL] ✓ Reporte guardado en base de datos:", reportDate);
-      } catch (e) {
-        console.error("[SQL] ✗ Error guardando reporte en BD:", e.message);
-      }
-    }
-
+    // Responde al frontend inmediatamente — el JSON ya está guardado
     res.json({ ok: true, report_date: reportDate, week_key: weekKey });
+
+    // Escritura en SQL Server en segundo plano con reintento automático
+    if (saveWeekReportToDB) {
+      saveWeekReportToDB(projects, weekLabel, entry.saved_at)
+        .then(() => console.log("[SQL] ✓ Reporte guardado en base de datos:", reportDate))
+        .catch(e => {
+          console.warn("[SQL] ⚠ Primer intento fallido, reintentando en 5s:", e.message);
+          setTimeout(() => {
+            saveWeekReportToDB(projects, weekLabel, entry.saved_at)
+              .then(() => console.log("[SQL] ✓ Reporte guardado en base de datos (reintento):", reportDate))
+              .catch(e2 => console.error("[SQL] ✗ Error definitivo guardando en BD:", e2.message));
+          }, 5000);
+        });
+    }
   } catch (e) {
     console.error("[API] Error en POST /api/report:", e.message, e.stack);
     res.status(500).json({ error: "Error guardando reporte", detail: e.message });
