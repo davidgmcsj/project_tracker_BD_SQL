@@ -202,10 +202,15 @@ function ActivitiesList({ activities, onChange }) {
 
 // ── Selector de actividades (multi-select con límite) ─────────────────────────
 
-function ActivitySelector({ label, activities, selected, limit, onChange }) {
+function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted }) {
   const [query, setQuery] = useState("");
   const acts   = safeArr(activities);
   const selArr = safeArr(selected);
+
+  // Normaliza quitando prefijo numérico para comparar con task_status.completed
+  const completedNorm = excludeCompleted
+    ? new Set(safeArr(excludeCompleted).map(a => a.replace(/^\d+\.\s*/, "")))
+    : null;
 
   const deselect = (item) => onChange(selArr.filter(s => s !== item));
   const select   = (item) => {
@@ -216,7 +221,13 @@ function ActivitySelector({ label, activities, selected, limit, onChange }) {
 
   const { onDragStart, onDrop } = useDragSort(selArr, onChange);
 
-  const visible = acts.filter(act => matchesSearch(`${act}`, query));
+  // Filtra completadas (si se pide) y aplica búsqueda, preservando índice original
+  const visible = acts.reduce((acc, act, origIdx) => {
+    if (completedNorm && completedNorm.has(act.replace(/^\d+\.\s*/, ""))) return acc;
+    if (!matchesSearch(act, query)) return acc;
+    acc.push({ act, origIdx });
+    return acc;
+  }, []);
 
   return (
     <div className="act-selector">
@@ -243,10 +254,9 @@ function ActivitySelector({ label, activities, selected, limit, onChange }) {
           </div>
           <div className="act-selector__list">
             {visible.length === 0 ? (
-              <p className="act-selector__empty">Sin coincidencias para "{query}"</p>
-            ) : visible.map((act) => {
-              const origIdx = acts.indexOf(act);
-              const item    = `${origIdx + 1}. ${act}`;
+              <p className="act-selector__empty">{query ? `Sin coincidencias para "${query}"` : "Sin actividades disponibles"}</p>
+            ) : visible.map(({ act, origIdx }) => {
+              const item     = `${origIdx + 1}. ${act}`;
               const checked  = selArr.includes(item);
               const disabled = !checked && limit && selArr.length >= limit;
               return (
@@ -418,9 +428,10 @@ function SelectedList({ items, onChange }) {
 
 // ── Fila de ingeniero ─────────────────────────────────────────────────────────
 
-function EngineerRow({ eng, index, onChange, onRemove, activities }) {
+function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus }) {
   const weeklyArr = safeArr(eng.weekly_detail);
   const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
+  const completedNorm = new Set(safeArr(taskStatus?.completed).map(a => a.replace(/^\d+\.\s*/, "")));
 
   return (
     <div className="engineer-card">
@@ -474,6 +485,7 @@ function EngineerRow({ eng, index, onChange, onRemove, activities }) {
               selected={weeklyArr}
               limit={limit}
               onChange={val => onChange(index, "weekly_detail", val)}
+              excludeCompleted={taskStatus?.completed}
             />
           </div>
         </div>
@@ -1124,6 +1136,7 @@ export default function EditView({
                   <EngineerRow key={i} eng={eng} index={i}
                     onChange={updateEngineer} onRemove={removeEngineer}
                     activities={activities}
+                    taskStatus={p.task_status}
                   />
                 ))}
                 <div className="shared-tasks-row">
@@ -1159,6 +1172,7 @@ export default function EditView({
                     activities={activities}
                     selected={safeArr(p.next_week_plan)}
                     onChange={val => onUpdateProject(editingIdx, "next_week_plan", val)}
+                    excludeCompleted={p.task_status?.completed}
                   />
                 </div>
                 <div className="field">
@@ -1168,6 +1182,7 @@ export default function EditView({
                     activities={activities}
                     selected={safeArr(p.weekly_achievements)}
                     onChange={val => onUpdateProject(editingIdx, "weekly_achievements", val)}
+                    excludeCompleted={p.task_status?.completed}
                   />
                 </div>
               </div>
