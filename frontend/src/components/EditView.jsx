@@ -202,14 +202,40 @@ function ActivitiesList({ activities, onChange }) {
 
 // ── Selector de actividades (multi-select con límite) ─────────────────────────
 
-function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted }) {
+function getCurrentWeekKey() {
+  const now = new Date();
+  const day = now.getDay() || 7;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - day + 1);
+  return mon.toISOString().slice(0, 10);
+}
+
+function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted, excludeOldCompleted, completedDates }) {
   const [query, setQuery] = useState("");
   const acts   = safeArr(activities);
   const selArr = safeArr(selected);
 
-  // Normaliza quitando prefijo numérico para comparar con task_status.completed
+  const currentWeek = getCurrentWeekKey();
+
+  // excludeCompleted: oculta TODAS las completadas (para "próxima semana" e "ingeniero esta semana")
   const completedNorm = excludeCompleted
     ? new Set(safeArr(excludeCompleted).map(a => a.replace(/^\d+\.\s*/, "")))
+    : null;
+
+  // excludeOldCompleted: oculta solo las completadas en semanas ANTERIORES (para "qué se hizo esta semana")
+  const oldCompletedNorm = excludeOldCompleted
+    ? new Set(
+        safeArr(excludeOldCompleted)
+          .filter(a => {
+            const dateKey = completedDates?.[a];
+            if (!dateKey) return false;
+            const itemWeek = new Date(dateKey + "T12:00:00");
+            const day = itemWeek.getDay() || 7;
+            itemWeek.setDate(itemWeek.getDate() - day + 1);
+            return itemWeek.toISOString().slice(0, 10) < currentWeek;
+          })
+          .map(a => a.replace(/^\d+\.\s*/, ""))
+      )
     : null;
 
   const deselect = (item) => onChange(selArr.filter(s => s !== item));
@@ -221,9 +247,11 @@ function ActivitySelector({ label, activities, selected, limit, onChange, exclud
 
   const { onDragStart, onDrop } = useDragSort(selArr, onChange);
 
-  // Filtra completadas (si se pide) y aplica búsqueda, preservando índice original
+  // Filtra según el modo y aplica búsqueda, preservando índice original
   const visible = acts.reduce((acc, act, origIdx) => {
-    if (completedNorm && completedNorm.has(act.replace(/^\d+\.\s*/, ""))) return acc;
+    const norm = act.replace(/^\d+\.\s*/, "");
+    if (completedNorm    && completedNorm.has(norm))    return acc;
+    if (oldCompletedNorm && oldCompletedNorm.has(norm)) return acc;
     if (!matchesSearch(act, query)) return acc;
     acc.push({ act, origIdx });
     return acc;
@@ -431,7 +459,6 @@ function SelectedList({ items, onChange }) {
 function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus }) {
   const weeklyArr = safeArr(eng.weekly_detail);
   const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
-  const completedNorm = new Set(safeArr(taskStatus?.completed).map(a => a.replace(/^\d+\.\s*/, "")));
 
   return (
     <div className="engineer-card">
@@ -485,7 +512,8 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus })
               selected={weeklyArr}
               limit={limit}
               onChange={val => onChange(index, "weekly_detail", val)}
-              excludeCompleted={taskStatus?.completed}
+              excludeOldCompleted={taskStatus?.completed}
+              completedDates={taskStatus?.completed_dates}
             />
           </div>
         </div>
@@ -694,27 +722,49 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
     ...safeArr(ts.not_started),
   ]);
 
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  const updateCompletedDates = (next, item, toKey, fromKey) => {
+    const dates = { ...(ts.completed_dates || {}) };
+    if (toKey === "completed") {
+      dates[item] = today();
+    } else if (fromKey === "completed") {
+      delete dates[item];
+    }
+    next.completed_dates = dates;
+  };
+
   const update = (colKey, newArr) => onChange({ ...ts, [colKey]: newArr });
 
   const move = (item, toKey) => {
+    const fromKey = ["completed", "in_progress", "not_started"].find(k => safeArr(ts[k]).includes(item));
     const next = {
       completed:   safeArr(ts.completed).filter(s => s !== item),
       in_progress: safeArr(ts.in_progress).filter(s => s !== item),
       not_started: safeArr(ts.not_started).filter(s => s !== item),
     };
     next[toKey] = [...next[toKey], item];
+    updateCompletedDates(next, item, toKey, fromKey);
     onChange(next);
   };
 
-  const remove = (item) => onChange({
-    completed:   safeArr(ts.completed).filter(s => s !== item),
-    in_progress: safeArr(ts.in_progress).filter(s => s !== item),
-    not_started: safeArr(ts.not_started).filter(s => s !== item),
-  });
+  const remove = (item) => {
+    const next = {
+      completed:   safeArr(ts.completed).filter(s => s !== item),
+      in_progress: safeArr(ts.in_progress).filter(s => s !== item),
+      not_started: safeArr(ts.not_started).filter(s => s !== item),
+    };
+    const dates = { ...(ts.completed_dates || {}) };
+    delete dates[item];
+    next.completed_dates = dates;
+    onChange(next);
+  };
 
   const add = (item, toKey) => {
     if (assigned.has(item)) return;
-    onChange({ ...ts, [toKey]: [...safeArr(ts[toKey]), item] });
+    const next = { ...ts, [toKey]: [...safeArr(ts[toKey]), item] };
+    updateCompletedDates(next, item, toKey, null);
+    onChange(next);
   };
 
   // Actividades sin asignar aún
@@ -1151,7 +1201,28 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 8. Cierre semanal ══ */}
+          {/* ══ 8. Estado actual del proyecto ══ */}
+          <div className="field field--optional">
+            <div className="field__header">
+              <label className="field__label">📋 Estado actual del proyecto</label>
+            </div>
+            <textarea
+              className="field__textarea status-notes__textarea"
+              rows={6}
+              placeholder="Redacta aquí el estado actual del proyecto: avances, decisiones tomadas, bloqueos, contexto importante, notas para la próxima revisión..."
+              value={p.status_notes || ""}
+              onChange={e => onUpdateProject(editingIdx, "status_notes", e.target.value)}
+            />
+            {p.status_notes && (
+              <div className="status-notes__preview">
+                {p.status_notes.split("\n").map((line, i) =>
+                  line.trim() ? <p key={i} className="status-notes__line">{line}</p> : <br key={i} />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ══ 9. Cierre semanal ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Sección de Cierre</label>
@@ -1182,7 +1253,8 @@ export default function EditView({
                     activities={activities}
                     selected={safeArr(p.weekly_achievements)}
                     onChange={val => onUpdateProject(editingIdx, "weekly_achievements", val)}
-                    excludeCompleted={p.task_status?.completed}
+                    excludeOldCompleted={p.task_status?.completed}
+                    completedDates={p.task_status?.completed_dates}
                   />
                 </div>
               </div>

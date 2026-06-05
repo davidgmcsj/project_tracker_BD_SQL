@@ -316,6 +316,60 @@ app.post("/api/generate-report", async (req, res) => {
   }
 });
 
+// ── API: Restaurar desde BD ───────────────────────────────────────────────────
+
+app.post("/api/restore-from-db", async (req, res) => {
+  if (!saveWeekReportToDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { sql, connect } = require("mssql");
+    const config = {
+      user:              process.env.DB_USER,
+      password:          process.env.DB_PASSWORD,
+      server:            process.env.DB_SERVER || "localhost",
+      port:              1433,
+      database:          process.env.DB_NAME,
+      connectionTimeout: 60000,
+      requestTimeout:    60000,
+      options:           { encrypt: true, trustServerCertificate: true },
+    };
+    const pool = await connect(config);
+
+    // Trae el RawDataJSON más reciente de cada proyecto
+    const result = await pool.request().query(`
+      SELECT r.RawDataJSON
+      FROM ReportesSemanales r
+      INNER JOIN (
+        SELECT ProyectoID, MAX(SavedAt) AS UltimoGuardado
+        FROM ReportesSemanales
+        GROUP BY ProyectoID
+      ) latest ON r.ProyectoID = latest.ProyectoID AND r.SavedAt = latest.UltimoGuardado
+      WHERE r.RawDataJSON IS NOT NULL AND r.RawDataJSON != ''
+    `);
+
+    await pool.close();
+
+    const projects = result.recordset
+      .map(row => { try { return JSON.parse(row.RawDataJSON); } catch { return null; } })
+      .filter(Boolean);
+
+    if (!projects.length) {
+      return res.status(404).json({ error: "No hay datos de respaldo en la base de datos" });
+    }
+
+    // Sobreescribe el data.json con los proyectos restaurados
+    const currentData = await readJson(DATA_FILE, { projects: [], weekLabel: null });
+    await writeJson(DATA_FILE, { ...currentData, projects });
+
+    console.log(`[RESTORE] ✓ Restaurados ${projects.length} proyectos desde la BD`);
+    res.json({ ok: true, restored: projects.length });
+  } catch (e) {
+    console.error("[RESTORE] Error:", e.message);
+    res.status(500).json({ error: "Error restaurando desde BD", detail: e.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", async () => {
   await init();
   console.log(`Servidor en puerto ${PORT}`);

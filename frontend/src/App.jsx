@@ -179,6 +179,27 @@ export default function App() {
     });
   };
 
+  // ── Restaurar desde BD ────────────────────────────────────────────────────
+  const handleRestoreFromDB = async () => {
+    const ok = window.confirm(
+      `⚠ RESTAURAR RESPALDO\n\n` +
+      `Esto sobreescribirá todos los datos actuales con el último respaldo guardado en la base de datos.\n\n` +
+      `Úsalo solo si perdiste información o el aplicativo quedó en un estado incorrecto.\n\n` +
+      `¿Confirmas la restauración?`
+    );
+    if (!ok) return;
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${API_BASE}/api/restore-from-db`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      alert(`✓ Restauración exitosa — ${data.restored} proyectos recuperados.\n\nEl aplicativo se recargará ahora.`);
+      window.location.reload();
+    } catch (e) {
+      alert(`Error al restaurar: ${e.message}`);
+    }
+  };
+
   // ── Nueva semana ───────────────────────────────────────────────────────────
   const resetWeek = async () => {
     if (hasUnsavedChanges) {
@@ -240,6 +261,7 @@ export default function App() {
             </button>
           ))}
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
+          <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
         </div>
       </header>
 

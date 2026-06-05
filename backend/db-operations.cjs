@@ -146,7 +146,7 @@ async function syncActividades(pool, proyectoID, activitiesArr) {
 
 async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCache) {
   const proyectoID  = await resolveProject(pool, project, proyCache);
-  const reportDate  = project.report_date || new Date().toISOString().slice(0, 10);
+  const reportDate  = new Date().toISOString().slice(0, 10);
   const semana      = getWeekNumber(reportDate);
   const anio        = new Date(reportDate + "T12:00:00").getFullYear();
   const m           = project.manual_metrics || {};
@@ -187,15 +187,17 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
         .input("logros",      sql.NVarChar,       JSON.stringify(safeArr(project.weekly_achievements)))
         .input("plan",        sql.NVarChar,       JSON.stringify(safeArr(project.next_week_plan)))
         .input("weekLabel",   sql.NVarChar(100),  weekLabel || "")
-        .input("savedAt",     sql.DateTime2,      new Date(savedAt || Date.now()))
+        .input("savedAt",     sql.DateTime2,      new Date())
         .input("rawJson",     sql.NVarChar,       rawJson)
+        .input("statusNotes", sql.NVarChar,       project.status_notes || "")
         .query(`UPDATE ReportesSemanales SET
           FechaReporte=@fechaRep, EstadoProyecto=@estado,
           Metrica_Total=@total, Metrica_Completadas=@completadas,
           Metrica_EnProceso=@enProceso, Metrica_Compartidas=@compartidas,
           AvancePromedio=@avance, MostrarCierre=@mostrar,
           LogrosSemana=@logros, PlanProximaSemana=@plan,
-          WeekLabel=@weekLabel, SavedAt=@savedAt, RawDataJSON=@rawJson
+          WeekLabel=@weekLabel, SavedAt=@savedAt, RawDataJSON=@rawJson,
+          StatusNotes=@statusNotes
           WHERE ReporteID=@rid`),
       pool.request().input("rid", sql.Int, reporteID).query(`
         DELETE FROM Estado_Actividades_Reporte    WHERE ReporteID=@rid;
@@ -223,16 +225,17 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
       .input("weekLabel",   sql.NVarChar(100), weekLabel || "")
       .input("savedAt",     sql.DateTime2,     new Date(savedAt || Date.now()))
       .input("rawJson",     sql.NVarChar,      rawJson)
+      .input("statusNotes", sql.NVarChar,      project.status_notes || "")
       .query(`INSERT INTO ReportesSemanales
         (ProyectoID,NumeroSemana,Anio,FechaReporte,EstadoProyecto,
          Metrica_Total,Metrica_Completadas,Metrica_EnProceso,Metrica_Compartidas,
          AvancePromedio,MostrarCierre,LogrosSemana,PlanProximaSemana,
-         WeekLabel,SavedAt,RawDataJSON)
+         WeekLabel,SavedAt,RawDataJSON,StatusNotes)
         OUTPUT INSERTED.ReporteID
         VALUES (@pid,@semana,@anio,@fechaRep,@estado,
          @total,@completadas,@enProceso,@compartidas,
          @avance,@mostrar,@logros,@plan,
-         @weekLabel,@savedAt,@rawJson)`);
+         @weekLabel,@savedAt,@rawJson,@statusNotes)`);
     reporteID = ins.recordset[0].ReporteID;
   }
 
@@ -242,20 +245,23 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
 
   // Estado de actividades
   const ts = project.task_status || {};
+  const completedDates = ts.completed_dates || {};
   const statusMap = { completed: "Completada", in_progress: "En_Proceso", not_started: "No_Iniciada" };
   const taskRows = [];
   const taskReq  = pool.request().input("rid", sql.Int, reporteID);
   let ti = 0;
   for (const [key, label] of Object.entries(statusMap)) {
     for (const texto of safeArr(ts[key])) {
-      taskReq.input(`ttexto${ti}`, sql.NVarChar,     texto);
+      const fechaComp = key === "completed" ? (completedDates[texto] || null) : null;
+      taskReq.input(`ttexto${ti}`,  sql.NVarChar,     texto);
       taskReq.input(`testado${ti}`, sql.NVarChar(50), label);
-      taskRows.push(`(@rid, @ttexto${ti}, @testado${ti})`);
+      taskReq.input(`tfecha${ti}`,  sql.Date,         fechaComp);
+      taskRows.push(`(@rid,@ttexto${ti},@testado${ti},@tfecha${ti})`);
       ti++;
     }
   }
   if (taskRows.length) {
-    inserts.push(taskReq.query(`INSERT INTO Estado_Actividades_Reporte (ReporteID,DescripcionTexto,Estado) VALUES ${taskRows.join(",")}`));
+    inserts.push(taskReq.query(`INSERT INTO Estado_Actividades_Reporte (ReporteID,DescripcionTexto,Estado,FechaCompletado) VALUES ${taskRows.join(",")}`));
   }
 
   // Indicadores

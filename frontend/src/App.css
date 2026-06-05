@@ -2,31 +2,38 @@
    CSS VARIABLES — Cambia estos para personalizar
    ═══════════════════════════════════════════════ */
 :root {
-  --azul-oscuro:    #1a2a5e;
-  --azul-medio:     #1e3a7b;
-  --azul-claro:     #2b5faa;
-  --dorado:         #c8972a;
-  --dorado-claro:   #e8b84b;
+  /* ── Identidad institucional ── */
+  --inst-azul:      #003399;
+  --inst-amarillo:  #FFCC00;
+  --inst-rojo:      #CC0033;
+  --inst-gradient:  linear-gradient(135deg, #F5E800, #FF9E2B);
+
+  /* ── Paleta derivada ── */
+  --azul-oscuro:    #003399;
+  --azul-medio:     #002277;
+  --azul-claro:     #003399;
+  --dorado:         #FFCC00;
+  --dorado-claro:   #FFD633;
   --teal:           #0e7490;
 
   --bg:             #f8fafc;
-  --bg-header:      var(--azul-oscuro);
+  --bg-header:      var(--inst-azul);
   --surface:        #ffffff;
   --surface-2:      #f1f5f9;
   --border:         #e2e8f0;
-  --border-hl:      var(--azul-claro);
+  --border-hl:      var(--inst-amarillo);
   --text:           #1e293b;
   --text-2:         #475569;
   --text-3:         #64748b;
-  --accent:         var(--azul-claro);
-  --accent-bg:      rgba(43, 95, 170, 0.1);
-  --accent-bdr:     rgba(43, 95, 170, 0.3);
+  --accent:         var(--inst-amarillo);
+  --accent-bg:      rgba(255, 204, 0, 0.12);
+  --accent-bdr:     rgba(255, 204, 0, 0.4);
   --green:          #10b981;
   --green-bg:       #ecfdf5;
   --amber:          #f59e0b;
   --amber-bg:       #fffbeb;
-  --red:            #ef4444;
-  --red-bg:         #fef2f2;
+  --red:            #CC0033;
+  --red-bg:         #fff0f3;
   --radius:         12px;
   --radius-sm:      8px;
 }
@@ -162,6 +169,13 @@
 }
 .btn--reset:hover {
   background: #dc2626;
+}
+.btn--restore {
+  background: var(--azul-claro);
+  color: white;
+}
+.btn--restore:hover {
+  background: var(--azul-medio);
 }
 .btn--accent {
   background: var(--azul-claro);
@@ -2146,5 +2160,44 @@
   .summary {
     flex-direction: column;
   }
+}
+
+/* ═══ ESTADO ACTUAL DEL PROYECTO ═══ */
+.status-notes__textarea {
+  width: 100%;
+  min-height: 120px;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  resize: vertical;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.status-notes__textarea:focus {
+  outline: none;
+  border-color: var(--azul-claro);
+  box-shadow: 0 0 0 3px rgba(43,95,170,0.08);
+}
+.status-notes__preview {
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  border-left: 4px solid var(--azul-claro);
+}
+.status-notes__preview p.status-notes__line {
+  margin: 0 0 6px 0;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.6;
+}
+.status-notes__preview br {
+  display: block;
+  margin: 4px 0;
 }
 
