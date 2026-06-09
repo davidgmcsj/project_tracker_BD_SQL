@@ -1854,12 +1854,17 @@
 }
 .task-status-col__item {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   background: white;
   border: 1px solid rgba(0,0,0,0.07);
   border-radius: 6px;
   padding: 6px 8px;
+}
+.task-status-col__item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
 .task-status-col__item-text {
   flex: 1;
@@ -1901,6 +1906,49 @@
   user-select: none;
 }
 .task-status-col__item:active .task-status-col__item__grip { cursor: grabbing; }
+.task-status-col__dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 2px;
+}
+/* ── Fecha badge por estado ── */
+.status-date-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  background: var(--bg-2);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text-3);
+}
+.status-date-badge__label {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.status-date-badge__value {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-3);
+  text-decoration: underline dotted;
+  line-height: 1;
+}
+.status-date-badge__value:hover { color: var(--inst-azul); }
+.status-date-badge__input {
+  border: none;
+  background: none;
+  font-size: 10px;
+  color: var(--text);
+  padding: 0;
+  width: 100px;
+  outline: 1px solid var(--accent);
+  border-radius: 2px;
+}
 
 /* ═══ TASK STATUS — ReportView ═══ */
 .rpt-task-status {

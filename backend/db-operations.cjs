@@ -245,23 +245,29 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
 
   // Estado de actividades
   const ts = project.task_status || {};
-  const completedDates = ts.completed_dates || {};
+  const completedDates  = ts.completed_dates  || {};
+  const statusHistory   = ts.status_history   || {};
   const statusMap = { completed: "Completada", in_progress: "En_Proceso", not_started: "No_Iniciada" };
   const taskRows = [];
   const taskReq  = pool.request().input("rid", sql.Int, reporteID);
   let ti = 0;
   for (const [key, label] of Object.entries(statusMap)) {
     for (const texto of safeArr(ts[key])) {
-      const fechaComp = key === "completed" ? (completedDates[texto] || null) : null;
-      taskReq.input(`ttexto${ti}`,  sql.NVarChar,     texto);
-      taskReq.input(`testado${ti}`, sql.NVarChar(50), label);
-      taskReq.input(`tfecha${ti}`,  sql.Date,         fechaComp);
-      taskRows.push(`(@rid,@ttexto${ti},@testado${ti},@tfecha${ti})`);
+      const hist         = statusHistory[texto] || {};
+      const fechaComp    = key === "completed" ? (completedDates[texto] || hist.completed || null) : null;
+      const fechaInsc    = hist.added       || null;
+      const fechaEnProc  = hist.in_progress || null;
+      taskReq.input(`ttexto${ti}`,   sql.NVarChar,     texto);
+      taskReq.input(`testado${ti}`,  sql.NVarChar(50), label);
+      taskReq.input(`tfecha${ti}`,   sql.Date,         fechaComp);
+      taskReq.input(`tfinsc${ti}`,   sql.Date,         fechaInsc);
+      taskReq.input(`tfenproc${ti}`, sql.Date,         fechaEnProc);
+      taskRows.push(`(@rid,@ttexto${ti},@testado${ti},@tfecha${ti},@tfinsc${ti},@tfenproc${ti})`);
       ti++;
     }
   }
   if (taskRows.length) {
-    inserts.push(taskReq.query(`INSERT INTO Estado_Actividades_Reporte (ReporteID,DescripcionTexto,Estado,FechaCompletado) VALUES ${taskRows.join(",")}`));
+    inserts.push(taskReq.query(`INSERT INTO Estado_Actividades_Reporte (ReporteID,DescripcionTexto,Estado,FechaCompletado,FechaInscripcion,FechaEnProceso) VALUES ${taskRows.join(",")}`));
   }
 
   // Indicadores

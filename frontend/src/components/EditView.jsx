@@ -711,6 +711,39 @@ const TASK_STATUS_COLS = [
   { key: "not_started", label: "No iniciadas", icon: "○",  variant: "gray"   },
 ];
 
+// Fechas que se registran automáticamente por columna
+const STATUS_DATE_FIELD = {
+  not_started: null,
+  in_progress: "in_progress",
+  completed:   "completed",
+};
+
+function StatusDateBadge({ label, value, onEdit }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <span className="status-date-badge">
+      <span className="status-date-badge__label">{label}:</span>
+      {editing ? (
+        <input
+          className="status-date-badge__input"
+          type="date"
+          defaultValue={value || ""}
+          autoFocus
+          onBlur={e => { onEdit(e.target.value || null); setEditing(false); }}
+          onKeyDown={e => {
+            if (e.key === "Enter") { onEdit(e.target.value || null); setEditing(false); }
+            if (e.key === "Escape") setEditing(false);
+          }}
+        />
+      ) : (
+        <button type="button" className="status-date-badge__value" onClick={() => setEditing(true)} title="Editar fecha">
+          {value || "—"}
+        </button>
+      )}
+    </span>
+  );
+}
+
 function TaskStatusSelector({ taskStatus, activities, onChange }) {
   const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
   const acts = safeArr(activities);
@@ -724,14 +757,24 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
 
   const today = () => new Date().toISOString().slice(0, 10);
 
-  const updateCompletedDates = (next, item, toKey, fromKey) => {
-    const dates = { ...(ts.completed_dates || {}) };
-    if (toKey === "completed") {
-      dates[item] = today();
-    } else if (fromKey === "completed") {
-      delete dates[item];
-    }
-    next.completed_dates = dates;
+  // Actualiza completed_dates (para filtrado semanal) y status_history (para mostrar fechas)
+  const updateDates = (next, item, toKey, fromKey) => {
+    // completed_dates: sigue igual (para el filtro semanal)
+    const cDates = { ...(ts.completed_dates || {}) };
+    if (toKey === "completed") cDates[item] = today();
+    else if (fromKey === "completed") delete cDates[item];
+    next.completed_dates = cDates;
+
+    // status_history: registra fecha por campo
+    const hist = { ...(ts.status_history || {}) };
+    if (!hist[item]) hist[item] = { added: today() };
+    const dateField = STATUS_DATE_FIELD[toKey];
+    if (dateField) hist[item] = { ...hist[item], [dateField]: today() };
+    // Si se mueve de in_progress a otro lado, borra in_progress date
+    if (fromKey === "in_progress" && toKey !== "in_progress") delete hist[item].in_progress;
+    // Si se mueve de completed a otro lado, borra completed date
+    if (fromKey === "completed"   && toKey !== "completed")   delete hist[item].completed;
+    next.status_history = hist;
   };
 
   const update = (colKey, newArr) => onChange({ ...ts, [colKey]: newArr });
@@ -744,7 +787,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
       not_started: safeArr(ts.not_started).filter(s => s !== item),
     };
     next[toKey] = [...next[toKey], item];
-    updateCompletedDates(next, item, toKey, fromKey);
+    updateDates(next, item, toKey, fromKey);
     onChange(next);
   };
 
@@ -754,17 +797,34 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
       in_progress: safeArr(ts.in_progress).filter(s => s !== item),
       not_started: safeArr(ts.not_started).filter(s => s !== item),
     };
-    const dates = { ...(ts.completed_dates || {}) };
-    delete dates[item];
-    next.completed_dates = dates;
+    const cDates = { ...(ts.completed_dates || {}) };
+    delete cDates[item];
+    next.completed_dates = cDates;
+    const hist = { ...(ts.status_history || {}) };
+    delete hist[item];
+    next.status_history = hist;
     onChange(next);
   };
 
   const add = (item, toKey) => {
     if (assigned.has(item)) return;
     const next = { ...ts, [toKey]: [...safeArr(ts[toKey]), item] };
-    updateCompletedDates(next, item, toKey, null);
+    updateDates(next, item, toKey, null);
     onChange(next);
+  };
+
+  const editHistoryDate = (item, field, value) => {
+    const hist = { ...(ts.status_history || {}) };
+    if (!hist[item]) hist[item] = { added: today() };
+    if (value) hist[item] = { ...hist[item], [field]: value };
+    else { hist[item] = { ...hist[item] }; delete hist[item][field]; }
+    // Keep completed_dates in sync
+    const cDates = { ...(ts.completed_dates || {}) };
+    if (field === "completed") {
+      if (value) cDates[item] = value;
+      else delete cDates[item];
+    }
+    onChange({ ...ts, status_history: hist, completed_dates: cDates });
   };
 
   // Actividades sin asignar aún
@@ -814,6 +874,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                 <ul className="task-status-col__list">
                   {items.map((item, i) => {
                     const otherCols = TASK_STATUS_COLS.filter(c => c.key !== col.key);
+                    const hist = ts.status_history?.[item] || {};
                     return (
                       <li
                         key={i} className="task-status-col__item"
@@ -823,23 +884,42 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                         onDrop={() => colDrop(i)}
                         title="Arrastra para reordenar"
                       >
-                        <span className="task-status-col__item__grip">⠿</span>
-                        <span className="task-status-col__item-text">{item}</span>
-                        <div className="task-status-col__item-actions">
-                          {otherCols.map(other => (
+                        <div className="task-status-col__item-main">
+                          <span className="task-status-col__item__grip">⠿</span>
+                          <span className="task-status-col__item-text">{item}</span>
+                          <div className="task-status-col__item-actions">
+                            {otherCols.map(other => (
+                              <button
+                                key={other.key} type="button"
+                                className="task-status-col__move-btn"
+                                title={`Mover a ${other.label}`}
+                                onClick={() => move(item, other.key)}
+                              >
+                                {other.icon}
+                              </button>
+                            ))}
                             <button
-                              key={other.key} type="button"
-                              className="task-status-col__move-btn"
-                              title={`Mover a ${other.label}`}
-                              onClick={() => move(item, other.key)}
-                            >
-                              {other.icon}
-                            </button>
-                          ))}
-                          <button
-                            type="button" className="task-status-col__remove-btn"
-                            title="Quitar de la lista" onClick={() => remove(item)}
-                          >✕</button>
+                              type="button" className="task-status-col__remove-btn"
+                              title="Quitar de la lista" onClick={() => remove(item)}
+                            >✕</button>
+                          </div>
+                        </div>
+                        <div className="task-status-col__dates">
+                          <StatusDateBadge
+                            label="Inscrita"
+                            value={hist.added || null}
+                            onEdit={v => editHistoryDate(item, "added", v)}
+                          />
+                          <StatusDateBadge
+                            label="En proceso"
+                            value={hist.in_progress || null}
+                            onEdit={v => editHistoryDate(item, "in_progress", v)}
+                          />
+                          <StatusDateBadge
+                            label="Completada"
+                            value={hist.completed || null}
+                            onEdit={v => editHistoryDate(item, "completed", v)}
+                          />
                         </div>
                       </li>
                     );
@@ -985,10 +1065,43 @@ export default function EditView({
       in_progress: remapArr(ts.in_progress),
       not_started: remapArr(ts.not_started),
     };
+
+    // Remap status_history keys (renames) and add entry for newly added activities
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const oldHist  = ts.status_history || {};
+    const newHist  = {};
+    // Remap existing entries
+    for (const [oldKey, val] of Object.entries(oldHist)) {
+      const mapped = fullMap[oldKey];
+      if (mapped === null) continue; // deleted activity
+      newHist[mapped !== undefined ? mapped : oldKey] = val;
+    }
+    // Add 'added' date for brand-new activities (present in newActs but not in oldActs)
+    const oldSet = new Set(oldActs);
+    newActs.forEach((text, i) => {
+      if (!oldSet.has(text)) {
+        const key = `${i + 1}. ${text}`;
+        if (!newHist[key]) newHist[key] = { added: todayStr };
+      }
+    });
+
+    // Remap completed_dates keys
+    const oldCDates = ts.completed_dates || {};
+    const newCDates = {};
+    for (const [oldKey, val] of Object.entries(oldCDates)) {
+      const mapped = fullMap[oldKey];
+      if (mapped === null) continue;
+      newCDates[mapped !== undefined ? mapped : oldKey] = val;
+    }
+
     onUpdateProjectFull(editingIdx, {
       ...p,
       activities_identified: newActs,
-      task_status:           newTs,
+      task_status: {
+        ...newTs,
+        completed_dates: newCDates,
+        status_history:  newHist,
+      },
       manual_metrics:        buildAutoMetrics(newActs, newTs),
       weekly_achievements:   remapArr(p.weekly_achievements),
       next_week_plan:        remapArr(p.next_week_plan),
