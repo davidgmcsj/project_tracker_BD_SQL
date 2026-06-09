@@ -43,8 +43,13 @@ function nextMonthLabel(dateStr) {
 // ── Convierte el JSON de la IA en el mapa de reemplazos para la plantilla ────
 
 function buildReplacements(project, analysis) {
-  const date        = project.report_date || new Date().toISOString().slice(0, 10);
-  const responsible = getMainEngineer(project.engineers);
+  const date             = project.report_date || new Date().toISOString().slice(0, 10);
+  const responsible      = getMainEngineer(project.engineers);
+  const projectDisplayName = (project.project_name || "").replace(/^PRO-\d+[-:\s]*/i, "").trim() || project.project_name || "—";
+  const allEngineers     = (project.engineers || [])
+    .map(e => e.engineer_id === "Otro..." ? (e.custom_name || "") : (e.engineer_id || ""))
+    .filter(Boolean)
+    .join(", ") || responsible;
   const quarterLabel = getQuarterLabel(date);
 
   const s1 = analysis.seccion1 || {};
@@ -82,9 +87,9 @@ function buildReplacements(project, analysis) {
   return [
     // ── Metadatos ──────────────────────────────────────────────────────────
     ["[Mes/Año o rango de fechas]",       quarterLabel],
-    ["[Nombre del proceso ]",             project.project_name || "—"],
-    ["proceso",                           project.project_name || "—"],
-    ["[Nombre]",                          responsible],
+    ["[Nombre del proceso ]",             projectDisplayName],
+    ["proceso",                           projectDisplayName],
+    ["[Nombre]",                          allEngineers],
     ["[Fecha de elaboración]",            fmtDateLong(date)],
 
     // ── Sección 1 ──────────────────────────────────────────────────────────

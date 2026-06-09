@@ -134,7 +134,8 @@ function toLines(val) {
 }
 
 function buildProjectSummary(project) {
-  const description = getProjectDescription(project.project_name);
+  const description      = getProjectDescription(project.project_name);
+  const projectDisplayName = (project.project_name || "").replace(/^PRO-\d+[-:\s]*/i, "").trim() || project.project_name || "Sin nombre";
   const m       = project.manual_metrics || {};
   const total   = Number(m.total_tasks        || 0);
   const done    = Number(m.completed_tasks    || 0);
@@ -160,7 +161,7 @@ function buildProjectSummary(project) {
   const engLines = (project.engineers || []).map(e => {
     const name   = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
     const detail = toLines(e.weekly_detail);
-    return `  - ${name}: ${e.assigned || 0} asignadas, ${e.completed || 0} completadas, ${e.in_progress || 0} en proceso${detail.length ? `. Esta semana: ${detail.join("; ")}` : ""}`;
+    return `  - ${name}: ${e.assigned || 0} asignadas, ${e.completed || 0} completadas, ${e.in_progress || 0} en proceso${detail.length ? `. Actividades esta semana: ${detail.join("; ")}` : " (sin actividades registradas esta semana)"}`;
   });
 
   const indicators = (project.indicators || []).map(ind => {
@@ -169,7 +170,7 @@ function buildProjectSummary(project) {
   });
 
   return `
-PROYECTO: ${project.project_name || "Sin nombre"}
+PROYECTO: ${projectDisplayName}
 DESCRIPCIÓN TÉCNICA: ${description}
 Fecha de reporte: ${project.report_date || "—"}
 Estado: ${status}
@@ -182,7 +183,7 @@ MÉTRICAS GENERALES:
 - No iniciadas: ${pending}
 - Avance calculado: ${pct}%
 ${indicators.length ? `\nINDICADORES:\n${indicators.join("\n")}` : ""}
-${engLines.length ? `\nEQUIPO DE INGENIEROS:\n${engLines.join("\n")}` : ""}
+${engLines.length ? `\nEQUIPO DE INGENIEROS (todos los integrantes del equipo — menciónalos a todos en el informe aunque no tengan actividades registradas esta semana):\n${engLines.join("\n")}` : ""}
 
 ACTIVIDADES IDENTIFICADAS PARA EL PERIODO:
 ${toLines(project.activities_identified).map((a, i) => `  ${i + 1}. ${a}`).join("\n") || "  No registradas"}
