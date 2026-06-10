@@ -910,16 +910,20 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                             value={hist.added || null}
                             onEdit={v => editHistoryDate(item, "added", v)}
                           />
-                          <StatusDateBadge
-                            label="En proceso"
-                            value={hist.in_progress || null}
-                            onEdit={v => editHistoryDate(item, "in_progress", v)}
-                          />
-                          <StatusDateBadge
-                            label="Completada"
-                            value={hist.completed || null}
-                            onEdit={v => editHistoryDate(item, "completed", v)}
-                          />
+                          {col.key === "in_progress" && (
+                            <StatusDateBadge
+                              label="En proceso"
+                              value={hist.in_progress || null}
+                              onEdit={v => editHistoryDate(item, "in_progress", v)}
+                            />
+                          )}
+                          {col.key === "completed" && (
+                            <StatusDateBadge
+                              label="Completada"
+                              value={hist.completed || null}
+                              onEdit={v => editHistoryDate(item, "completed", v)}
+                            />
+                          )}
                         </div>
                       </li>
                     );
