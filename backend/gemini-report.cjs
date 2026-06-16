@@ -210,6 +210,9 @@ ${milestones.length ? milestones.map(m => `  - [${m.date || "Sin fecha"}] ${m.ac
 COMENTARIOS:
 ${comments.length ? comments.map(c => `  - ${c.text}${c.date ? ` (${c.date})` : ""}`).join("\n") : "  Sin comentarios"}
 
+ESTADO ACTUAL DEL PROYECTO (notas redactadas manualmente):
+${project.status_notes && project.status_notes.trim() ? project.status_notes.trim() : "  Sin notas registradas"}
+
 INSTRUCCIONES CONTEXTUALES ESPECÍFICAS PARA ESTE PROYECTO:
 ${project.status === "mejora-continua" ? `⚠ CONTEXTO MEJORA CONTINUA: Este proyecto ya fue entregado y se encuentra en operación. Las actividades registradas NO son pendientes de un desarrollo en curso — son mejoras, ajustes y evoluciones planificadas sobre un sistema funcional y en producción. El informe debe reflejar un proyecto maduro en fase de evolución continua. No uses lenguaje de proyecto en construcción ("se está desarrollando", "se avanza en la implementación") — usa lenguaje de sistema en operación que evoluciona ("se incorporó la mejora", "se optimizó el componente", "se ajustó la funcionalidad").` : ""}
 ${/juan|steven/i.test(project.project_name || "") ? `⚠ CONTEXTO SOPORTE TRANSVERSAL: Este no es un proyecto de desarrollo convencional. Corresponde al registro de actividades de soporte técnico transversal prestado por ingenieros a múltiples proyectos de la oficina: mejoras, ajustes, soportes, cambios y apoyo a otros equipos de desarrollo. El informe debe centrarse en el volumen y variedad de actividades ejecutadas durante el periodo, destacando la diversidad del soporte técnico brindado. No apliques la lógica de avance de proyecto ni de entregables — la métrica principal es la cantidad y tipo de actividades realizadas.` : ""}
@@ -502,4 +505,70 @@ async function generateReportWithAI(project, quarterLabel) {
   return parseAIResponse(text);
 }
 
-module.exports = { generateReportWithAI };
+// ── Status semanal ────────────────────────────────────────────────────────────
+
+function buildStatusPrompt(project) {
+  const summary = buildProjectSummary(project);
+  return `Eres un asistente técnico de gestión de proyectos. Analiza los datos del proyecto y genera un resumen de estado actual en español formal. Responde ÚNICAMENTE con JSON válido sin texto adicional.
+
+DATOS DEL PROYECTO:
+${summary}
+
+INSTRUCCIONES:
+- "estado_general": describe el estado del proyecto en 2-3 oraciones: avance global, fase actual y contexto.
+- "en_curso": lista las actividades que están actualmente en proceso según el estado de actividades.
+- "pendiente": lista las actividades no iniciadas.
+- "equipo_semana": para CADA ingeniero del equipo que tenga actividades registradas esta semana, incluye una entrada con su nombre y la lista de sus tareas semanales. Si un ingeniero no tiene actividades registradas esta semana, indícalo con "Sin actividades registradas esta semana". Incluye a TODOS los ingenieros del equipo.
+- "proximos_pasos": 2-3 acciones concretas y específicas recomendadas para el próximo periodo, basadas en las actividades en proceso y pendientes.
+- "alertas": alertas si hay impedimentos, riesgos o salidas no conformes. Si no hay ninguno, devuelve array vacío [].
+
+Devuelve exactamente este JSON:
+{
+  "estado_general": "string",
+  "en_curso": ["actividad 1", "actividad 2"],
+  "pendiente": ["actividad 1", "actividad 2"],
+  "equipo_semana": [
+    { "nombre": "Nombre del ingeniero", "tareas": ["tarea 1", "tarea 2"] }
+  ],
+  "proximos_pasos": ["paso 1", "paso 2"],
+  "alertas": ["alerta 1"]
+}`;
+}
+
+async function generateStatusSummaryWithAI(project) {
+  const messages = [
+    { role: "system", content: "Eres un ingeniero senior experto con especialización en gerencia y gestión de proyectos. Debes responder de forma breve, concreta, organizada y estructurada que permita entender el estado actual del proyecto con la información disponible, con el objetivo de informar la situación de la mejor forma posible de qué se está haciendo, qué se hizo y qué está por hacerse. Respondes siempre con JSON válido, en español formal, sin texto adicional fuera del JSON." },
+    { role: "user",   content: buildStatusPrompt(project) },
+  ];
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const text = await callGemini(messages, geminiKey);
+      return parseAIResponse(text);
+    } catch (e) {
+      console.warn(`[AI-STATUS] Gemini falló: ${e.message}`);
+    }
+  }
+
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    try {
+      const text = await callOpenRouter(messages, openrouterKey);
+      return parseAIResponse(text);
+    } catch (e) {
+      console.warn(`[AI-STATUS] OpenRouter falló: ${e.message}`);
+    }
+  }
+
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) throw new Error("Ningún proveedor de IA configurado");
+  const groq = new Groq({ apiKey: groqKey });
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile", temperature: 0.3, messages,
+    response_format: { type: "json_object" },
+  });
+  return parseAIResponse(completion.choices[0]?.message?.content || "");
+}
+
+module.exports = { generateReportWithAI, generateStatusSummaryWithAI };

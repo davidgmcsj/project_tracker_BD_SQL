@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
 import { projectProgress, generateReportText, generateSingleProjectReportText } from "../utils/formulas";
@@ -230,7 +230,131 @@ function EngineerWeekCard({ eng }) {
   );
 }
 
-function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName }) {
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+// ── Status IA ─────────────────────────────────────────────────────────────────
+
+function AIStatusSection({ project, autoRun }) {
+  const [status,   setStatus]   = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
+  const autoRunDone = useRef(null);
+
+  const generate = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setStatus(null);
+    try {
+      const res  = await fetch(`${API_BASE}/api/project-status`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ project }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+      setStatus(data.status);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [project]);
+
+  // Genera automáticamente al entrar al reporte individual del proyecto (una vez por proyecto)
+  useEffect(() => {
+    if (!autoRun || !project?.id) return;
+    if (autoRunDone.current === project.id) return;
+    autoRunDone.current = project.id;
+    generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, project?.id]);
+
+  return (
+    <div className="ai-status">
+      <div className="ai-status__header">
+        <span className="ai-status__title">✨ Status del proyecto con IA</span>
+        <button
+          className="btn btn--ai-status"
+          onClick={generate}
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <span className="generating-inline__spinner" />
+              Analizando...
+            </>
+          ) : status ? "↻ Regenerar" : "Generar status"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="ai-status__error">Error: {error}</div>
+      )}
+
+      {status && (
+        <div className="ai-status__body">
+          {status.estado_general && (
+            <div className="ai-status__block">
+              <div className="ai-status__block-label">Estado general</div>
+              <p className="ai-status__text">{status.estado_general}</p>
+            </div>
+          )}
+          <div className="ai-status__cols">
+            {status.en_curso?.length > 0 && (
+              <div className="ai-status__block ai-status__block--amber">
+                <div className="ai-status__block-label">🔄 En curso</div>
+                <ul className="ai-status__list">
+                  {status.en_curso.map((item, i) => <li key={i}>{item}</li>)}
+                </ul>
+              </div>
+            )}
+            {status.pendiente?.length > 0 && (
+              <div className="ai-status__block ai-status__block--gray">
+                <div className="ai-status__block-label">○ Pendiente</div>
+                <ul className="ai-status__list">
+                  {status.pendiente.map((item, i) => <li key={i}>{item}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+          {status.equipo_semana?.length > 0 && (
+            <div className="ai-status__block ai-status__block--blue">
+              <div className="ai-status__block-label">👷 Equipo esta semana</div>
+              <div className="ai-status__team">
+                {status.equipo_semana.map((eng, i) => (
+                  <div key={i} className="ai-status__eng">
+                    <div className="ai-status__eng-name">{eng.nombre}</div>
+                    <ul className="ai-status__list">
+                      {(eng.tareas || []).map((t, j) => <li key={j}>{t}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {status.proximos_pasos?.length > 0 && (
+            <div className="ai-status__block ai-status__block--blue">
+              <div className="ai-status__block-label">→ Próximos pasos</div>
+              <ul className="ai-status__list">
+                {status.proximos_pasos.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          {status.alertas?.length > 0 && (
+            <div className="ai-status__block ai-status__block--red">
+              <div className="ai-status__block-label">⚠ Alertas</div>
+              <ul className="ai-status__list">
+                {status.alertas.map((item, i) => <li key={i}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName, autoRunStatus }) {
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
@@ -316,6 +440,8 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
           </div>
         </div>
       )}
+
+      <AIStatusSection project={p} autoRun={autoRunStatus} />
     </div>
   );
 }
@@ -411,7 +537,7 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} generating={generating} generatingName={generatingName} />)}
+          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} generating={generating} generatingName={generatingName} autoRunStatus={isSingle} />)}
         </>
       )}
     </div>

@@ -1183,6 +1183,112 @@
   to { transform: rotate(360deg); }
 }
 
+/* ═══ AI STATUS SECTION ═══ */
+.ai-status {
+  margin-top: 20px;
+  border: 1.5px solid var(--accent-bdr);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.ai-status__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--accent-bg);
+  border-bottom: 1px solid var(--accent-bdr);
+}
+.ai-status__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--azul-oscuro);
+}
+.btn--ai-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--inst-azul);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn--ai-status:hover:not(:disabled) { opacity: 0.85; }
+.btn--ai-status:disabled { opacity: 0.6; cursor: not-allowed; }
+.ai-status__error {
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--red);
+  background: var(--red-bg);
+}
+.ai-status__body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ai-status__cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) { .ai-status__cols { grid-template-columns: 1fr; } }
+.ai-status__block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.ai-status__block--amber { border-left: 3px solid var(--amber); }
+.ai-status__block--gray  { border-left: 3px solid var(--text-3); }
+.ai-status__block--blue  { border-left: 3px solid var(--inst-azul); }
+.ai-status__block--red   { border-left: 3px solid var(--red); }
+.ai-status__block-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.ai-status__text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0;
+}
+.ai-status__list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-status__list li {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.ai-status__team {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ai-status__eng {
+  border-left: 2px solid var(--inst-azul);
+  padding-left: 10px;
+}
+.ai-status__eng-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--azul-oscuro);
+  margin-bottom: 4px;
+}
+
 /* ═══ TOAST ═══ */
 .toast {
   background: var(--green);
@@ -1460,7 +1566,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-bdr) transparent;
 }
+.act-list::-webkit-scrollbar { width: 5px; }
+.act-list::-webkit-scrollbar-thumb { background: var(--accent-bdr); border-radius: 4px; }
 .act-list__item {
   display: flex;
   align-items: flex-start;
@@ -1851,6 +1964,22 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.task-status-col__list::-webkit-scrollbar {
+  width: 5px;
+}
+.task-status-col__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.task-status-col__list::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.18);
+  border-radius: 4px;
+}
+.task-status-col__list::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.32);
 }
 .task-status-col__item {
   display: flex;
@@ -1956,6 +2085,27 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-top: 16px;
+}
+.rpt-task-status .rpt-bullets,
+.rpt-sections-grid .rpt-bullets--numbered {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-bdr) transparent;
+}
+.rpt-task-status .rpt-bullets::-webkit-scrollbar,
+.rpt-sections-grid .rpt-bullets--numbered::-webkit-scrollbar {
+  width: 5px;
+}
+.rpt-task-status .rpt-bullets::-webkit-scrollbar-track,
+.rpt-sections-grid .rpt-bullets--numbered::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rpt-task-status .rpt-bullets::-webkit-scrollbar-thumb,
+.rpt-sections-grid .rpt-bullets--numbered::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.18);
+  border-radius: 4px;
 }
 
 /* ═══ ACTIVITY SELECT COMBOBOX ═══ */

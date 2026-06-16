@@ -748,11 +748,15 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
   const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
   const acts = safeArr(activities);
 
-  // Todas las actividades ya asignadas en cualquier columna
+  // Claves válidas: solo las que existen en activities_identified
+  const validItemKeys = new Set(acts.map((act, i) => `${i + 1}. ${act}`));
+  const filterValid   = (arr) => safeArr(arr).filter(item => validItemKeys.has(item));
+
+  // Todas las actividades ya asignadas en cualquier columna (solo válidas)
   const assigned = new Set([
-    ...safeArr(ts.completed),
-    ...safeArr(ts.in_progress),
-    ...safeArr(ts.not_started),
+    ...filterValid(ts.completed),
+    ...filterValid(ts.in_progress),
+    ...filterValid(ts.not_started),
   ]);
 
   const today = () => new Date().toISOString().slice(0, 10);
@@ -859,7 +863,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
       {/* Tres columnas */}
       <div className="task-status-cols">
         {TASK_STATUS_COLS.map(col => {
-          const items = safeArr(ts[col.key]);
+          const items = filterValid(ts[col.key]);
           const { onDragStart: colDragStart, onDrop: colDrop } = useDragSort(items, (reordered) => update(col.key, reordered));
           return (
             <div key={col.key} className={`task-status-col task-status-col--${col.variant}`}>
@@ -1051,17 +1055,14 @@ export default function EditView({
     });
     const fullMap = { ...contentMap, ...renameMap };
 
-    if (Object.keys(fullMap).length === 0) {
-      onUpdateProject(editingIdx, "activities_identified", newActs);
-      return;
-    }
-
     const remap = (val) => {
       if (val == null) return val;
       return fullMap[val] !== undefined ? fullMap[val] : val;
     };
+    // Solo conserva claves que siguen existiendo en newActs
+    const validKeys = new Set(newActs.map((text, i) => `${i + 1}. ${text}`));
     const remapArr = (arr) =>
-      safeArr(arr).map(remap).filter(Boolean);
+      safeArr(arr).map(remap).filter(v => v && validKeys.has(v));
 
     const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
     const newTs = {
@@ -1074,13 +1075,14 @@ export default function EditView({
     const todayStr = new Date().toISOString().slice(0, 10);
     const oldHist  = ts.status_history || {};
     const newHist  = {};
-    // Remap existing entries
+    // Remap existing entries (solo las que siguen existiendo)
     for (const [oldKey, val] of Object.entries(oldHist)) {
       const mapped = fullMap[oldKey];
-      if (mapped === null) continue; // deleted activity
-      newHist[mapped !== undefined ? mapped : oldKey] = val;
+      if (mapped === null) continue; // actividad eliminada
+      const resolvedKey = mapped !== undefined ? mapped : oldKey;
+      if (validKeys.has(resolvedKey)) newHist[resolvedKey] = val;
     }
-    // Add 'added' date for brand-new activities (present in newActs but not in oldActs)
+    // Registrar 'added' para actividades recién agregadas
     const oldSet = new Set(oldActs);
     newActs.forEach((text, i) => {
       if (!oldSet.has(text)) {
@@ -1089,13 +1091,14 @@ export default function EditView({
       }
     });
 
-    // Remap completed_dates keys
+    // Remap completed_dates keys (solo las que siguen existiendo)
     const oldCDates = ts.completed_dates || {};
     const newCDates = {};
     for (const [oldKey, val] of Object.entries(oldCDates)) {
       const mapped = fullMap[oldKey];
       if (mapped === null) continue;
-      newCDates[mapped !== undefined ? mapped : oldKey] = val;
+      const resolvedKey = mapped !== undefined ? mapped : oldKey;
+      if (validKeys.has(resolvedKey)) newCDates[resolvedKey] = val;
     }
 
     onUpdateProjectFull(editingIdx, {

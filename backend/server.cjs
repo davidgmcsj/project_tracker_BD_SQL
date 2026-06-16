@@ -24,6 +24,7 @@
 // En Azure App Service, PORT se inyecta automáticamente.
 
 const express = require("express");
+const http    = require("http");
 const fs      = require("fs").promises;
 const path    = require("path");
 require("dotenv/config");
@@ -39,12 +40,12 @@ const { saveWeekReportToDB } = (() => {
   }
 })();
 
-const { generateReportWithAI } = (() => {
+const { generateReportWithAI, generateStatusSummaryWithAI } = (() => {
   try {
     return require("./gemini-report.cjs");
   } catch (e) {
     console.error("[AI] Error cargando gemini-report.cjs:", e.message);
-    return { generateReportWithAI: null };
+    return { generateReportWithAI: null, generateStatusSummaryWithAI: null };
   }
 })();
 
@@ -316,6 +317,25 @@ app.post("/api/generate-report", async (req, res) => {
   }
 });
 
+// ── API: Status semanal con IA ────────────────────────────────────────────────
+
+app.post("/api/project-status", async (req, res) => {
+  if (!generateStatusSummaryWithAI) {
+    return res.status(503).json({ error: "Módulo de IA no disponible" });
+  }
+  try {
+    const { project } = req.body;
+    if (!project) return res.status(400).json({ error: "Falta el proyecto" });
+    console.log("[AI-STATUS] Generando status para:", project.project_name);
+    const status = await generateStatusSummaryWithAI(project);
+    console.log("[AI-STATUS] OK");
+    res.json({ ok: true, status });
+  } catch (e) {
+    console.error("[AI-STATUS] Error:", e.message);
+    res.status(500).json({ error: "Error generando status", detail: e.message });
+  }
+});
+
 // ── API: Restaurar desde BD ───────────────────────────────────────────────────
 
 app.post("/api/restore-from-db", async (req, res) => {
@@ -370,7 +390,11 @@ app.post("/api/restore-from-db", async (req, res) => {
   }
 });
 
-app.listen(PORT, "0.0.0.0", async () => {
-  await init();
-  console.log(`Servidor en puerto ${PORT}`);
+init().then(() => {
+  http.createServer(app).listen(PORT, "0.0.0.0", () => {
+    console.log(`Servidor en puerto ${PORT}`);
+  });
+}).catch(e => {
+  console.error("Error en inicialización:", e.message);
+  process.exit(1);
 });
