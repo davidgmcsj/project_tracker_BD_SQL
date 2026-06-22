@@ -1,4 +1,4 @@
-import { projectProgress, globalProgress } from "../utils/formulas";
+import { projectProgress, globalProgress, buildActivityIndex, activityText } from "../utils/formulas";
 
 function pctStyle(pct) {
   if (pct >= 75) return { background: "var(--green-bg)", color: "var(--green)" };
@@ -125,6 +125,7 @@ export function ProjectMetricsTable({ project }) {
   const engineers  = project.engineers  || [];
   const indicators = project.indicators || [];
   const shared     = m.shared_tasks_discount || 0;
+  const activitiesIndex = buildActivityIndex(project.activities_identified);
 
   return (
     <div className="metrics-container">
@@ -182,7 +183,7 @@ export function ProjectMetricsTable({ project }) {
 
           {engineers.some(e => e.weekly_total > 0 || toDetailLines(e.weekly_detail).length > 0) &&
             engineers.map((eng, i) => {
-              const detail = toDetailLines(eng.weekly_detail);
+              const detail = toDetailLines(eng.weekly_detail).map(id => activityText(activitiesIndex, id));
               if (!eng.weekly_total && !detail.length) return null;
               return (
                 <tr key={`week-${i}`} className="metrics-table__engineer-row metrics-table__engineer-week">

@@ -28,7 +28,12 @@ async function apiFetch(path, options) {
 function isNewFormat(projects) {
   if (!Array.isArray(projects) || !projects.length) return true;
   const p = projects[0];
-  return "project_name" in p && "manual_metrics" in p;
+  if (!("project_name" in p) || !("manual_metrics" in p)) return false;
+  // activities_identified pasó de array de strings a array de {id, text}.
+  // Si quedó una caché local vieja, se descarta para que se recargue del servidor ya migrado.
+  const acts = p.activities_identified;
+  if (Array.isArray(acts) && acts.length && typeof acts[0] === "string") return false;
+  return true;
 }
 
 // ── Carga inicial ─────────────────────────────────────────────────────────────

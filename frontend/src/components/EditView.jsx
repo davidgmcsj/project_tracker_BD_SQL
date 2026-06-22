@@ -3,6 +3,7 @@ import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator,
   createDefaultImpediment, createDefaultMilestone, createDefaultComment,
+  createActivity, buildActivityIndex, activityText, activityLabel,
 } from "../utils/formulas";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -46,6 +47,11 @@ function safeArr(val) {
   if (Array.isArray(val)) return val;
   if (!val) return [];
   return val.split("\n").map(s => s.trim()).filter(Boolean);
+}
+
+// activities_identified es un array de objetos {id, text}, nunca un string suelto.
+function safeActs(val) {
+  return Array.isArray(val) ? val : [];
 }
 
 // Filtra items: todas las palabras del query deben aparecer en el texto (case-insensitive)
@@ -117,18 +123,18 @@ function ActivitiesList({ activities, onChange }) {
   const [editIdx, setEditIdx] = useState(null);
   const [editVal, setEditVal] = useState("");
 
-  const acts = safeArr(activities);
+  const acts = safeActs(activities);
 
   const confirmAdd = () => {
     const t = draft.trim();
-    if (t) onChange([...acts, t]);
+    if (t) onChange([...acts, createActivity(t)]);
     setDraft(""); setAdding(false);
   };
 
-  const startEdit   = (i) => { setEditIdx(i); setEditVal(acts[i]); };
+  const startEdit   = (i) => { setEditIdx(i); setEditVal(acts[i].text); };
   const confirmEdit = () => {
     const t = editVal.trim();
-    if (t) { const next = [...acts]; next[editIdx] = t; onChange(next); }
+    if (t) { const next = [...acts]; next[editIdx] = { ...next[editIdx], text: t }; onChange(next); }
     setEditIdx(null); setEditVal("");
   };
   const removeAct = (i) => onChange(acts.filter((_, idx) => idx !== i));
@@ -167,7 +173,7 @@ function ActivitiesList({ activities, onChange }) {
       {acts.length > 0 ? (
         <ol className="act-list">
           {acts.map((act, i) => (
-            <li key={i} className="act-list__item">
+            <li key={act.id} className="act-list__item">
               {editIdx === i ? (
                 <div className="list-field-draft" style={{ flex: 1 }}>
                   <input
@@ -185,7 +191,7 @@ function ActivitiesList({ activities, onChange }) {
               ) : (
                 <>
                   <span className="act-list__num">{i + 1}.</span>
-                  <span className="act-list__text">{act}</span>
+                  <span className="act-list__text">{act.text}</span>
                   <button type="button" className="act-list__edit"   onClick={() => startEdit(i)} title="Editar">✎</button>
                   <button type="button" className="act-list__remove" onClick={() => removeAct(i)} title="Eliminar">✕</button>
                 </>
@@ -212,47 +218,43 @@ function getCurrentWeekKey() {
 
 function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted, excludeOldCompleted, completedDates }) {
   const [query, setQuery] = useState("");
-  const acts   = safeArr(activities);
+  const acts   = safeActs(activities);
   const selArr = safeArr(selected);
+  const actIndex = buildActivityIndex(acts);
 
   const currentWeek = getCurrentWeekKey();
 
   // excludeCompleted: oculta TODAS las completadas (para "próxima semana" e "ingeniero esta semana")
-  const completedNorm = excludeCompleted
-    ? new Set(safeArr(excludeCompleted).map(a => a.replace(/^\d+\.\s*/, "")))
-    : null;
+  const completedSet = excludeCompleted ? new Set(safeArr(excludeCompleted)) : null;
 
   // excludeOldCompleted: oculta solo las completadas en semanas ANTERIORES (para "qué se hizo esta semana")
-  const oldCompletedNorm = excludeOldCompleted
+  const oldCompletedSet = excludeOldCompleted
     ? new Set(
-        safeArr(excludeOldCompleted)
-          .filter(a => {
-            const dateKey = completedDates?.[a];
-            if (!dateKey) return false;
-            const itemWeek = new Date(dateKey + "T12:00:00");
-            const day = itemWeek.getDay() || 7;
-            itemWeek.setDate(itemWeek.getDate() - day + 1);
-            return itemWeek.toISOString().slice(0, 10) < currentWeek;
-          })
-          .map(a => a.replace(/^\d+\.\s*/, ""))
+        safeArr(excludeOldCompleted).filter(id => {
+          const dateKey = completedDates?.[id];
+          if (!dateKey) return false;
+          const itemWeek = new Date(dateKey + "T12:00:00");
+          const day = itemWeek.getDay() || 7;
+          itemWeek.setDate(itemWeek.getDate() - day + 1);
+          return itemWeek.toISOString().slice(0, 10) < currentWeek;
+        })
       )
     : null;
 
-  const deselect = (item) => onChange(selArr.filter(s => s !== item));
-  const select   = (item) => {
+  const deselect = (id) => onChange(selArr.filter(s => s !== id));
+  const select   = (id) => {
     if (limit && selArr.length >= limit) return;
-    onChange([...selArr, item]);
+    onChange([...selArr, id]);
   };
-  const toggle = (item) => selArr.includes(item) ? deselect(item) : select(item);
+  const toggle = (id) => selArr.includes(id) ? deselect(id) : select(id);
 
   const { onDragStart, onDrop } = useDragSort(selArr, onChange);
 
-  // Filtra según el modo y aplica búsqueda, preservando índice original
+  // Filtra según el modo y aplica búsqueda, preservando posición original
   const visible = acts.reduce((acc, act, origIdx) => {
-    const norm = act.replace(/^\d+\.\s*/, "");
-    if (completedNorm    && completedNorm.has(norm))    return acc;
-    if (oldCompletedNorm && oldCompletedNorm.has(norm)) return acc;
-    if (!matchesSearch(act, query)) return acc;
+    if (completedSet    && completedSet.has(act.id))    return acc;
+    if (oldCompletedSet && oldCompletedSet.has(act.id)) return acc;
+    if (!matchesSearch(act.text, query)) return acc;
     acc.push({ act, origIdx });
     return acc;
   }, []);
@@ -284,17 +286,16 @@ function ActivitySelector({ label, activities, selected, limit, onChange, exclud
             {visible.length === 0 ? (
               <p className="act-selector__empty">{query ? `Sin coincidencias para "${query}"` : "Sin actividades disponibles"}</p>
             ) : visible.map(({ act, origIdx }) => {
-              const item     = `${origIdx + 1}. ${act}`;
-              const checked  = selArr.includes(item);
+              const checked  = selArr.includes(act.id);
               const disabled = !checked && limit && selArr.length >= limit;
               return (
                 <label
-                  key={origIdx}
+                  key={act.id}
                   className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""}`}
                 >
-                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(item)} />
+                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(act.id)} />
                   <span className="act-selector__num">{origIdx + 1}.</span>
-                  <span className="act-selector__text">{act}</span>
+                  <span className="act-selector__text">{act.text}</span>
                 </label>
               );
             })}
@@ -309,9 +310,9 @@ function ActivitySelector({ label, activities, selected, limit, onChange, exclud
       {selArr.length > 0 && (
         <div className="act-selector__selected">
           <span className="act-selector__selected-label">Seleccionadas:</span>
-          {selArr.map((s, i) => (
+          {selArr.map((id, i) => (
             <span
-              key={i} className="act-selector__chip"
+              key={id} className="act-selector__chip"
               draggable
               onDragStart={() => onDragStart(i)}
               onDragOver={e => e.preventDefault()}
@@ -319,8 +320,8 @@ function ActivitySelector({ label, activities, selected, limit, onChange, exclud
               title="Arrastra para reordenar"
             >
               <span className="act-selector__chip-grip">⠿</span>
-              <span className="act-selector__chip-text">{s}</span>
-              <button type="button" className="act-selector__chip-remove" onClick={() => deselect(s)} title="Quitar selección">✕</button>
+              <span className="act-selector__chip-text">{activityLabel(actIndex, id)}</span>
+              <button type="button" className="act-selector__chip-remove" onClick={() => deselect(id)} title="Quitar selección">✕</button>
             </span>
           ))}
         </div>
@@ -432,13 +433,14 @@ function IndicatorRow({ ind, index, onChange, onRemove }) {
 
 // ── Lista de seleccionadas con drag-to-reorder ────────────────────────────────
 
-function SelectedList({ items, onChange }) {
+function SelectedList({ items, activities, onChange }) {
   const { onDragStart, onDrop } = useDragSort(items, onChange);
+  const actIndex = buildActivityIndex(safeActs(activities));
   return (
     <ol className="engineer-selected__list">
-      {items.map((item, i) => (
+      {items.map((id, i) => (
         <li
-          key={i} className="engineer-selected__item"
+          key={id} className="engineer-selected__item"
           draggable
           onDragStart={() => onDragStart(i)}
           onDragOver={e => e.preventDefault()}
@@ -447,7 +449,7 @@ function SelectedList({ items, onChange }) {
         >
           <span className="engineer-selected__grip">⠿</span>
           <span className="engineer-selected__num">{i + 1}.</span>
-          <span className="engineer-selected__text">{item}</span>
+          <span className="engineer-selected__text">{activityText(actIndex, id)}</span>
         </li>
       ))}
     </ol>
@@ -528,7 +530,7 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus })
           {weeklyArr.length === 0 ? (
             <p className="engineer-selected__empty">Selecciona actividades en "Esta semana"</p>
           ) : (
-            <SelectedList items={weeklyArr} onChange={val => onChange(index, "weekly_detail", val)} />
+            <SelectedList items={weeklyArr} activities={activities} onChange={val => onChange(index, "weekly_detail", val)} />
           )}
         </div>
       </div>
@@ -544,11 +546,13 @@ function ActivitySelect({ value, activities, onChange }) {
   const rootRef  = useRef(null);
   const inputRef = useRef(null);
 
-  const opts = safeArr(activities).map((act, ai) => `${ai + 1}. ${act}`);
-  const visible = opts.filter(o => matchesSearch(o, query));
+  const acts = safeActs(activities);
+  const opts = acts.map((act, ai) => ({ id: act.id, label: `${ai + 1}. ${act.text}` }));
+  const visible = opts.filter(o => matchesSearch(o.label, query));
+  const selectedLabel = opts.find(o => o.id === value)?.label || "";
 
   const select = (opt) => {
-    onChange(opt);
+    onChange(opt.id);
     setOpen(false);
     setQuery("");
   };
@@ -585,7 +589,7 @@ function ActivitySelect({ value, activities, onChange }) {
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(); } }}
       >
         <span className={`act-entry-select__trigger-text ${!value ? "act-entry-select__trigger-text--placeholder" : ""}`}>
-          {value || "— Sin actividad —"}
+          {selectedLabel || "— Sin actividad —"}
         </span>
         <div className="act-entry-select__trigger-icons">
           {value && (
@@ -616,7 +620,7 @@ function ActivitySelect({ value, activities, onChange }) {
           <ul className="act-entry-select__list">
             <li
               className={`act-entry-select__opt act-entry-select__opt--none ${!value ? "act-entry-select__opt--active" : ""}`}
-              onMouseDown={() => select("")}
+              onMouseDown={() => select({ id: "" })}
             >
               — Sin actividad —
             </li>
@@ -625,11 +629,11 @@ function ActivitySelect({ value, activities, onChange }) {
             ) : (
               visible.map((opt) => (
                 <li
-                  key={opt}
-                  className={`act-entry-select__opt ${value === opt ? "act-entry-select__opt--active" : ""}`}
+                  key={opt.id}
+                  className={`act-entry-select__opt ${value === opt.id ? "act-entry-select__opt--active" : ""}`}
                   onMouseDown={() => select(opt)}
                 >
-                  {opt}
+                  {opt.label}
                 </li>
               ))
             )}
@@ -645,6 +649,7 @@ function ActivitySelect({ value, activities, onChange }) {
 function ActivityEntryList({ items, activities, textField, placeholder, onChange }) {
   const update = (i, field, val) => onChange(items.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
   const remove = (i)             => onChange(items.filter((_, idx) => idx !== i));
+  const actIndex = buildActivityIndex(safeActs(activities));
 
   const byActivity = {};
   items.forEach((item, i) => {
@@ -659,7 +664,7 @@ function ActivityEntryList({ items, activities, textField, placeholder, onChange
         <div key={actKey} className="milestone-group">
           {actKey !== "__sin__" && (
             <div className="milestone-group__header">
-              <span className="milestone-group__act">{actKey}</span>
+              <span className="milestone-group__act">{activityLabel(actIndex, actKey)}</span>
             </div>
           )}
           {group.map((item) => (
@@ -746,11 +751,12 @@ function StatusDateBadge({ label, value, onEdit }) {
 
 function TaskStatusSelector({ taskStatus, activities, onChange }) {
   const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
-  const acts = safeArr(activities);
+  const acts = safeActs(activities);
+  const actIndex = buildActivityIndex(acts);
 
-  // Claves válidas: solo las que existen en activities_identified
-  const validItemKeys = new Set(acts.map((act, i) => `${i + 1}. ${act}`));
-  const filterValid   = (arr) => safeArr(arr).filter(item => validItemKeys.has(item));
+  // Ids válidos: solo los que existen en activities_identified
+  const validIds     = new Set(acts.map(act => act.id));
+  const filterValid   = (arr) => safeArr(arr).filter(id => validIds.has(id));
 
   // Todas las actividades ya asignadas en cualquier columna (solo válidas)
   const assigned = new Set([
@@ -831,8 +837,8 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
     onChange({ ...ts, status_history: hist, completed_dates: cDates });
   };
 
-  // Actividades sin asignar aún
-  const unassigned = acts.map((act, i) => `${i + 1}. ${act}`).filter(item => !assigned.has(item));
+  // Actividades sin asignar aún (ids), con su label numerado para mostrar
+  const unassigned = acts.map(act => act.id).filter(id => !assigned.has(id));
 
   return (
     <div className="task-status-board">
@@ -840,16 +846,16 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
       {unassigned.length > 0 && (
         <div className="task-status-unassigned">
           <div className="task-status-unassigned__label">Actividades sin clasificar</div>
-          {unassigned.map((item, i) => (
-            <div key={i} className="task-status-unassigned__item">
-              <span className="task-status-unassigned__text">{item}</span>
+          {unassigned.map((id) => (
+            <div key={id} className="task-status-unassigned__item">
+              <span className="task-status-unassigned__text">{activityLabel(actIndex, id)}</span>
               <div className="task-status-unassigned__actions">
                 {TASK_STATUS_COLS.map(col => (
                   <button
                     key={col.key} type="button"
                     className={`task-status-unassigned__btn task-status-unassigned__btn--${col.variant}`}
                     title={`Mover a ${col.label}`}
-                    onClick={() => add(item, col.key)}
+                    onClick={() => add(id, col.key)}
                   >
                     {col.icon}
                   </button>
@@ -881,7 +887,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                     const hist = ts.status_history?.[item] || {};
                     return (
                       <li
-                        key={i} className="task-status-col__item"
+                        key={item} className="task-status-col__item"
                         draggable
                         onDragStart={() => colDragStart(i)}
                         onDragOver={e => e.preventDefault()}
@@ -890,7 +896,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                       >
                         <div className="task-status-col__item-main">
                           <span className="task-status-col__item__grip">⠿</span>
-                          <span className="task-status-col__item-text">{item}</span>
+                          <span className="task-status-col__item-text">{activityLabel(actIndex, item)}</span>
                           <div className="task-status-col__item-actions">
                             {otherCols.map(other => (
                               <button
@@ -999,7 +1005,7 @@ export default function EditView({
   const engineers   = p?.engineers   || [];
   const indicators  = p?.indicators  || [];
   const impediments = p?.impediments || [];
-  const activities  = safeArr(p?.activities_identified);
+  const activities  = safeActs(p?.activities_identified);
 
   // Métricas calculadas automáticamente desde actividades y estado de actividades
   const ts              = p?.task_status || {};
@@ -1031,98 +1037,45 @@ export default function EditView({
   const updateImpediment = (i, f, v) => onUpdateProject(editingIdx, "impediments", impediments.map((im, idx) => idx === i ? { ...im, [f]: v } : im));
   const removeImpediment = (i)       => onUpdateProject(editingIdx, "impediments", impediments.filter((_, idx) => idx !== i));
 
-  // Propaga ediciones/eliminaciones/reordenamientos de actividades a todos los campos
-  // que almacenan referencias como "N. texto". Necesita dos mapas: uno por posición
-  // (renombrado de texto) y otro por contenido (cambio de número al reordenar).
+  // Cada actividad tiene un id estable que nunca cambia. Borrar o reordenar
+  // actividades NO afecta a las demás: el id deja de aparecer en newActs y
+  // solo hay que podar las referencias colgantes (la actividad que se borró)
+  // de todos los campos que la referencian por id.
   const handleActivitiesChange = (newActs) => {
-    const oldActs = safeArr(p.activities_identified);
-
-    const renameMap = {};
-    const maxLen = Math.max(oldActs.length, newActs.length);
-    for (let i = 0; i < maxLen; i++) {
-      const oldKey = oldActs[i] != null ? `${i + 1}. ${oldActs[i]}` : null;
-      const newKey = newActs[i] != null ? `${i + 1}. ${newActs[i]}` : null;
-      if (oldKey && newKey && oldKey !== newKey) renameMap[oldKey] = newKey;
-      if (oldKey && !newKey) renameMap[oldKey] = null;
-    }
-
-    const contentMap = {};
-    oldActs.forEach((text, i) => {
-      const found = newActs.indexOf(text);
-      if (found !== -1 && found !== i) {
-        contentMap[`${i + 1}. ${text}`] = `${found + 1}. ${text}`;
-      }
-    });
-    const fullMap = { ...contentMap, ...renameMap };
-
-    const remap = (val) => {
-      if (val == null) return val;
-      return fullMap[val] !== undefined ? fullMap[val] : val;
-    };
-    // Solo conserva claves que siguen existiendo en newActs
-    const validKeys = new Set(newActs.map((text, i) => `${i + 1}. ${text}`));
-    const remapArr = (arr) =>
-      safeArr(arr).map(remap).filter(v => v && validKeys.has(v));
-
+    const validIds = new Set(newActs.map(a => a.id));
     const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+
+    const pruneArr     = (arr) => safeArr(arr).filter(id => validIds.has(id));
+    const pruneObjKeys = (obj) => Object.fromEntries(Object.entries(obj || {}).filter(([id]) => validIds.has(id)));
+
     const newTs = {
-      completed:   remapArr(ts.completed),
-      in_progress: remapArr(ts.in_progress),
-      not_started: remapArr(ts.not_started),
+      completed:   pruneArr(ts.completed),
+      in_progress: pruneArr(ts.in_progress),
+      not_started: pruneArr(ts.not_started),
     };
-
-    // Remap status_history keys (renames) and add entry for newly added activities
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const oldHist  = ts.status_history || {};
-    const newHist  = {};
-    // Remap existing entries (solo las que siguen existiendo)
-    for (const [oldKey, val] of Object.entries(oldHist)) {
-      const mapped = fullMap[oldKey];
-      if (mapped === null) continue; // actividad eliminada
-      const resolvedKey = mapped !== undefined ? mapped : oldKey;
-      if (validKeys.has(resolvedKey)) newHist[resolvedKey] = val;
-    }
-    // Registrar 'added' para actividades recién agregadas
-    const oldSet = new Set(oldActs);
-    newActs.forEach((text, i) => {
-      if (!oldSet.has(text)) {
-        const key = `${i + 1}. ${text}`;
-        if (!newHist[key]) newHist[key] = { added: todayStr };
-      }
-    });
-
-    // Remap completed_dates keys (solo las que siguen existiendo)
-    const oldCDates = ts.completed_dates || {};
-    const newCDates = {};
-    for (const [oldKey, val] of Object.entries(oldCDates)) {
-      const mapped = fullMap[oldKey];
-      if (mapped === null) continue;
-      const resolvedKey = mapped !== undefined ? mapped : oldKey;
-      if (validKeys.has(resolvedKey)) newCDates[resolvedKey] = val;
-    }
 
     onUpdateProjectFull(editingIdx, {
       ...p,
       activities_identified: newActs,
       task_status: {
         ...newTs,
-        completed_dates: newCDates,
-        status_history:  newHist,
+        completed_dates: pruneObjKeys(ts.completed_dates),
+        status_history:  pruneObjKeys(ts.status_history),
       },
       manual_metrics:        buildAutoMetrics(newActs, newTs),
-      weekly_achievements:   remapArr(p.weekly_achievements),
-      next_week_plan:        remapArr(p.next_week_plan),
+      weekly_achievements:   pruneArr(p.weekly_achievements),
+      next_week_plan:        pruneArr(p.next_week_plan),
       engineers: (p.engineers || []).map(eng => ({
         ...eng,
-        weekly_detail: remapArr(eng.weekly_detail),
+        weekly_detail: pruneArr(eng.weekly_detail),
       })),
       milestones: (p.milestones || []).map(ms => ({
         ...ms,
-        activity: remap(ms.activity) ?? "",
+        activity: validIds.has(ms.activity) ? ms.activity : "",
       })),
       comments: (p.comments || []).map(cm => ({
         ...cm,
-        activity: remap(cm.activity) ?? "",
+        activity: validIds.has(cm.activity) ? cm.activity : "",
       })),
     });
   };

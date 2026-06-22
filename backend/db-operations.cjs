@@ -39,6 +39,19 @@ function safeArr(val) {
   return val.split("\n").map(s => s.trim()).filter(Boolean);
 }
 
+// activities_identified es un array de {id, text}. task_status, weekly_detail,
+// milestones.activity y comments.activity referencian el id, no el texto —
+// estas tablas SQL son reportes de solo texto, así que se resuelve antes de escribir.
+function buildActivityIndex(activities) {
+  const map = new Map();
+  (Array.isArray(activities) ? activities : []).forEach(a => {
+    if (a && a.id != null) map.set(a.id, a.text || "");
+  });
+  return map;
+}
+function resolveActText(index, id) { return index.get(id) ?? id ?? ""; }
+function resolveActArr(index, ids) { return safeArr(ids).map(id => resolveActText(index, id)); }
+
 function getWeekNumber(dateStr) {
   const d = new Date(dateStr + "T12:00:00");
   const day = d.getDay() || 7;
@@ -121,7 +134,7 @@ async function resolveProject(pool, project, proyCache) {
 
 // Inserta actividades nuevas en un solo INSERT multi-row
 async function syncActividades(pool, proyectoID, activitiesArr) {
-  const acts = safeArr(activitiesArr).map(a => a.trim()).filter(Boolean);
+  const acts = safeArr(activitiesArr).map(a => (a?.text || "").trim()).filter(Boolean);
   if (!acts.length) return;
 
   const existing = await pool.request()
@@ -156,6 +169,7 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const compartidas = Number(m.shared_tasks_discount || 0);
   const avance      = total > 0 ? Math.min(((completadas + enProceso * 0.5) / total) * 100, 100) : 0;
   const rawJson     = JSON.stringify(project);
+  const actIndex    = buildActivityIndex(project.activities_identified);
 
   // syncActividades y lookup del reporte existente en paralelo
   const [, existingRes] = await Promise.all([
@@ -184,8 +198,8 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
         .input("compartidas", sql.Int,            compartidas)
         .input("avance",      sql.Decimal(5, 2),  Math.round(avance * 100) / 100)
         .input("mostrar",     sql.Bit,            project.show_closing_fields ? 1 : 0)
-        .input("logros",      sql.NVarChar,       JSON.stringify(safeArr(project.weekly_achievements)))
-        .input("plan",        sql.NVarChar,       JSON.stringify(safeArr(project.next_week_plan)))
+        .input("logros",      sql.NVarChar,       JSON.stringify(resolveActArr(actIndex, project.weekly_achievements)))
+        .input("plan",        sql.NVarChar,       JSON.stringify(resolveActArr(actIndex, project.next_week_plan)))
         .input("weekLabel",   sql.NVarChar(100),  weekLabel || "")
         .input("savedAt",     sql.DateTime2,      new Date())
         .input("rawJson",     sql.NVarChar,       rawJson)
@@ -220,8 +234,8 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
       .input("compartidas", sql.Int,           compartidas)
       .input("avance",      sql.Decimal(5, 2), Math.round(avance * 100) / 100)
       .input("mostrar",     sql.Bit,           project.show_closing_fields ? 1 : 0)
-      .input("logros",      sql.NVarChar,      JSON.stringify(safeArr(project.weekly_achievements)))
-      .input("plan",        sql.NVarChar,      JSON.stringify(safeArr(project.next_week_plan)))
+      .input("logros",      sql.NVarChar,      JSON.stringify(resolveActArr(actIndex, project.weekly_achievements)))
+      .input("plan",        sql.NVarChar,      JSON.stringify(resolveActArr(actIndex, project.next_week_plan)))
       .input("weekLabel",   sql.NVarChar(100), weekLabel || "")
       .input("savedAt",     sql.DateTime2,     new Date(savedAt || Date.now()))
       .input("rawJson",     sql.NVarChar,      rawJson)
@@ -252,12 +266,12 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const taskReq  = pool.request().input("rid", sql.Int, reporteID);
   let ti = 0;
   for (const [key, label] of Object.entries(statusMap)) {
-    for (const texto of safeArr(ts[key])) {
-      const hist         = statusHistory[texto] || {};
-      const fechaComp    = key === "completed" ? (completedDates[texto] || hist.completed || null) : null;
+    for (const actId of safeArr(ts[key])) {
+      const hist         = statusHistory[actId] || {};
+      const fechaComp    = key === "completed" ? (completedDates[actId] || hist.completed || null) : null;
       const fechaInsc    = hist.added       || null;
       const fechaEnProc  = hist.in_progress || null;
-      taskReq.input(`ttexto${ti}`,   sql.NVarChar,     texto);
+      taskReq.input(`ttexto${ti}`,   sql.NVarChar,     resolveActText(actIndex, actId));
       taskReq.input(`testado${ti}`,  sql.NVarChar(50), label);
       taskReq.input(`tfecha${ti}`,   sql.Date,         fechaComp);
       taskReq.input(`tfinsc${ti}`,   sql.Date,         fechaInsc);
@@ -299,8 +313,8 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
 
   // Eventos (milestones + comentarios)
   const eventoItems = [
-    ...(project.milestones || []).filter(ms => ms.date || ms.note).map(ms => ({ tipo: "FECHA_CLAVE", act: ms.activity || "", fecha: ms.date || null, contenido: ms.note || "" })),
-    ...(project.comments   || []).filter(cm => cm.text).map(cm =>             ({ tipo: "COMENTARIO",  act: cm.activity || "", fecha: cm.date || null, contenido: cm.text || "" })),
+    ...(project.milestones || []).filter(ms => ms.date || ms.note).map(ms => ({ tipo: "FECHA_CLAVE", act: ms.activity ? resolveActText(actIndex, ms.activity) : "", fecha: ms.date || null, contenido: ms.note || "" })),
+    ...(project.comments   || []).filter(cm => cm.text).map(cm =>             ({ tipo: "COMENTARIO",  act: cm.activity ? resolveActText(actIndex, cm.activity) : "", fecha: cm.date || null, contenido: cm.text || "" })),
   ];
   if (eventoItems.length) {
     const evReq  = pool.request().input("rid", sql.Int, reporteID);
@@ -329,7 +343,7 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
       const engRows = validEngs.map(({ id, eng }, i) => {
         engReq.input(`eingId${i}`,    sql.Int,      id);
         engReq.input(`esemTotal${i}`, sql.Int,      Number(eng.weekly_total|| 0));
-        engReq.input(`esemDet${i}`,   sql.NVarChar, JSON.stringify(safeArr(eng.weekly_detail)));
+        engReq.input(`esemDet${i}`,   sql.NVarChar, JSON.stringify(resolveActArr(actIndex, eng.weekly_detail)));
         return `(@rid,@eingId${i},@esemTotal${i},@esemDet${i})`;
       });
       inserts.push(engReq.query(`INSERT INTO Estadisticas_Ingeniero_Semana (ReporteID,IngenieroID,Semana_Total,Semana_Detalle) VALUES ${engRows.join(",")}`));

@@ -112,6 +112,40 @@ export function createDefaultProject() {
   };
 }
 
+// ── Actividades (modelo basado en IDs estables) ───────────────────────────────
+// Cada actividad es { id, text }. El id se genera una sola vez y nunca cambia,
+// así que borrar o reordenar actividades no afecta a las demás (comentarios,
+// fechas clave, estado, logros, etc. referencian el id, no la posición ni el texto).
+
+export function genActivityId() {
+  return "act_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+export function createActivity(text = "") {
+  return { id: genActivityId(), text };
+}
+
+// Construye un índice id → { text, position } a partir de activities_identified.
+// "position" es siempre la posición ACTUAL (1-based), nunca se guarda.
+export function buildActivityIndex(activities) {
+  const map = new Map();
+  (Array.isArray(activities) ? activities : []).forEach((a, i) => {
+    if (a && a.id != null) map.set(a.id, { text: a.text || "", position: i + 1 });
+  });
+  return map;
+}
+
+// Resuelve un id a su texto plano. Si no se encuentra (referencia huérfana), devuelve el id tal cual.
+export function activityText(index, id) {
+  return index.get(id)?.text ?? id ?? "";
+}
+
+// Resuelve un id a su label numerado "N. texto" para mostrar en reportes/listas.
+export function activityLabel(index, id) {
+  const entry = index.get(id);
+  return entry ? `${entry.position}. ${entry.text}` : (id || "");
+}
+
 export const createDefaultMilestone  = () => ({ activity: "", date: "", note: "" });
 export const createDefaultComment    = () => ({ activity: "", date: "", text: "" });
 export const createDefaultEngineer   = () => ({
@@ -147,6 +181,11 @@ function arrToNumbered(arr) {
   return arr.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
 }
 
+// Resuelve un array de ids de actividad a sus textos planos, usando el índice del proyecto.
+function resolveIds(index, ids) {
+  return (Array.isArray(ids) ? ids : []).filter(Boolean).map(id => activityText(index, id));
+}
+
 function projectBlock(p, i) {
   const m        = p.manual_metrics || {};
   const total    = m.total_tasks       || 0;
@@ -158,6 +197,8 @@ function projectBlock(p, i) {
   const label    = STATUS_LABELS[p.status] || p.status;
   const blockers = (p.impediments || []).filter(im => im.category === "blocker");
   const acts     = Array.isArray(p.activities_identified) ? p.activities_identified : [];
+  const actIndex = buildActivityIndex(acts);
+  const actTexts = acts.map(a => a.text || "");
 
   let txt = `──── ${icon} ${p.project_name || `Proyecto ${i + 1}`} ────\n`;
   txt += `Estado: ${label}   |   Fecha de reporte: ${p.report_date || "—"}\n`;
@@ -201,7 +242,7 @@ function projectBlock(p, i) {
     if (hasWeek) {
       txt += `INGENIEROS — ESTA SEMANA\n${"─".repeat(60)}\n${col("Ingeniero",28)}Tareas sem.\n${"─".repeat(60)}\n`;
       p.engineers.forEach(e => {
-        const detail = Array.isArray(e.weekly_detail) ? e.weekly_detail : [];
+        const detail = resolveIds(actIndex, e.weekly_detail);
         if (!e.weekly_total && !detail.length) return;
         const name = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
         txt += `${col(name,28)}${e.weekly_total || 0}\n`;
@@ -211,12 +252,12 @@ function projectBlock(p, i) {
     }
   }
 
-  if (acts.length) txt += `• Actividades Identificadas:\n${arrToNumbered(acts)}\n\n`;
+  if (acts.length) txt += `• Actividades Identificadas:\n${arrToNumbered(actTexts)}\n\n`;
 
   const ts = p.task_status || {};
-  const tsDone = Array.isArray(ts.completed)   ? ts.completed.filter(Boolean)   : [];
-  const tsWip  = Array.isArray(ts.in_progress) ? ts.in_progress.filter(Boolean) : [];
-  const tsNot  = Array.isArray(ts.not_started) ? ts.not_started.filter(Boolean) : [];
+  const tsDone = resolveIds(actIndex, ts.completed);
+  const tsWip  = resolveIds(actIndex, ts.in_progress);
+  const tsNot  = resolveIds(actIndex, ts.not_started);
   if (tsDone.length || tsWip.length || tsNot.length) {
     txt += `ESTADO DE ACTIVIDADES\n${"─".repeat(60)}\n`;
     if (tsDone.length) { txt += `✅ Completadas (${tsDone.length}):\n${arrToBullets(tsDone)}\n\n`; }
@@ -236,8 +277,8 @@ function projectBlock(p, i) {
   }
 
   if (p.show_closing_fields) {
-    const ach  = Array.isArray(p.weekly_achievements) ? p.weekly_achievements : [];
-    const plan = Array.isArray(p.next_week_plan)       ? p.next_week_plan       : [];
+    const ach  = resolveIds(actIndex, p.weekly_achievements);
+    const plan = resolveIds(actIndex, p.next_week_plan);
     if (ach.length)  txt += `✓ Qué se hizo esta semana:\n${arrToBullets(ach)}\n\n`;
     if (plan.length) txt += `→ Plan para la próxima semana:\n${arrToBullets(plan)}\n\n`;
   }
@@ -246,7 +287,7 @@ function projectBlock(p, i) {
   if (milestones.length) {
     txt += `📅 Fechas clave:\n`;
     milestones.forEach(m => {
-      txt += `  • [${m.date || "Sin fecha"}] ${m.activity || "—"}`;
+      txt += `  • [${m.date || "Sin fecha"}] ${m.activity ? activityLabel(actIndex, m.activity) : "—"}`;
       if (m.note) txt += ` — ${m.note}`;
       txt += `\n`;
     });
@@ -257,7 +298,7 @@ function projectBlock(p, i) {
   if (comments.length) {
     txt += `💬 Comentarios:\n`;
     comments.forEach(c => {
-      txt += `  • [${c.date || "Sin fecha"}] ${c.activity || "—"}`;
+      txt += `  • [${c.date || "Sin fecha"}] ${c.activity ? activityLabel(actIndex, c.activity) : "—"}`;
       if (c.text) txt += `: ${c.text}`;
       txt += `\n`;
     });

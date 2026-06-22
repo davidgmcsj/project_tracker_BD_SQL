@@ -10,6 +10,7 @@ Desarrollada internamente por la Oficina de Tecnología de la Corte Suprema de J
 - **Dashboard**: vista de tarjetas con el estado y avance de cada proyecto.
 - **Editar**: formulario completo para cargar métricas, actividades, ingenieros, indicadores, impedimentos, fechas clave y comentarios de cada proyecto.
 - **Reporte**: vista consolidada o por proyecto. Incluye botón "Copiar reporte" que genera un texto formateado listo para pegar en correo o Teams.
+- **Informe de gestión con IA**: genera un informe ejecutivo trimestral (logros, indicadores, riesgos, plan de mejora) a partir de los datos del proyecto, usando un proveedor de IA en cascada (ver sección [Generación de informes con IA](#generación-de-informes-con-ia)).
 - **Nueva semana**: limpia los campos semanales y guarda un snapshot en el historial antes de borrar.
 
 ---
@@ -22,10 +23,11 @@ project_tracker_BD/
 ├── backend/                        ← Servidor Node.js + conexión a BD
 │   ├── server.cjs                  ← API REST + sirve el frontend en producción
 │   ├── db-operations.cjs           ← Escritura en Azure SQL Server
+│   ├── gemini-report.cjs           ← Generación de informes con IA (Gemini → OpenRouter → Groq)
 │   ├── data.json                   ← Estado actual de proyectos (ignorado en git)
 │   ├── history.json                ← Historial de snapshots semanales (ignorado en git)
-│   ├── .env                        ← Credenciales de BD (ignorado en git)
-│   └── package.json                ← Dependencias: express, mssql, cors, dotenv
+│   ├── .env                        ← Credenciales de BD y API keys de IA (ignorado en git)
+│   └── package.json                ← Dependencias: express, mssql, cors, dotenv, @google/generative-ai, groq-sdk, openai
 │
 ├── frontend/                       ← Aplicación React
 │   ├── src/
@@ -71,6 +73,9 @@ project_tracker_BD/
 | Las rutas de la API | `backend/server.cjs` → secciones `app.get` / `app.post` |
 | La conexión a la base de datos | `backend/.env` (credenciales) + `backend/db-operations.cjs` (lógica) |
 | El puerto del servidor | `backend/.env` → variable `PORT` |
+| El prompt o tono del informe de IA | `backend/gemini-report.cjs` → `SYSTEM_PROMPT` y `buildPrompt()` |
+| El catálogo de descripciones de proyectos (contexto para la IA) | `backend/gemini-report.cjs` → `PROJECT_CATALOG` |
+| El orden de proveedores de IA (Gemini → OpenRouter → Groq) | `backend/gemini-report.cjs` → `generateReportWithAI()` |
 
 ---
 
@@ -133,7 +138,14 @@ DB_SERVER=tu-servidor.database.windows.net
 DB_USER=project_tracker
 DB_PASSWORD=TuContraseñaFuerte
 DB_NAME=DB_SeguimientoProyectos
+
+# Proveedores de IA para el informe de gestión (opcionales, en cascada — ver abajo)
+GEMINI_API_KEY=
+GROQ_API_KEY=
+OPENROUTER_API_KEY=
 ```
+
+⚠️ El archivo `.env` contiene credenciales y API keys reales — nunca debe subirse al repositorio ni compartirse. Si una clave quedó expuesta accidentalmente (por ejemplo, pegada en un chat o commit), rótala de inmediato en el panel del proveedor correspondiente.
 
 ### Diferencia local vs Azure SQL
 | Configuración | SQL Server local | Azure SQL |
@@ -141,6 +153,41 @@ DB_NAME=DB_SeguimientoProyectos
 | `DB_SERVER` | `localhost` | `xxx.database.windows.net` |
 | `encrypt` en db-operations.cjs | `false` | `true` (ya configurado) |
 | Firewall | No aplica | Agregar tu IP en el portal de Azure |
+
+---
+
+## Rutas de la API
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/projects` | Devuelve el estado actual de todos los proyectos (`data.json`) |
+| POST | `/api/projects` | Sobreescribe el estado actual |
+| POST | `/api/report` | Guarda un snapshot semanal (`history.json` + Azure SQL en paralelo) |
+| GET | `/api/history` | Lista de fechas de reportes guardados |
+| GET | `/api/history/:date` | Datos completos de un reporte por fecha |
+| POST | `/api/generate-report` | Genera el informe de gestión trimestral con IA para un proyecto |
+| POST | `/api/project-status` | Genera un resumen de estado semanal con IA para un proyecto |
+| POST | `/api/restore-from-db` | Restaura `data.json` desde el último snapshot guardado en Azure SQL |
+| GET | `/api/db-ping` | Diagnóstico de conexión a la base de datos (solo desarrollo) |
+
+---
+
+## Generación de informes con IA
+
+El botón **"Informe de gestión con IA"** llama a `backend/gemini-report.cjs`, que arma un prompt con todos los datos del proyecto (métricas, actividades, impedimentos, hitos, comentarios) y lo envía a un proveedor de IA para producir un informe ejecutivo estructurado en JSON (resultados, indicadores, riesgos, plan de mejora, conclusiones).
+
+### Cadena de proveedores (failover automático)
+1. **Gemini** (principal) — prueba varios modelos en orden hasta obtener respuesta.
+2. **OpenRouter** (respaldo) — varios modelos gratuitos en orden.
+3. **Groq** (último respaldo) — `llama-3.3-70b-versatile`.
+
+Si una API key no está configurada en `.env`, ese proveedor se omite y continúa con el siguiente. Si ninguno está configurado, la ruta responde con error 503/500.
+
+### Dónde ajustar el comportamiento
+- **Tono y reglas de redacción**: `SYSTEM_PROMPT` y `buildPrompt()` en `gemini-report.cjs`.
+- **Lista de modelos por proveedor**: constantes `GEMINI_MODELS` y `OPENROUTER_MODELS`.
+- **Descripciones de proyectos** (contexto que se inyecta para evitar alucinaciones): objeto `PROJECT_CATALOG`.
+- **Resumen de estado semanal** (más corto, usado en el dashboard): `buildStatusPrompt()` y `generateStatusSummaryWithAI()`.
 
 ---
 

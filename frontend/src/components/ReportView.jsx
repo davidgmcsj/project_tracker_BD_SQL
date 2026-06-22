@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
-import { projectProgress, generateReportText, generateSingleProjectReportText } from "../utils/formulas";
+import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel } from "../utils/formulas";
 import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ function ImpedimentSection({ impediments }) {
   );
 }
 
-function MilestoneSection({ milestones }) {
+function MilestoneSection({ milestones, activitiesIndex }) {
   if (!Array.isArray(milestones) || !milestones.length) return null;
   const validItems = milestones.filter(m => m.date || m.note);
   if (!validItems.length) return null;
@@ -133,7 +133,7 @@ function MilestoneSection({ milestones }) {
       <div className="milestone-report">
         {groups.map(([actKey, items]) => (
           <div key={actKey} className="milestone-report__group">
-            {actKey !== "__sin__" && <div className="milestone-report__act">{actKey}</div>}
+            {actKey !== "__sin__" && <div className="milestone-report__act">{activityLabel(activitiesIndex, actKey)}</div>}
             {items.map((m, i) => (
               <div key={i} className="milestone-report__row">
                 {m.date && <span className="milestone-report__date">{fmtDate(m.date)}</span>}
@@ -147,7 +147,7 @@ function MilestoneSection({ milestones }) {
   );
 }
 
-function CommentSection({ comments }) {
+function CommentSection({ comments, activitiesIndex }) {
   if (!Array.isArray(comments) || !comments.length) return null;
   const validItems = comments.filter(c => c.text);
   if (!validItems.length) return null;
@@ -163,7 +163,7 @@ function CommentSection({ comments }) {
       <div className="milestone-report">
         {groups.map(([actKey, items]) => (
           <div key={actKey} className="milestone-report__group">
-            {actKey !== "__sin__" && <div className="milestone-report__act">{actKey}</div>}
+            {actKey !== "__sin__" && <div className="milestone-report__act">{activityLabel(activitiesIndex, actKey)}</div>}
             {items.map((c, i) => (
               <div key={i} className="milestone-report__row">
                 {c.date && <span className="milestone-report__date">{fmtDate(c.date)}</span>}
@@ -177,7 +177,7 @@ function CommentSection({ comments }) {
   );
 }
 
-function TaskStatusSection({ taskStatus }) {
+function TaskStatusSection({ taskStatus, activitiesIndex }) {
   if (!taskStatus || typeof taskStatus !== "object") return null;
   const done = (taskStatus.completed   || []).filter(Boolean);
   const wip  = (taskStatus.in_progress || []).filter(Boolean);
@@ -200,7 +200,7 @@ function TaskStatusSection({ taskStatus }) {
             <span className="rpt-section__count">{col.items.length}</span>
           </div>
           <ul className="rpt-bullets">
-            {col.items.map((item, i) => <li key={i} className="rpt-bullets__item">{item}</li>)}
+            {col.items.map((id) => <li key={id} className="rpt-bullets__item">{activityText(activitiesIndex, id)}</li>)}
           </ul>
         </div>
       ))}
@@ -208,9 +208,9 @@ function TaskStatusSection({ taskStatus }) {
   );
 }
 
-function EngineerWeekCard({ eng }) {
+function EngineerWeekCard({ eng, activitiesIndex }) {
   const name  = eng.engineer_id === "Otro..." ? (eng.custom_name || "—") : (eng.engineer_id || "—");
-  const lines = toLines(eng.weekly_detail);
+  const lines = toLines(eng.weekly_detail).map(id => activityText(activitiesIndex, id));
   if (!eng.weekly_total && !lines.length) return null;
 
   return (
@@ -358,6 +358,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
+  const activitiesIndex = buildActivityIndex(p.activities_identified);
   const engWithWeek = (p.engineers || []).filter(e =>
     e.weekly_total > 0 || (Array.isArray(e.weekly_detail) ? e.weekly_detail.length : (e.weekly_detail || "").trim())
   );
@@ -413,21 +414,21 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
         <ProjectMetricsTable project={p} />
       </div>
 
-      <TaskStatusSection taskStatus={p.task_status} />
+      <TaskStatusSection taskStatus={p.task_status} activitiesIndex={activitiesIndex} />
 
       <div className="rpt-sections-grid">
-        <BulletSection fieldKey="activities_identified" value={p.activities_identified} />
+        <BulletSection fieldKey="activities_identified" value={(p.activities_identified || []).map(a => a.text)} />
         <ImpedimentSection impediments={p.impediments} />
         {p.show_closing_fields && (
           <>
-            <BulletSection fieldKey="weekly_achievements" value={p.weekly_achievements} />
-            <BulletSection fieldKey="next_week_plan"      value={p.next_week_plan} />
+            <BulletSection fieldKey="weekly_achievements" value={(p.weekly_achievements || []).map(id => activityText(activitiesIndex, id))} />
+            <BulletSection fieldKey="next_week_plan"      value={(p.next_week_plan      || []).map(id => activityText(activitiesIndex, id))} />
           </>
         )}
       </div>
 
-      <MilestoneSection milestones={p.milestones} />
-      <CommentSection   comments={p.comments} />
+      <MilestoneSection milestones={p.milestones} activitiesIndex={activitiesIndex} />
+      <CommentSection   comments={p.comments}     activitiesIndex={activitiesIndex} />
 
       {engWithWeek.length > 0 && (
         <div className="rpt-eng-section">
@@ -436,7 +437,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
             <span className="rpt-section__count">{engWithWeek.length}</span>
           </div>
           <div className="rpt-eng-grid">
-            {engWithWeek.map((eng, ei) => <EngineerWeekCard key={ei} eng={eng} />)}
+            {engWithWeek.map((eng, ei) => <EngineerWeekCard key={ei} eng={eng} activitiesIndex={activitiesIndex} />)}
           </div>
         </div>
       )}

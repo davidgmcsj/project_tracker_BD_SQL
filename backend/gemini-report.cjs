@@ -133,6 +133,19 @@ function toLines(val) {
   return val.split("\n").map(s => s.trim()).filter(Boolean);
 }
 
+// activities_identified es un array de {id, text}. Todo lo demás (task_status,
+// weekly_detail, milestones.activity, comments.activity) referencia el id, no el texto.
+function buildActivityIndex(activities) {
+  const map = new Map();
+  (Array.isArray(activities) ? activities : []).forEach((a, i) => {
+    if (a && a.id != null) map.set(a.id, { text: a.text || "", position: i + 1 });
+  });
+  return map;
+}
+function actText(index, id)  { return index.get(id)?.text ?? id ?? ""; }
+function actLabel(index, id) { const e = index.get(id); return e ? `${e.position}. ${e.text}` : (id || ""); }
+function resolveIds(index, ids) { return toLines(ids).map(id => actText(index, id)); }
+
 function buildProjectSummary(project) {
   const description      = getProjectDescription(project.project_name);
   const projectDisplayName = (project.project_name || "").replace(/^PRO-\d+[-:\s]*/i, "").trim() || project.project_name || "Sin nombre";
@@ -150,17 +163,18 @@ function buildProjectSummary(project) {
   const risks    = (project.impediments || []).filter(i => i.category === "risk");
   const nonConf  = (project.impediments || []).filter(i => i.category === "non_conformity");
 
+  const actIndex   = buildActivityIndex(project.activities_identified);
   const ts         = project.task_status || {};
-  const tsDone     = (ts.completed   || []).filter(Boolean);
-  const tsWip      = (ts.in_progress || []).filter(Boolean);
-  const tsNotStart = (ts.not_started || []).filter(Boolean);
+  const tsDone     = resolveIds(actIndex, ts.completed);
+  const tsWip      = resolveIds(actIndex, ts.in_progress);
+  const tsNotStart = resolveIds(actIndex, ts.not_started);
 
   const milestones = (project.milestones || []).filter(m => m.date || m.note);
   const comments   = (project.comments   || []).filter(c => c.text);
 
   const engLines = (project.engineers || []).map(e => {
     const name   = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
-    const detail = toLines(e.weekly_detail);
+    const detail = resolveIds(actIndex, e.weekly_detail);
     return `  - ${name}: ${e.assigned || 0} asignadas, ${e.completed || 0} completadas, ${e.in_progress || 0} en proceso${detail.length ? `. Actividades esta semana: ${detail.join("; ")}` : " (sin actividades registradas esta semana)"}`;
   });
 
@@ -186,7 +200,7 @@ ${indicators.length ? `\nINDICADORES:\n${indicators.join("\n")}` : ""}
 ${engLines.length ? `\nEQUIPO DE INGENIEROS (todos los integrantes del equipo — menciónalos a todos en el informe aunque no tengan actividades registradas esta semana):\n${engLines.join("\n")}` : ""}
 
 ACTIVIDADES IDENTIFICADAS PARA EL PERIODO:
-${toLines(project.activities_identified).map((a, i) => `  ${i + 1}. ${a}`).join("\n") || "  No registradas"}
+${(project.activities_identified || []).map((a, i) => `  ${i + 1}. ${a.text}`).join("\n") || "  No registradas"}
 
 ESTADO DETALLADO DE ACTIVIDADES:
 ${tsDone.length     ? `  Completadas (${tsDone.length}):\n${tsDone.map(a => `    - ${a}`).join("\n")}` : "  Sin actividades completadas registradas"}
@@ -194,10 +208,10 @@ ${tsWip.length      ? `  En proceso (${tsWip.length}):\n${tsWip.map(a => `    - 
 ${tsNotStart.length ? `  No iniciadas (${tsNotStart.length}):\n${tsNotStart.map(a => `    - ${a}`).join("\n")}` : ""}
 
 LOGROS DE LA SEMANA:
-${toLines(project.weekly_achievements).map(a => `  - ${a}`).join("\n") || "  No registrados"}
+${resolveIds(actIndex, project.weekly_achievements).map(a => `  - ${a}`).join("\n") || "  No registrados"}
 
 PLAN PRÓXIMA SEMANA:
-${toLines(project.next_week_plan).map(a => `  - ${a}`).join("\n") || "  No registrado"}
+${resolveIds(actIndex, project.next_week_plan).map(a => `  - ${a}`).join("\n") || "  No registrado"}
 
 IMPEDIMENTOS Y RIESGOS:
 ${blockers.length ? `  Bloqueantes:\n${blockers.map(b => `    - ${b.description}${b.impact ? ` (Impacto: ${b.impact})` : ""}`).join("\n")}` : "  Sin bloqueantes"}
@@ -205,7 +219,7 @@ ${risks.length    ? `  Riesgos:\n${risks.map(r => `    - ${r.description}${r.imp
 ${nonConf.length  ? `  Salidas no conformes:\n${nonConf.map(n => `    - ${n.description}${n.impact ? ` (Impacto: ${n.impact})` : ""}`).join("\n")}` : "  Sin salidas no conformes"}
 
 FECHAS CLAVE / HITOS:
-${milestones.length ? milestones.map(m => `  - [${m.date || "Sin fecha"}] ${m.activity || "—"}${m.note ? `: ${m.note}` : ""}`).join("\n") : "  No registradas"}
+${milestones.length ? milestones.map(m => `  - [${m.date || "Sin fecha"}] ${m.activity ? actLabel(actIndex, m.activity) : "—"}${m.note ? `: ${m.note}` : ""}`).join("\n") : "  No registradas"}
 
 COMENTARIOS:
 ${comments.length ? comments.map(c => `  - ${c.text}${c.date ? ` (${c.date})` : ""}`).join("\n") : "  Sin comentarios"}
