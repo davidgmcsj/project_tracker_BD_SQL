@@ -44,7 +44,7 @@ export async function loadProjects() {
     if (data.projects?.length) {
       localStorage.setItem(LS_PROJECTS, JSON.stringify(data.projects));
       if (data.weekLabel) localStorage.setItem(LS_WEEK, data.weekLabel);
-      return { projects: data.projects, weekLabel: data.weekLabel };
+      return { projects: data.projects, weekLabel: data.weekLabel, engineers: data.engineers || [] };
     }
   } catch {
     // servidor no disponible — intentar localStorage
@@ -55,14 +55,14 @@ export async function loadProjects() {
     // Datos en formato antiguo (pre-BD): limpiar para evitar errores de parse
     localStorage.removeItem(LS_PROJECTS);
     localStorage.removeItem(LS_WEEK);
-    return { projects: [], weekLabel: null };
+    return { projects: [], weekLabel: null, engineers: [] };
   }
-  return { projects: cached, weekLabel: localStorage.getItem(LS_WEEK) };
+  return { projects: cached, weekLabel: localStorage.getItem(LS_WEEK), engineers: [] };
 }
 
 // ── Persistencia base ─────────────────────────────────────────────────────────
 
-export async function saveProjects(projects, weekLabel) {
+export async function saveProjects(projects, weekLabel, engineers) {
   // localStorage primero: garantiza que el usuario no pierde datos
   // aunque la llamada al servidor falle
   localStorage.setItem(LS_PROJECTS, JSON.stringify(projects));
@@ -71,7 +71,7 @@ export async function saveProjects(projects, weekLabel) {
     await apiFetch("/api/projects", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ projects, weekLabel }),
+      body:    JSON.stringify({ projects, weekLabel, engineers }),
     });
   } catch { /* guardado local completado */ }
 }

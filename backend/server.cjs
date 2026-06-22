@@ -142,7 +142,7 @@ async function init() {
       await fs.copyFile(localData, DATA_FILE);
       console.log("data.json copiado al directorio de datos");
     } catch {
-      await writeJson(DATA_FILE, { projects: [], weekLabel: null });
+      await writeJson(DATA_FILE, { projects: [], weekLabel: null, engineers: [] });
     }
   }
 
@@ -254,12 +254,14 @@ app.post("/api/report", async (req, res) => {
 
     // Escritura en SQL Server en segundo plano con reintento automático
     if (saveWeekReportToDB) {
-      saveWeekReportToDB(projects, weekLabel, entry.saved_at)
+      const currentData = await readJson(DATA_FILE, { engineers: [] });
+      const engineersCatalog = currentData.engineers || [];
+      saveWeekReportToDB(projects, weekLabel, entry.saved_at, engineersCatalog)
         .then(() => console.log("[SQL] ✓ Reporte guardado en base de datos:", reportDate))
         .catch(e => {
           console.warn("[SQL] ⚠ Primer intento fallido, reintentando en 5s:", e.message);
           setTimeout(() => {
-            saveWeekReportToDB(projects, weekLabel, entry.saved_at)
+            saveWeekReportToDB(projects, weekLabel, entry.saved_at, engineersCatalog)
               .then(() => console.log("[SQL] ✓ Reporte guardado en base de datos (reintento):", reportDate))
               .catch(e2 => console.error("[SQL] ✗ Error definitivo guardando en BD:", e2.message));
           }, 5000);

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import Dashboard    from "./components/Dashboard";
-import EditView     from "./components/EditView";
-import ReportView   from "./components/ReportView";
-import ProgressRing from "./components/ProgressRing";
+import Dashboard     from "./components/Dashboard";
+import EditView      from "./components/EditView";
+import ReportView    from "./components/ReportView";
+import EngineersView from "./components/EngineersView";
+import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
+  createEngineer,
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
@@ -30,6 +32,7 @@ function getStatValue(dot, stats, projects) {
 
 export default function App() {
   const [projects,          setProjects]          = useState([]);
+  const [engineers,         setEngineers]         = useState([]);
   const [view,              setView]              = useState("dashboard");
   const [editingIdx,        setEditingIdx]        = useState(null);
   const [weekLabel,         setWeekLabel]         = useState(getWeekLabel());
@@ -41,12 +44,13 @@ export default function App() {
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
-      const { projects: saved, weekLabel: savedWeek } = await loadProjects();
+      const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers } = await loadProjects();
       if (saved?.length) {
         setProjects(saved);
         const firstDate = saved[0]?.report_date;
         if (firstDate) setReportDate(firstDate);
       }
+      if (savedEngineers?.length) setEngineers(savedEngineers);
       const wl = savedWeek || getStoredWeekLabel();
       if (wl) setWeekLabel(wl);
     }
@@ -54,11 +58,16 @@ export default function App() {
   }, []);
 
   // ── Persistencia ───────────────────────────────────────────────────────────
-  const persist = useCallback(async (data) => {
+  const persist = useCallback(async (data, engs) => {
     setProjects(data);
-    await saveProjects(data, weekLabel);
+    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers);
     setHasUnsaved(false);
-  }, [weekLabel]);
+  }, [weekLabel, engineers]);
+
+  const persistEngineers = useCallback(async (nextEngineers) => {
+    setEngineers(nextEngineers);
+    await saveProjects(projects, weekLabel, nextEngineers);
+  }, [projects, weekLabel]);
 
   // ── Limpiado de campos semanales ───────────────────────────────────────────
   const applyWeekReset = async (newDate, newLabel) => {
@@ -86,7 +95,7 @@ export default function App() {
       const updated = projects.map(p => ({ ...p, report_date: date }));
       setReportDate(date);
       setProjects(updated);
-      await saveProjects(updated, weekLabel);
+      await saveProjects(updated, weekLabel, engineers);
     } else {
       const ok = window.confirm(
         `⚠ Cambiar a una semana diferente borrará los campos semanales de todos los proyectos:\n\n` +
@@ -169,7 +178,7 @@ export default function App() {
   const viewProjectReport = (idx) => { setReportProjectIdx(idx); setView("report"); };
 
   const exportProjectReport = (idx) => {
-    const text = generateSingleProjectReportText(projects[idx], weekLabel);
+    const text = generateSingleProjectReportText(projects[idx], weekLabel, engineers);
     navigator.clipboard.writeText(text).then(() => {
       setSaveToast(`✓ Reporte de "${projects[idx]?.project_name || "proyecto"}" copiado al portapapeles`);
       setTimeout(() => setSaveToast(""), 2500);
@@ -177,6 +186,25 @@ export default function App() {
       setSaveToast("No se pudo copiar al portapapeles");
       setTimeout(() => setSaveToast(""), 2500);
     });
+  };
+
+  // ── Catálogo de ingenieros ─────────────────────────────────────────────────
+  const addEngineer = (name, role) => {
+    const eng = createEngineer(name, role);
+    persistEngineers([...engineers, eng]);
+    return eng.id;
+  };
+
+  const updateEngineer = (id, name, role) => {
+    persistEngineers(engineers.map(e => e.id === id ? { ...e, name, role } : e));
+  };
+
+  const toggleEngineerActive = (id) => {
+    persistEngineers(engineers.map(e => e.id === id ? { ...e, active: !e.active } : e));
+  };
+
+  const updateEngineerTasks = (id, tasks) => {
+    persistEngineers(engineers.map(e => e.id === id ? { ...e, tasks } : e));
   };
 
   // ── Restaurar desde BD ────────────────────────────────────────────────────
@@ -251,13 +279,13 @@ export default function App() {
         </div>
 
         <div className="header__actions">
-          {["dashboard", "edit", "report"].map(v => (
+          {["dashboard", "edit", "report", "engineers"].map(v => (
             <button
               key={v}
               className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
               onClick={() => navigateTo(v)}
             >
-              {v === "dashboard" ? "Dashboard" : v === "edit" ? "Editar" : "Reporte"}
+              {v === "dashboard" ? "Dashboard" : v === "edit" ? "Editar" : v === "report" ? "Reporte" : "Ingenieros"}
             </button>
           ))}
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
@@ -291,9 +319,19 @@ export default function App() {
 
         {view === "report" && (
           <ReportView
-            projects={projects} weekLabel={weekLabel}
+            projects={projects} weekLabel={weekLabel} engineers={engineers}
             singleProjectIdx={reportProjectIdx}
             onClearSingle={() => setReportProjectIdx(null)}
+          />
+        )}
+        {view === "engineers" && (
+          <EngineersView
+            engineers={engineers}
+            projects={projects}
+            onAdd={addEngineer}
+            onUpdate={updateEngineer}
+            onToggleActive={toggleEngineerActive}
+            onUpdateTasks={updateEngineerTasks}
           />
         )}
         {view === "dashboard" && (
@@ -318,6 +356,8 @@ export default function App() {
             onRemoveProject={removeProject}
             onViewReport={viewProjectReport}
             onExportReport={exportProjectReport}
+            engineerCatalog={engineers}
+            onCreateEngineer={addEngineer}
           />
         )}
       </main>

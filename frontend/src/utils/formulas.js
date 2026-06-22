@@ -150,7 +150,6 @@ export const createDefaultMilestone  = () => ({ activity: "", date: "", note: ""
 export const createDefaultComment    = () => ({ activity: "", date: "", text: "" });
 export const createDefaultEngineer   = () => ({
   engineer_id:   "",
-  custom_name:   "",
   assigned:      0,
   completed:     0,
   in_progress:   0,
@@ -159,6 +158,41 @@ export const createDefaultEngineer   = () => ({
 });
 export const createDefaultIndicator  = () => ({ name: "", total: 0, completed: 0, in_progress: 0 });
 export const createDefaultImpediment = (category = "blocker") => ({ category, description: "", impact: "" });
+
+// ── Catálogo de ingenieros (modelo basado en IDs estables) ────────────────────
+// Cada ingeniero del catálogo tiene un id estable. engineers[].engineer_id dentro
+// de un proyecto referencia ese id, nunca un nombre libre — mismo patrón que las
+// actividades: borrar/desactivar un ingeniero no rompe referencias existentes.
+
+export function genEngineerId() {
+  return "eng_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+export function createEngineer(name = "", role = "") {
+  return { id: genEngineerId(), name, role, active: true, created_at: getToday(), tasks: [] };
+}
+
+// Construye un índice id → nombre a partir del catálogo de ingenieros.
+export function buildEngineerIndex(engineers) {
+  const map = new Map();
+  (Array.isArray(engineers) ? engineers : []).forEach(e => {
+    if (e && e.id != null) map.set(e.id, e.name || "");
+  });
+  return map;
+}
+
+// Resuelve un id de ingeniero a su nombre. Si no se encuentra, devuelve el id tal cual.
+export function engineerName(index, id) {
+  return index.get(id) ?? id ?? "";
+}
+
+export function genEngineerTaskId() {
+  return "etask_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+export function createEngineerTask(description = "") {
+  return { id: genEngineerTaskId(), description, status: "not_started", date: "" };
+}
 
 // ── Reporte ASCII ─────────────────────────────────────────────────────────────
 // Estas funciones generan el texto plano que se copia al portapapeles.
@@ -186,7 +220,7 @@ function resolveIds(index, ids) {
   return (Array.isArray(ids) ? ids : []).filter(Boolean).map(id => activityText(index, id));
 }
 
-function projectBlock(p, i) {
+function projectBlock(p, i, engineerIndex) {
   const m        = p.manual_metrics || {};
   const total    = m.total_tasks       || 0;
   const done     = m.completed_tasks   || 0;
@@ -229,7 +263,7 @@ function projectBlock(p, i) {
     txt += `INGENIEROS — GLOBAL\n${"─".repeat(88)}\n`;
     txt += `${col("Ingeniero",28)}${col("Asignadas",12)}${col("Completadas",14)}${col("En proceso",13)}No iniciadas\n${"─".repeat(88)}\n`;
     p.engineers.forEach(e => {
-      const name = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
+      const name = e.engineer_id ? engineerName(engineerIndex, e.engineer_id) : "—";
       txt += `${col(name,28)}${col(e.assigned,12)}${col(e.completed,14)}${col(e.in_progress,13)}${Math.max(0, e.assigned - e.completed - e.in_progress)}\n`;
     });
     if (shared > 0) {
@@ -244,7 +278,7 @@ function projectBlock(p, i) {
       p.engineers.forEach(e => {
         const detail = resolveIds(actIndex, e.weekly_detail);
         if (!e.weekly_total && !detail.length) return;
-        const name = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
+        const name = e.engineer_id ? engineerName(engineerIndex, e.engineer_id) : "—";
         txt += `${col(name,28)}${e.weekly_total || 0}\n`;
         if (detail.length) txt += `${arrToBullets(detail)}\n`;
       });
@@ -309,13 +343,14 @@ function projectBlock(p, i) {
   return txt;
 }
 
-export function generateReportText(projects, weekLabel) {
+export function generateReportText(projects, weekLabel, engineers) {
   const stats      = globalStats(projects);
   const pending    = projects.reduce((s, p) => {
     const m = p.manual_metrics || {};
     return s + Math.max(0, (m.total_tasks || 0) - (m.completed_tasks || 0) - (m.in_progress_tasks || 0));
   }, 0);
   const withBlocker = projects.filter(p => (p.impediments || []).some(im => im.category === "blocker"));
+  const engineerIndex = buildEngineerIndex(engineers);
 
   let txt = `═══ REPORTE SEMANAL DE PROYECTOS ═══\n${weekLabel}\n\n`;
   txt += `RESUMEN GLOBAL\n${"─".repeat(72)}\n`;
@@ -324,17 +359,17 @@ export function generateReportText(projects, weekLabel) {
   txt += `${col("Estado de Tareas",22)}${col(`${stats.completed} de ${stats.total}`,18)}${pending} no iniciado${pending !== 1 ? "s" : ""}.\n`;
   txt += `${col("Con bloqueantes",22)}${col(withBlocker.length,18)}${withBlocker.length === 0 ? "Sin bloqueantes activos." : withBlocker.map(p => p.project_name).join(", ")}\n`;
   txt += `${"─".repeat(72)}\n* El porcentaje de avance se calcula según las tareas identificadas.\n\n`;
-  projects.forEach((p, i) => { txt += projectBlock(p, i); });
+  projects.forEach((p, i) => { txt += projectBlock(p, i, engineerIndex); });
   return txt;
 }
 
-export function generateSingleProjectReportText(p, weekLabel) {
+export function generateSingleProjectReportText(p, weekLabel, engineers) {
   const icon  = STATUS_ICONS[p.status]  || "🟡";
   const label = STATUS_LABELS[p.status] || p.status;
   let txt = `═══ REPORTE DE PROYECTO ═══\n${weekLabel}\n\n`;
   txt += `${icon} ${p.project_name || "Proyecto"}\nEstado: ${label}   |   Fecha: ${p.report_date || "—"}\n`;
   if (p.planner_url) txt += `Planner: ${p.planner_url}\n`;
   txt += "\n";
-  txt += projectBlock(p, 0);
+  txt += projectBlock(p, 0, buildEngineerIndex(engineers));
   return txt;
 }

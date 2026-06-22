@@ -1,4 +1,7 @@
-import { projectProgress, globalProgress, buildActivityIndex, activityText } from "../utils/formulas";
+import {
+  projectProgress, globalProgress, buildActivityIndex, activityText,
+  buildEngineerIndex, engineerName as resolveEngineerName,
+} from "../utils/formulas";
 
 function pctStyle(pct) {
   if (pct >= 75) return { background: "var(--green-bg)", color: "var(--green)" };
@@ -6,8 +9,8 @@ function pctStyle(pct) {
   return { background: "var(--red-bg)", color: "var(--red)" };
 }
 
-function engineerName(eng) {
-  return eng.engineer_id === "Otro..." ? (eng.custom_name || "—") : (eng.engineer_id || "—");
+function engineerName(eng, engineerIndex) {
+  return eng.engineer_id ? resolveEngineerName(engineerIndex, eng.engineer_id) : "—";
 }
 
 function toDetailLines(weekly_detail) {
@@ -115,7 +118,7 @@ export function ProjectMetricsTableCompact({ project }) {
   );
 }
 
-export function ProjectMetricsTable({ project }) {
+export function ProjectMetricsTable({ project, engineers: engineerCatalog }) {
   const m          = project.manual_metrics || {};
   const pct        = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const pending    = Math.max(0, (m.total_tasks || 0) - (m.completed_tasks || 0) - (m.in_progress_tasks || 0));
@@ -126,6 +129,7 @@ export function ProjectMetricsTable({ project }) {
   const indicators = project.indicators || [];
   const shared     = m.shared_tasks_discount || 0;
   const activitiesIndex = buildActivityIndex(project.activities_identified);
+  const engineerIndex   = buildEngineerIndex(engineerCatalog);
 
   return (
     <div className="metrics-container">
@@ -166,7 +170,7 @@ export function ProjectMetricsTable({ project }) {
             const noInit = Math.max(0, eng.assigned - eng.completed - eng.in_progress);
             return (
               <tr key={i} className="metrics-table__engineer-row">
-                <td style={{ fontWeight: 700 }}>{engineerName(eng)}</td>
+                <td style={{ fontWeight: 700 }}>{engineerName(eng, engineerIndex)}</td>
                 <td>
                   <div style={{ fontSize: "11px", color: "var(--text-3)", marginBottom: 3 }}>Global</div>
                   <strong>{eng.completed}</strong><span className="eng-stat"> / {eng.assigned}</span>
@@ -187,7 +191,7 @@ export function ProjectMetricsTable({ project }) {
               if (!eng.weekly_total && !detail.length) return null;
               return (
                 <tr key={`week-${i}`} className="metrics-table__engineer-row metrics-table__engineer-week">
-                  <td style={{ paddingLeft: 20, color: "var(--text-2)", fontSize: "12px" }}>↳ {engineerName(eng)} — semana</td>
+                  <td style={{ paddingLeft: 20, color: "var(--text-2)", fontSize: "12px" }}>↳ {engineerName(eng, engineerIndex)} — semana</td>
                   <td><strong>{eng.weekly_total || 0}</strong><span className="eng-stat"> tareas</span></td>
                   <td style={{ color: "var(--text-2)", fontSize: "12px" }}>
                     {detail.length > 0

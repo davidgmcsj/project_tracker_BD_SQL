@@ -52,6 +52,16 @@ function buildActivityIndex(activities) {
 function resolveActText(index, id) { return index.get(id) ?? id ?? ""; }
 function resolveActArr(index, ids) { return safeArr(ids).map(id => resolveActText(index, id)); }
 
+// engineers[].engineer_id es ahora un id del catálogo data.engineers, no un nombre libre.
+// resolveEngineer (SQL) sigue trabajando con nombres — se resuelve catálogo→nombre antes de llamarlo.
+function buildEngineerCatalogIndex(engineersCatalog) {
+  const map = new Map();
+  (Array.isArray(engineersCatalog) ? engineersCatalog : []).forEach(e => {
+    if (e && e.id != null) map.set(e.id, e.name || "");
+  });
+  return map;
+}
+
 function getWeekNumber(dateStr) {
   const d = new Date(dateStr + "T12:00:00");
   const day = d.getDay() || 7;
@@ -157,7 +167,7 @@ async function syncActividades(pool, proyectoID, activitiesArr) {
 
 // ── Guardar un proyecto: todas las sub-queries en paralelo donde es posible ───
 
-async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCache) {
+async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCache, engineerCatalogIndex) {
   const proyectoID  = await resolveProject(pool, project, proyCache);
   const reportDate  = new Date().toISOString().slice(0, 10);
   const semana      = getWeekNumber(reportDate);
@@ -329,11 +339,11 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   }
 
   // Ingenieros — resolve en paralelo, luego INSERT multi-row
-  const engItems = (project.engineers || []).filter(e => e.engineer_id || e.custom_name);
+  const engItems = (project.engineers || []).filter(e => e.engineer_id);
   if (engItems.length) {
     const resolvedEngs = await Promise.all(
       engItems.map(eng => {
-        const rawName = eng.engineer_id === "Otro..." ? (eng.custom_name || "") : (eng.engineer_id || "");
+        const rawName = resolveActText(engineerCatalogIndex, eng.engineer_id);
         return resolveEngineer(pool, rawName, engCache).then(id => ({ id, eng }));
       })
     );
@@ -356,14 +366,15 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
 
 // ── Guardar todos los proyectos en paralelo ───────────────────────────────────
 
-async function saveWeekReportToDB(projects, weekLabel, savedAt) {
+async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog) {
   const pool = await getPool();
 
   const { engCache, proyCache } = await preloadCaches(pool, projects);
+  const engineerCatalogIndex = buildEngineerCatalogIndex(engineersCatalog);
 
   // Procesar todos los proyectos en paralelo
   await Promise.all(
-    projects.map(project => saveProject(pool, project, weekLabel, savedAt, engCache, proyCache))
+    projects.map(project => saveProject(pool, project, weekLabel, savedAt, engCache, proyCache, engineerCatalogIndex))
   );
 }
 

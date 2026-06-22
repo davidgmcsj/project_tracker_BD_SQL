@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
-import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel } from "../utils/formulas";
+import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName } from "../utils/formulas";
 import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -208,8 +208,8 @@ function TaskStatusSection({ taskStatus, activitiesIndex }) {
   );
 }
 
-function EngineerWeekCard({ eng, activitiesIndex }) {
-  const name  = eng.engineer_id === "Otro..." ? (eng.custom_name || "—") : (eng.engineer_id || "—");
+function EngineerWeekCard({ eng, activitiesIndex, engineerIndex }) {
+  const name  = eng.engineer_id ? engineerName(engineerIndex, eng.engineer_id) : "—";
   const lines = toLines(eng.weekly_detail).map(id => activityText(activitiesIndex, id));
   if (!eng.weekly_total && !lines.length) return null;
 
@@ -354,11 +354,12 @@ function AIStatusSection({ project, autoRun }) {
   );
 }
 
-function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName, autoRunStatus }) {
+function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName, autoRunStatus, engineerCatalog }) {
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
   const activitiesIndex = buildActivityIndex(p.activities_identified);
+  const engineerIndex   = buildEngineerIndex(engineerCatalog);
   const engWithWeek = (p.engineers || []).filter(e =>
     e.weekly_total > 0 || (Array.isArray(e.weekly_detail) ? e.weekly_detail.length : (e.weekly_detail || "").trim())
   );
@@ -411,7 +412,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
       <MiniBar completed={m.completed_tasks} inProgress={m.in_progress_tasks} total={m.total_tasks} />
 
       <div className="report-project__metrics">
-        <ProjectMetricsTable project={p} />
+        <ProjectMetricsTable project={p} engineers={engineerCatalog} />
       </div>
 
       <TaskStatusSection taskStatus={p.task_status} activitiesIndex={activitiesIndex} />
@@ -437,7 +438,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
             <span className="rpt-section__count">{engWithWeek.length}</span>
           </div>
           <div className="rpt-eng-grid">
-            {engWithWeek.map((eng, ei) => <EngineerWeekCard key={ei} eng={eng} activitiesIndex={activitiesIndex} />)}
+            {engWithWeek.map((eng, ei) => <EngineerWeekCard key={ei} eng={eng} activitiesIndex={activitiesIndex} engineerIndex={engineerIndex} />)}
           </div>
         </div>
       )}
@@ -449,7 +450,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export default function ReportView({ projects, weekLabel, singleProjectIdx, onClearSingle }) {
+export default function ReportView({ projects, weekLabel, engineers, singleProjectIdx, onClearSingle }) {
   const [toast, setToast]               = useState("");
   const [generating, setGenerating]     = useState(false);
   const [generatingName, setGeneratingName] = useState("");
@@ -459,15 +460,15 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
 
   const handleCopy = () => {
     const text = isSingle
-      ? generateSingleProjectReportText(projects[singleProjectIdx], weekLabel)
-      : generateReportText(projects, weekLabel);
+      ? generateSingleProjectReportText(projects[singleProjectIdx], weekLabel, engineers)
+      : generateReportText(projects, weekLabel, engineers);
     navigator.clipboard.writeText(text)
       .then(() => { setToast("✓ Reporte copiado al portapapeles"); setTimeout(() => setToast(""), 2500); })
       .catch(() => setToast("No se pudo copiar"));
   };
 
   const handleExportText = (project) => {
-    const text = generateSingleProjectReportText(project, weekLabel);
+    const text = generateSingleProjectReportText(project, weekLabel, engineers);
     navigator.clipboard.writeText(text)
       .then(() => { setToast(`✓ Reporte de "${project.project_name || "proyecto"}" copiado`); setTimeout(() => setToast(""), 2500); })
       .catch(() => setToast("No se pudo copiar al portapapeles"));
@@ -538,7 +539,7 @@ export default function ReportView({ projects, weekLabel, singleProjectIdx, onCl
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} generating={generating} generatingName={generatingName} autoRunStatus={isSingle} />)}
+          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} generating={generating} generatingName={generatingName} autoRunStatus={isSingle} engineerCatalog={engineers} />)}
         </>
       )}
     </div>

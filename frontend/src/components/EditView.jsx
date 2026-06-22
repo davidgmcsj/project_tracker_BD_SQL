@@ -16,24 +16,6 @@ const STATUS_OPTIONS = [
   { value: "mejora-continua", label: "Mejora Continua" },
 ];
 
-const ENGINEER_LIST = [
-  "Alvaro Antonio Baena Rubio",
-  "Andres Esteban Romero Romero",
-  "Aseneth Quintero Bernate",
-  "Brayan Jair Robayo Vera",
-  "Cristian Mauricio Ortegon Martinez",
-  "David Alejandro Gonzalez Mateus",
-  "David Alzate Gomez",
-  "Emirt Lorenzo Adams Saenz",
-  "Ingrid Jhulieth Estacio Carvajal",
-  "John Ervey Sanchez Velandia",
-  "Juan Carlos Verano Estrada",
-  "Moises Bernardo Suarez Gamez",
-  "Oscar Andres Mancera Garzón",
-  "Steven Osorio Tipan",
-  "Otro...",
-];
-
 const IMPEDIMENT_TYPES = [
   { category: "blocker",        label: "Bloqueante",         icon: "🚫", hasImpact: true  },
   { category: "risk",           label: "Riesgo",             icon: "🔶", hasImpact: true  },
@@ -458,29 +440,57 @@ function SelectedList({ items, activities, onChange }) {
 
 // ── Fila de ingeniero ─────────────────────────────────────────────────────────
 
-function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus }) {
+const CREATE_ENGINEER_OPTION = "__create__";
+
+function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer }) {
   const weeklyArr = safeArr(eng.weekly_detail);
   const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
+  const [creating, setCreating] = useState(false);
+  const [newName,  setNewName]  = useState("");
+
+  const confirmCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const id = onCreateEngineer(name, "");
+    onChange(index, "engineer_id", id);
+    setCreating(false);
+    setNewName("");
+  };
 
   return (
     <div className="engineer-card">
       <div className="engineer-card__header">
         <div className="engineer-row__name">
-          <select
-            className="field__input"
-            value={eng.engineer_id}
-            onChange={e => onChange(index, "engineer_id", e.target.value)}
-          >
-            <option value="">Seleccionar ingeniero…</option>
-            {ENGINEER_LIST.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          {eng.engineer_id === "Otro..." && (
-            <input
-              className="field__input" style={{ marginTop: 6 }}
-              placeholder="Nombre del ingeniero"
-              value={eng.custom_name || ""}
-              onChange={e => onChange(index, "custom_name", e.target.value)}
-            />
+          {creating ? (
+            <div className="list-field-draft">
+              <input
+                className="field__input list-field-draft__input"
+                autoFocus value={newName}
+                placeholder="Nombre del nuevo ingeniero…"
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); confirmCreate(); }
+                  if (e.key === "Escape") setCreating(false);
+                }}
+              />
+              <button type="button" className="list-field-draft__ok"     onClick={confirmCreate}            title="Crear">✓</button>
+              <button type="button" className="list-field-draft__cancel" onClick={() => setCreating(false)} title="Cancelar">✕</button>
+            </div>
+          ) : (
+            <select
+              className="field__input"
+              value={eng.engineer_id}
+              onChange={e => {
+                if (e.target.value === CREATE_ENGINEER_OPTION) setCreating(true);
+                else onChange(index, "engineer_id", e.target.value);
+              }}
+            >
+              <option value="">Seleccionar ingeniero…</option>
+              {(engineerCatalog || []).filter(e => e.active || e.id === eng.engineer_id).map(e => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+              <option value={CREATE_ENGINEER_OPTION}>+ Crear nuevo ingeniero…</option>
+            </select>
           )}
         </div>
         <button
@@ -990,6 +1000,7 @@ export default function EditView({
   projects, editingIdx, hasUnsavedChanges,
   onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges,
   onReorderProjects, onAddProject, onRemoveProject, onViewReport, onExportReport,
+  engineerCatalog, onCreateEngineer,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
@@ -1260,6 +1271,8 @@ export default function EditView({
                     onChange={updateEngineer} onRemove={removeEngineer}
                     activities={activities}
                     taskStatus={p.task_status}
+                    engineerCatalog={engineerCatalog}
+                    onCreateEngineer={onCreateEngineer}
                   />
                 ))}
                 <div className="shared-tasks-row">
