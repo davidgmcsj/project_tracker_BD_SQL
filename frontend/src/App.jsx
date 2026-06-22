@@ -11,6 +11,7 @@ import {
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
+  syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
 } from "./utils/storage";
 import "./App.css";
 
@@ -189,22 +190,54 @@ export default function App() {
   };
 
   // ── Catálogo de ingenieros ─────────────────────────────────────────────────
+  // Cada cambio se guarda localmente de inmediato (respuesta instantánea en la UI)
+  // y en paralelo se empuja a SQL. Cuando vuelve el sql_id (creación), se guarda
+  // en el catálogo para que las siguientes ediciones ya actualicen esa fila directo.
+  const syncAndStoreSqlId = async (engineerSnapshot) => {
+    const sqlId = await syncEngineerToSQL(engineerSnapshot);
+    if (sqlId && !engineerSnapshot.sql_id) {
+      setEngineers(curr => {
+        const next = curr.map(e => e.id === engineerSnapshot.id ? { ...e, sql_id: sqlId } : e);
+        saveProjects(projects, weekLabel, next);
+        return next;
+      });
+    }
+  };
+
   const addEngineer = (name, role) => {
     const eng = createEngineer(name, role);
-    persistEngineers([...engineers, eng]);
+    const next = [...engineers, eng];
+    persistEngineers(next);
+    syncAndStoreSqlId(eng);
     return eng.id;
   };
 
   const updateEngineer = (id, name, role) => {
-    persistEngineers(engineers.map(e => e.id === id ? { ...e, name, role } : e));
+    const next = engineers.map(e => e.id === id ? { ...e, name, role } : e);
+    persistEngineers(next);
+    const updated = next.find(e => e.id === id);
+    syncAndStoreSqlId(updated);
   };
 
   const toggleEngineerActive = (id) => {
-    persistEngineers(engineers.map(e => e.id === id ? { ...e, active: !e.active } : e));
+    const next = engineers.map(e => e.id === id ? { ...e, active: !e.active } : e);
+    persistEngineers(next);
+    const updated = next.find(e => e.id === id);
+    syncAndStoreSqlId(updated);
   };
 
+  // Sincroniza cada tarea nueva/editada a SQL y borra las que ya no están en la
+  // lista nueva. El cambio local ya se guardó por persistEngineers antes de esto,
+  // así que un fallo de red aquí no pierde nada — solo queda desactualizado en SQL
+  // hasta el siguiente cambio.
   const updateEngineerTasks = (id, tasks) => {
+    const eng = engineers.find(e => e.id === id);
+    const oldTasks = eng?.tasks || [];
     persistEngineers(engineers.map(e => e.id === id ? { ...e, tasks } : e));
+
+    const newIds = new Set(tasks.map(t => t.id));
+    oldTasks.forEach(t => { if (!newIds.has(t.id)) deleteEngineerTaskFromSQL(t.id); });
+    tasks.forEach(t => syncEngineerTaskToSQL(eng, t));
   };
 
   // ── Restaurar desde BD ────────────────────────────────────────────────────

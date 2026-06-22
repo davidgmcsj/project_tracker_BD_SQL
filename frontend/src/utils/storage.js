@@ -101,3 +101,43 @@ export async function saveWeekReport(projects, weekLabel) {
 
 export const getStoredWeekLabel = () => localStorage.getItem(LS_WEEK);
 export const storeWeekLabel     = (label) => localStorage.setItem(LS_WEEK, label);
+
+// ── Sincronización de ingenieros con SQL ──────────────────────────────────────
+// Crea/actualiza el ingeniero en la tabla SQL Ingenieros y devuelve su IngenieroID
+// real (sql_id). Si el servidor o la BD no responden, devuelve null — el cambio
+// local ya quedó guardado por saveProjects, así que no se pierde nada.
+export async function syncEngineerToSQL(engineer) {
+  try {
+    const data = await apiFetch("/api/engineers/sync-one", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ engineer }),
+    });
+    return data.sql_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Sincronización de tareas sueltas del ingeniero con SQL ────────────────────
+// Mismo principio: el cambio local ya quedó guardado por saveProjects antes de
+// llamar esto, así que un fallo de red/BD aquí no pierde datos del usuario.
+export async function syncEngineerTaskToSQL(engineer, task) {
+  try {
+    await apiFetch("/api/engineers/tasks/sync-one", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ engineer, task }),
+    });
+  } catch { /* el cambio local ya quedó guardado */ }
+}
+
+export async function deleteEngineerTaskFromSQL(taskId) {
+  try {
+    await apiFetch("/api/engineers/tasks/delete-one", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ taskId }),
+    });
+  } catch { /* el cambio local ya quedó guardado */ }
+}

@@ -53,11 +53,12 @@ function resolveActText(index, id) { return index.get(id) ?? id ?? ""; }
 function resolveActArr(index, ids) { return safeArr(ids).map(id => resolveActText(index, id)); }
 
 // engineers[].engineer_id es ahora un id del catálogo data.engineers, no un nombre libre.
-// resolveEngineer (SQL) sigue trabajando con nombres — se resuelve catálogo→nombre antes de llamarlo.
+// Si el ingeniero ya tiene sql_id (sincronizado), se usa directo. Si no, se cae al
+// fuzzy-match de resolveEngineer por nombre (compatibilidad con ingenieros aún no sincronizados).
 function buildEngineerCatalogIndex(engineersCatalog) {
   const map = new Map();
   (Array.isArray(engineersCatalog) ? engineersCatalog : []).forEach(e => {
-    if (e && e.id != null) map.set(e.id, e.name || "");
+    if (e && e.id != null) map.set(e.id, { name: e.name || "", sqlId: e.sql_id || null });
   });
   return map;
 }
@@ -111,6 +112,93 @@ async function resolveEngineer(pool, rawName, engCache) {
   const newId = ins.recordset[0].IngenieroID;
   engCache.push({ IngenieroID: newId, Nombre: name });
   return newId;
+}
+
+// ── Sync directo del catálogo local (data.engineers) con la tabla Ingenieros ──
+// Cada ingeniero del catálogo local guarda un sql_id (IngenieroID real de SQL).
+// Crear/editar/desactivar en la app empuja el cambio a SQL de inmediato — ya no
+// se depende del fuzzy-match de resolveEngineer para estos ingenieros.
+
+async function syncEngineerToSQL(engineer) {
+  const pool = await getPool();
+  const name   = (engineer.name || "").trim();
+  const role   = engineer.role || "";
+  const active = engineer.active !== false;
+
+  if (engineer.sql_id) {
+    await pool.request()
+      .input("id",     sql.Int,          engineer.sql_id)
+      .input("nombre", sql.NVarChar(150),name)
+      .input("cargo",  sql.NVarChar(100),role)
+      .input("estado", sql.Bit,          active)
+      .query("UPDATE Ingenieros SET Nombre=@nombre, Cargo=@cargo, Estado=@estado WHERE IngenieroID=@id");
+    return engineer.sql_id;
+  }
+
+  const ins = await pool.request()
+    .input("nombre", sql.NVarChar(150), name)
+    .input("cargo",  sql.NVarChar(100), role)
+    .input("estado", sql.Bit,           active)
+    .query("INSERT INTO Ingenieros (Nombre, Cargo, Estado) OUTPUT INSERTED.IngenieroID VALUES (@nombre, @cargo, @estado)");
+  return ins.recordset[0].IngenieroID;
+}
+
+// ── Tareas sueltas del ingeniero (no asociadas a ningún proyecto/reporte) ─────
+// Cada tarea tiene un id local estable (etask_xxx, AppTaskID en SQL). Upsert por
+// ese id: si ya existe la fila, se actualiza; si no, se inserta. Esto permite
+// consultar en SQL qué tenía un ingeniero en una fecha/rango, en proyectos
+// (Estadisticas_Ingeniero_Semana) Y en tareas sueltas (esta tabla), por separado.
+
+async function updateEngineerTaskByAppId(task) {
+  const pool = await getPool();
+  const upd = await pool.request()
+    .input("appId", sql.NVarChar(50), task.id)
+    .input("desc",  sql.NVarChar,     task.description || "")
+    .input("estado",sql.NVarChar(50), task.status || "not_started")
+    .input("fecha", sql.Date,         task.date || null)
+    .query(`UPDATE Tareas_Sueltas_Ingeniero
+            SET Descripcion=@desc, Estado=@estado, Fecha=@fecha, UltimaActualizacion=GETDATE()
+            OUTPUT INSERTED.TareaID
+            WHERE AppTaskID=@appId`);
+  return upd.recordset[0]?.TareaID ?? null;
+}
+
+// Upsert con manejo de condición de carrera: si dos guardados casi simultáneos
+// (ej. el usuario edita rápido dos veces) llegan aquí a la vez, ambos pueden ver
+// la fila como "no existe" e intentar INSERT — el segundo choca con la constraint
+// UNIQUE(AppTaskID). En ese caso se reintenta como UPDATE en vez de fallar.
+async function syncEngineerTaskToSQL(engineerSqlId, task) {
+  const pool = await getPool();
+  const existing = await pool.request()
+    .input("appId", sql.NVarChar(50), task.id)
+    .query("SELECT TareaID FROM Tareas_Sueltas_Ingeniero WHERE AppTaskID = @appId");
+
+  if (existing.recordset.length) {
+    return updateEngineerTaskByAppId(task);
+  }
+
+  try {
+    const ins = await pool.request()
+      .input("ingId", sql.Int,          engineerSqlId)
+      .input("appId", sql.NVarChar(50), task.id)
+      .input("desc",  sql.NVarChar,     task.description || "")
+      .input("estado",sql.NVarChar(50), task.status || "not_started")
+      .input("fecha", sql.Date,         task.date || null)
+      .query(`INSERT INTO Tareas_Sueltas_Ingeniero (IngenieroID, AppTaskID, Descripcion, Estado, Fecha)
+              OUTPUT INSERTED.TareaID
+              VALUES (@ingId, @appId, @desc, @estado, @fecha)`);
+    return ins.recordset[0].TareaID;
+  } catch (e) {
+    if (e.number === 2627 || e.number === 2601) return updateEngineerTaskByAppId(task);
+    throw e;
+  }
+}
+
+async function deleteEngineerTaskFromSQL(appTaskId) {
+  const pool = await getPool();
+  await pool.request()
+    .input("appId", sql.NVarChar(50), appTaskId)
+    .query("DELETE FROM Tareas_Sueltas_Ingeniero WHERE AppTaskID = @appId");
 }
 
 async function resolveProject(pool, project, proyCache) {
@@ -338,13 +426,15 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
     inserts.push(evReq.query(`INSERT INTO Eventos_Reporte (ReporteID,Tipo,ActividadRelacionada,FechaEvento,Contenido) VALUES ${evRows.join(",")}`));
   }
 
-  // Ingenieros — resolve en paralelo, luego INSERT multi-row
+  // Ingenieros — usa sql_id directo si el ingeniero ya está sincronizado;
+  // si no, cae al fuzzy-match de resolveEngineer por nombre (compatibilidad).
   const engItems = (project.engineers || []).filter(e => e.engineer_id);
   if (engItems.length) {
     const resolvedEngs = await Promise.all(
       engItems.map(eng => {
-        const rawName = resolveActText(engineerCatalogIndex, eng.engineer_id);
-        return resolveEngineer(pool, rawName, engCache).then(id => ({ id, eng }));
+        const catalogEntry = engineerCatalogIndex.get(eng.engineer_id);
+        if (catalogEntry?.sqlId) return Promise.resolve({ id: catalogEntry.sqlId, eng });
+        return resolveEngineer(pool, catalogEntry?.name || "", engCache).then(id => ({ id, eng }));
       })
     );
     const validEngs = resolvedEngs.filter(r => r.id);
@@ -380,4 +470,4 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
 
 // ── Exportar ──────────────────────────────────────────────────────────────────
 
-module.exports = { saveWeekReportToDB };
+module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL };

@@ -29,14 +29,14 @@ const fs      = require("fs").promises;
 const path    = require("path");
 require("dotenv/config");
 
-const { saveWeekReportToDB } = (() => {
+const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL } = (() => {
   try {
     const mod = require("./db-operations.cjs");
     console.log("[DB] db-operations.cjs cargado correctamente");
     return mod;
   } catch (e) {
     console.error("[DB] Error cargando db-operations.cjs:", e.message);
-    return { saveWeekReportToDB: null };
+    return { saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null };
   }
 })();
 
@@ -214,6 +214,64 @@ app.post("/api/projects", async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Error guardando proyectos" });
+  }
+});
+
+// ── API: Sincronización de un ingeniero con la tabla SQL Ingenieros ───────────
+// Se llama cada vez que se crea/edita/desactiva un ingeniero en la app, para que
+// la tabla Ingenieros de Azure SQL quede al día de inmediato (nombre, cargo, estado).
+// Devuelve el IngenieroID real de SQL para guardarlo en el catálogo local (sql_id).
+
+app.post("/api/engineers/sync-one", async (req, res) => {
+  if (!syncEngineerToSQL) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { engineer } = req.body;
+    if (!engineer?.name) return res.status(400).json({ error: "Falta el ingeniero" });
+    const sqlId = await syncEngineerToSQL(engineer);
+    res.json({ ok: true, sql_id: sqlId });
+  } catch (e) {
+    console.error("[SQL] Error sincronizando ingeniero:", e.message);
+    res.status(500).json({ error: "Error sincronizando ingeniero", detail: e.message });
+  }
+});
+
+// ── API: Sincronización de tareas sueltas del ingeniero ───────────────────────
+// Las tareas sueltas no están asociadas a ningún proyecto/reporte, así que viven
+// en su propia tabla (Tareas_Sueltas_Ingeniero), upsert por AppTaskID (el id local
+// "etask_xxx"). Si el ingeniero aún no tiene sql_id (nunca se le había guardado
+// nada en SQL), se crea/resuelve primero.
+
+app.post("/api/engineers/tasks/sync-one", async (req, res) => {
+  if (!syncEngineerTaskToSQL) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { engineer, task } = req.body;
+    if (!engineer?.name || !task?.id) return res.status(400).json({ error: "Falta el ingeniero o la tarea" });
+
+    const engineerSqlId = engineer.sql_id || await syncEngineerToSQL(engineer);
+    await syncEngineerTaskToSQL(engineerSqlId, task);
+    res.json({ ok: true, sql_id: engineerSqlId });
+  } catch (e) {
+    console.error("[SQL] Error sincronizando tarea suelta:", e.message);
+    res.status(500).json({ error: "Error sincronizando tarea suelta", detail: e.message });
+  }
+});
+
+app.post("/api/engineers/tasks/delete-one", async (req, res) => {
+  if (!deleteEngineerTaskFromSQL) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { taskId } = req.body;
+    if (!taskId) return res.status(400).json({ error: "Falta el id de la tarea" });
+    await deleteEngineerTaskFromSQL(taskId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[SQL] Error borrando tarea suelta:", e.message);
+    res.status(500).json({ error: "Error borrando tarea suelta", detail: e.message });
   }
 });
 
