@@ -1803,6 +1803,272 @@
   background: var(--accent-bg);
 }
 
+/* ── Actividad asignada fijamente a este ingeniero (verde claro) ── */
+.act-selector__item--fixed {
+  background: #f0fdf4;
+  border-left: 3px solid #22c55e;
+}
+.act-selector__item--fixed:hover {
+  background: #dcfce7;
+}
+.act-selector__fixed-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #16a34a;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ═══ ASIGNACIÓN DE RESPONSABLES ═══ */
+
+/* Barra de filtros (contiene buscador + dropdown ingeniero) */
+.act-assign-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  flex-wrap: wrap;
+}
+.act-assign-filters__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.act-assign-filters__clear-all {
+  font-size: 11px;
+  color: var(--azul-claro);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.act-assign-filters__clear-all:hover { color: var(--red); }
+
+/* Buscador de texto (dentro de la barra de filtros) */
+.act-assign-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 160px;
+}
+.act-assign-search__input {
+  width: 100%;
+  padding: 5px 24px 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.act-assign-search__input:focus { border-color: var(--azul-claro); }
+.act-assign-search__clear {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 11px;
+  padding: 2px 3px;
+  line-height: 1;
+}
+.act-assign-search__clear:hover { color: var(--red); }
+.act-assign-search__count {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Dropdown filtro de ingeniero */
+.act-assign-filter-eng {
+  min-width: 160px;
+  max-width: 220px;
+  font-size: 12px;
+  padding: 5px 8px;
+  flex-shrink: 0;
+}
+
+/* Lista */
+.act-assign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+}
+.act-assign-list--scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--azul-claro) var(--surface-2);
+}
+.act-assign-list--scroll::-webkit-scrollbar { width: 6px; }
+.act-assign-list--scroll::-webkit-scrollbar-track { background: var(--surface-2); }
+.act-assign-list--scroll::-webkit-scrollbar-thumb { background: var(--azul-claro); border-radius: 3px; }
+
+/* Divisor "Completadas" */
+.act-assign-divider {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  background: var(--surface-2);
+  padding: 5px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Filas */
+.act-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  transition: background 0.1s;
+  min-height: 44px;
+  height: auto;
+  flex-shrink: 0;
+}
+.act-assign-row:last-child { border-bottom: none; }
+.act-assign-row:hover { background: var(--surface-2); }
+
+.act-assign-row__num {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--azul-claro);
+  min-width: 22px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.act-assign-row__text {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.4;
+}
+/* Fila con múltiples ingenieros: layout en columna (texto arriba, chips abajo) */
+.act-assign-row--multi {
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  gap: 6px;
+}
+.act-assign-row--multi .act-assign-row__num {
+  display: none; /* se mueve al bloque de texto */
+}
+.act-assign-row__top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.act-assign-row__top .act-assign-row__num {
+  display: inline;
+  flex-shrink: 0;
+}
+.act-assign-row__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.act-assign-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 2px 8px 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+.act-assign-chip__remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #93c5fd;
+  font-size: 10px;
+  padding: 0;
+  line-height: 1;
+  margin-left: 2px;
+}
+.act-assign-chip__remove:hover { color: var(--red); }
+.act-assign-row__select {
+  width: 140px;
+  min-width: 110px;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+/* Fila completada */
+.act-assign-row--completed {
+  background: #f8fafc;
+}
+.act-assign-row--completed:hover { background: #f1f5f9; }
+.act-assign-row__text--done {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.act-assign-row__badge-done {
+  font-size: 11px;
+  font-weight: 600;
+  color: #16a34a;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 2px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Sin resultados / hint scroll */
+.act-assign-empty {
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  text-align: center;
+}
+.act-assign-scroll-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+  padding: 5px 0 2px;
+  margin: 0;
+}
+
+/* Hint junto al label del campo */
+.field__header-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  font-weight: 400;
+  margin-left: 8px;
+}
+
 .act-selector__search {
   position: relative;
   padding: 6px 10px;

@@ -122,7 +122,7 @@ export function genActivityId() {
 }
 
 export function createActivity(text = "") {
-  return { id: genActivityId(), text };
+  return { id: genActivityId(), text, assigned_engineers: [], assigned_date: null };
 }
 
 // Construye un índice id → { text, position } a partir de activities_identified.

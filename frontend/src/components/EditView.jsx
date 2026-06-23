@@ -198,7 +198,7 @@ function getCurrentWeekKey() {
   return mon.toISOString().slice(0, 10);
 }
 
-function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted, excludeOldCompleted, completedDates }) {
+function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted, excludeOldCompleted, completedDates, fixedAssigned }) {
   const [query, setQuery] = useState("");
   const acts   = safeActs(activities);
   const selArr = safeArr(selected);
@@ -231,6 +231,8 @@ function ActivitySelector({ label, activities, selected, limit, onChange, exclud
   const toggle = (id) => selArr.includes(id) ? deselect(id) : select(id);
 
   const { onDragStart, onDrop } = useDragSort(selArr, onChange);
+
+  const fixedSet = fixedAssigned ? new Set(safeArr(fixedAssigned)) : null;
 
   // Filtra según el modo y aplica búsqueda, preservando posición original
   const visible = acts.reduce((acc, act, origIdx) => {
@@ -268,16 +270,18 @@ function ActivitySelector({ label, activities, selected, limit, onChange, exclud
             {visible.length === 0 ? (
               <p className="act-selector__empty">{query ? `Sin coincidencias para "${query}"` : "Sin actividades disponibles"}</p>
             ) : visible.map(({ act, origIdx }) => {
-              const checked  = selArr.includes(act.id);
-              const disabled = !checked && limit && selArr.length >= limit;
+              const checked     = selArr.includes(act.id);
+              const isFixed     = fixedSet && fixedSet.has(act.id);
+              const disabled    = !checked && limit && selArr.length >= limit;
               return (
                 <label
                   key={act.id}
-                  className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""}`}
+                  className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""} ${isFixed ? "act-selector__item--fixed" : ""}`}
                 >
                   <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(act.id)} />
                   <span className="act-selector__num">{origIdx + 1}.</span>
                   <span className="act-selector__text">{act.text}</span>
+                  {isFixed && <span className="act-selector__fixed-badge">Asignada</span>}
                 </label>
               );
             })}
@@ -445,6 +449,13 @@ const CREATE_ENGINEER_OPTION = "__create__";
 function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer }) {
   const weeklyArr = safeArr(eng.weekly_detail);
   const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
+
+  // IDs de actividades asignadas fijamente a este ingeniero (para destacar en verde)
+  const fixedAssigned = eng.engineer_id
+    ? safeActs(activities)
+        .filter(a => (a.assigned_engineers || []).some(e => e.id === eng.engineer_id))
+        .map(a => a.id)
+    : [];
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState("");
 
@@ -526,6 +537,7 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, e
               onChange={val => onChange(index, "weekly_detail", val)}
               excludeOldCompleted={taskStatus?.completed}
               completedDates={taskStatus?.completed_dates}
+              fixedAssigned={fixedAssigned}
             />
           </div>
         </div>
@@ -797,6 +809,12 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
     next.status_history = hist;
   };
 
+  // Índice rápido id → lista de ingenieros asignados [{engineer_id, engineer_name}]
+  const actAssignIndex = new Map(
+    acts.filter(a => (a.assigned_engineers || []).length > 0)
+        .map(a => [a.id, a.assigned_engineers.map(e => ({ engineer_id: e.id, engineer_name: e.name }))])
+  );
+
   const update = (colKey, newArr) => onChange({ ...ts, [colKey]: newArr });
 
   const move = (item, toKey) => {
@@ -808,6 +826,16 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
     };
     next[toKey] = [...next[toKey], item];
     updateDates(next, item, toKey, fromKey);
+
+    // Registra quiénes completaron la actividad (puede haber varios ingenieros asignados)
+    const completedBy = { ...(ts.completed_by || {}) };
+    if (toKey === "completed" && actAssignIndex.has(item)) {
+      completedBy[item] = actAssignIndex.get(item); // array de {engineer_id, engineer_name}
+    } else if (fromKey === "completed") {
+      delete completedBy[item];
+    }
+    next.completed_by = completedBy;
+
     onChange(next);
   };
 
@@ -823,6 +851,9 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
     const hist = { ...(ts.status_history || {}) };
     delete hist[item];
     next.status_history = hist;
+    const completedBy = { ...(ts.completed_by || {}) };
+    delete completedBy[item];
+    next.completed_by = completedBy;
     onChange(next);
   };
 
@@ -990,6 +1021,248 @@ function CommentList({ comments, activities, onChange }) {
         ? <p className="act-list__empty">Sin comentarios. Agrega el primero.</p>
         : <ActivityEntryList items={items} activities={activities} textField="text" placeholder="Escribe el comentario…" onChange={onChange} />
       }
+    </div>
+  );
+}
+
+// ── Asignación fija de actividades a ingenieros ───────────────────────────────
+// Persiste hasta que la actividad se marque como completada.
+// No se reinicia con "Nueva semana".
+
+const ROW_HEIGHT_PX = 44; // altura aproximada de cada fila
+const MAX_VISIBLE   = 7;
+
+function ActivityAssignmentRow({ activity, position, engineerCatalog, completedBy, onToggleEngineer }) {
+  const isCompleted    = !!completedBy;
+  const assignedIds    = new Set((activity.assigned_engineers || []).map(e => e.id));
+  const activeEngineers = (engineerCatalog || []).filter(e => e.active || assignedIds.has(e.id));
+
+  if (isCompleted) {
+    // completedBy es array [{engineer_id, engineer_name}]
+    const names = Array.isArray(completedBy)
+      ? completedBy.map(e => e.engineer_name).filter(Boolean).join(", ")
+      : (completedBy.engineer_name || "—");
+    return (
+      <div className="act-assign-row act-assign-row--completed">
+        <span className="act-assign-row__num">{position}.</span>
+        <span className="act-assign-row__text act-assign-row__text--done">{activity.text}</span>
+        <span className="act-assign-row__badge-done">✓ {names}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="act-assign-row act-assign-row--multi">
+      <div className="act-assign-row__top">
+        <span className="act-assign-row__num">{position}.</span>
+        <span className="act-assign-row__text">{activity.text}</span>
+      </div>
+      <div className="act-assign-row__chips">
+        {(activity.assigned_engineers || []).map(e => (
+          <span key={e.id} className="act-assign-chip">
+            {e.name}
+            <button
+              type="button"
+              className="act-assign-chip__remove"
+              onClick={() => onToggleEngineer(activity.id, e.id, false)}
+              title={`Quitar a ${e.name}`}
+            >✕</button>
+          </span>
+        ))}
+        {activeEngineers.filter(e => !assignedIds.has(e.id)).length > 0 && (
+          <select
+            className="field__input act-assign-row__select"
+            value=""
+            onChange={e => { if (e.target.value) onToggleEngineer(activity.id, e.target.value, true); }}
+          >
+            <option value="">{assignedIds.size === 0 ? "Asignar…" : "+ Otro…"}</option>
+            {activeEngineers.filter(e => !assignedIds.has(e.id)).map(e => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, onActivitiesChange }) {
+  const [query,         setQuery]         = useState("");
+  const [filterEngId,   setFilterEngId]   = useState("");  // "" = todos
+
+  const completedSet = new Set(safeArr((taskStatus || {}).completed));
+  const completedBy  = (taskStatus || {}).completed_by || {};
+
+  const allActs     = safeActs(activities);
+  const positionMap = new Map(allActs.map((a, i) => [a.id, i + 1]));
+
+  const assignableActs = allActs.filter(a => !completedSet.has(a.id));
+  const completedActs  = allActs.filter(a => completedSet.has(a.id) && completedBy[a.id]);
+
+  // Ingenieros que tienen al menos una actividad asignada (para el filtro dropdown)
+  const assignedEngineers = (() => {
+    const seen = new Map();
+    allActs.forEach(a => {
+      (a.assigned_engineers || []).forEach(e => {
+        if (!seen.has(e.id)) seen.set(e.id, e.name);
+      });
+    });
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  })();
+
+  const applyFilters = (arr) => {
+    let result = arr;
+    // Filtro por ingeniero
+    if (filterEngId) {
+      result = result.filter(a => (a.assigned_engineers || []).some(e => e.id === filterEngId));
+    }
+    // Búsqueda por texto / número
+    if (query.trim()) {
+      const words = query.trim().toLowerCase().split(/\s+/);
+      result = result.filter(a => {
+        const haystack = `${positionMap.get(a.id)} ${a.text}`.toLowerCase();
+        return words.every(w => haystack.includes(w));
+      });
+    }
+    return result;
+  };
+
+  const visibleAssignable = applyFilters(assignableActs);
+  const visibleCompleted  = applyFilters(completedActs);
+  const allVisible        = [...visibleAssignable, ...visibleCompleted];
+  const totalRows         = allVisible.length;
+  const needsScroll       = totalRows > MAX_VISIBLE;
+  const listMaxHeight     = needsScroll ? `${MAX_VISIBLE * ROW_HEIGHT_PX}px` : undefined;
+
+  const handleToggleEngineer = (actId, engineerId, add) => {
+    const catalog  = engineerCatalog || [];
+    const engEntry = catalog.find(e => e.id === engineerId);
+    const today    = new Date().toISOString().slice(0, 10);
+    const newActs  = allActs.map(a => {
+      if (a.id !== actId) return a;
+      const current = a.assigned_engineers || [];
+      const updated = add
+        ? (current.some(e => e.id === engineerId) ? current : [...current, { id: engineerId, name: engEntry?.name || "" }])
+        : current.filter(e => e.id !== engineerId);
+      return {
+        ...a,
+        assigned_engineers: updated,
+        assigned_date: updated.length > 0 ? (a.assigned_date || today) : null,
+      };
+    });
+    // Si el ingeniero quitado era el del filtro activo y ya no tiene actividades, limpiamos el filtro
+    if (!add && filterEngId === engineerId) {
+      const stillHas = newActs.some(a => (a.assigned_engineers || []).some(e => e.id === engineerId));
+      if (!stillHas) setFilterEngId("");
+    }
+    onActivitiesChange(newActs);
+  };
+
+  if (!allActs.length) {
+    return (
+      <div className="field field--optional">
+        <div className="field__header">
+          <label className="field__label">👤 Asignación de Responsables</label>
+        </div>
+        <p className="act-list__empty">Agrega actividades identificadas para poder asignarlas.</p>
+      </div>
+    );
+  }
+
+  const assignedCount   = assignableActs.filter(a => (a.assigned_engineers || []).length > 0).length;
+  const activeFilters   = !!query.trim() || !!filterEngId;
+
+  return (
+    <div className="field field--optional">
+      <div className="field__header">
+        <label className="field__label">👤 Asignación de Responsables</label>
+        <span className="field__header-hint">
+          {assignedCount} de {assignableActs.length} asignadas
+        </span>
+      </div>
+
+      {/* Barra de filtros */}
+      <div className="act-assign-filters">
+        {/* Búsqueda por texto */}
+        <div className="act-assign-search">
+          <input
+            className="act-assign-search__input"
+            type="text"
+            placeholder="Buscar por número o texto…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+          {query && (
+            <button type="button" className="act-assign-search__clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
+          )}
+        </div>
+
+        {/* Filtro por ingeniero — solo muestra los que tienen actividades asignadas */}
+        <select
+          className="field__input act-assign-filter-eng"
+          value={filterEngId}
+          onChange={e => setFilterEngId(e.target.value)}
+        >
+          <option value="">Todos los ingenieros</option>
+          {assignedEngineers.map(e => (
+            <option key={e.id} value={e.id}>{e.name}</option>
+          ))}
+        </select>
+
+        {/* Contador de resultados + limpiar filtros */}
+        {activeFilters && (
+          <div className="act-assign-filters__right">
+            <span className="act-assign-search__count">{totalRows} resultado{totalRows !== 1 ? "s" : ""}</span>
+            <button
+              type="button"
+              className="act-assign-filters__clear-all"
+              onClick={() => { setQuery(""); setFilterEngId(""); }}
+            >Limpiar filtros</button>
+          </div>
+        )}
+      </div>
+
+      <div
+        className={`act-assign-list${needsScroll ? " act-assign-list--scroll" : ""}`}
+        style={needsScroll ? { maxHeight: listMaxHeight } : undefined}
+      >
+        {allVisible.length === 0 ? (
+          <p className="act-assign-empty">
+            {activeFilters ? "Sin coincidencias para los filtros aplicados." : "Sin actividades."}
+          </p>
+        ) : (
+          <>
+            {visibleAssignable.map(a => (
+              <ActivityAssignmentRow
+                key={a.id}
+                activity={a}
+                position={positionMap.get(a.id)}
+                engineerCatalog={engineerCatalog}
+                completedBy={null}
+                onToggleEngineer={handleToggleEngineer}
+              />
+            ))}
+            {visibleCompleted.length > 0 && (
+              <>
+                <div className="act-assign-divider">Completadas</div>
+                {visibleCompleted.map(a => (
+                  <ActivityAssignmentRow
+                    key={a.id}
+                    activity={a}
+                    position={positionMap.get(a.id)}
+                    engineerCatalog={engineerCatalog}
+                    completedBy={completedBy[a.id]}
+                    onToggleEngineer={handleToggleEngineer}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </div>
+      {needsScroll && (
+        <p className="act-assign-scroll-hint">↕ Desliza para ver las {totalRows} actividades</p>
+      )}
     </div>
   );
 }
@@ -1256,7 +1529,15 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 7. Ingenieros ══ */}
+          {/* ══ 7. Asignación de Responsables ══ */}
+          <ActivityAssignmentSection
+            activities={activities}
+            taskStatus={p.task_status}
+            engineerCatalog={engineerCatalog}
+            onActivitiesChange={handleActivitiesChange}
+          />
+
+          {/* ══ 8. Ingenieros ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Equipo de Ingenieros</label>
@@ -1287,7 +1568,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 8. Estado actual del proyecto ══ */}
+          {/* ══ 9. Estado actual del proyecto ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">📋 Estado actual del proyecto</label>
@@ -1308,7 +1589,7 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 9. Cierre semanal ══ */}
+          {/* ══ 10. Cierre semanal ══ */}
           <div className="field field--optional">
             <div className="field__header">
               <label className="field__label">Sección de Cierre</label>
@@ -1358,7 +1639,7 @@ export default function EditView({
             onChange={val => onUpdateProject(editingIdx, "milestones", val)}
           />
 
-          {/* ══ 10. Comentarios ══ */}
+          {/* ══ 11. Comentarios ══ */}
           <CommentList
             comments={p.comments}
             activities={activities}

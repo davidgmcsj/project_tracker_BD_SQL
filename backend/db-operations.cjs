@@ -359,27 +359,48 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const ts = project.task_status || {};
   const completedDates  = ts.completed_dates  || {};
   const statusHistory   = ts.status_history   || {};
+  const completedBy     = ts.completed_by     || {};
   const statusMap = { completed: "Completada", in_progress: "En_Proceso", not_started: "No_Iniciada" };
+
+  // Índice actId → array de [{localEngId, engName}] (múltiples ingenieros por actividad)
+  const actAssignMap = new Map();
+  for (const act of (Array.isArray(project.activities_identified) ? project.activities_identified : [])) {
+    if (act && act.id && Array.isArray(act.assigned_engineers) && act.assigned_engineers.length) {
+      actAssignMap.set(act.id, act.assigned_engineers.map(e => ({ localEngId: e.id, engName: e.name || "" })));
+    }
+  }
+
   const taskRows = [];
   const taskReq  = pool.request().input("rid", sql.Int, reporteID);
   let ti = 0;
   for (const [key, label] of Object.entries(statusMap)) {
     for (const actId of safeArr(ts[key])) {
-      const hist         = statusHistory[actId] || {};
-      const fechaComp    = key === "completed" ? (completedDates[actId] || hist.completed || null) : null;
-      const fechaInsc    = hist.added       || null;
-      const fechaEnProc  = hist.in_progress || null;
-      taskReq.input(`ttexto${ti}`,   sql.NVarChar,     resolveActText(actIndex, actId));
-      taskReq.input(`testado${ti}`,  sql.NVarChar(50), label);
-      taskReq.input(`tfecha${ti}`,   sql.Date,         fechaComp);
-      taskReq.input(`tfinsc${ti}`,   sql.Date,         fechaInsc);
-      taskReq.input(`tfenproc${ti}`, sql.Date,         fechaEnProc);
-      taskRows.push(`(@rid,@ttexto${ti},@testado${ti},@tfecha${ti},@tfinsc${ti},@tfenproc${ti})`);
+      const hist        = statusHistory[actId] || {};
+      const fechaComp   = key === "completed" ? (completedDates[actId] || hist.completed || null) : null;
+      const fechaInsc   = hist.added       || null;
+      const fechaEnProc = hist.in_progress || null;
+
+      // Para múltiples ingenieros guardamos los nombres concatenados; el primer sqlId resuelto va a AsignadoIngenieroID
+      const cbEntries   = key === "completed" && Array.isArray(completedBy[actId]) ? completedBy[actId] : null;
+      const assignInfos = cbEntries || actAssignMap.get(actId) || [];
+      const engNameStr  = assignInfos.map(e => e.engineer_name || e.engName || "").filter(Boolean).join(", ");
+      const firstLocalId = assignInfos[0]?.engineer_id || assignInfos[0]?.localEngId || null;
+      const catalogEntr  = firstLocalId ? engineerCatalogIndex.get(firstLocalId) : null;
+      const engSqlId     = catalogEntr?.sqlId || null;
+
+      taskReq.input(`ttexto${ti}`,   sql.NVarChar,      resolveActText(actIndex, actId));
+      taskReq.input(`testado${ti}`,  sql.NVarChar(50),  label);
+      taskReq.input(`tfecha${ti}`,   sql.Date,          fechaComp);
+      taskReq.input(`tfinsc${ti}`,   sql.Date,          fechaInsc);
+      taskReq.input(`tfenproc${ti}`, sql.Date,          fechaEnProc);
+      taskReq.input(`tengid${ti}`,   sql.Int,           engSqlId);
+      taskReq.input(`tengname${ti}`, sql.NVarChar(500), engNameStr);
+      taskRows.push(`(@rid,@ttexto${ti},@testado${ti},@tfecha${ti},@tfinsc${ti},@tfenproc${ti},@tengid${ti},@tengname${ti})`);
       ti++;
     }
   }
   if (taskRows.length) {
-    inserts.push(taskReq.query(`INSERT INTO Estado_Actividades_Reporte (ReporteID,DescripcionTexto,Estado,FechaCompletado,FechaInscripcion,FechaEnProceso) VALUES ${taskRows.join(",")}`));
+    inserts.push(taskReq.query(`INSERT INTO Estado_Actividades_Reporte (ReporteID,DescripcionTexto,Estado,FechaCompletado,FechaInscripcion,FechaEnProceso,AsignadoIngenieroID,AsignadoNombre) VALUES ${taskRows.join(",")}`));
   }
 
   // Indicadores
