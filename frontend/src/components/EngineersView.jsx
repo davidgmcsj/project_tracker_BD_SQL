@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getProjectsForEngineer, getEngineerActivitiesInProject, hasActiveWeeklyTasks, countActiveWeeklyTasks } from "../utils/engineers";
+import { getProjectsForEngineer, getEngineerActivitiesInProject, hasActiveWeeklyTasks, countActiveWeeklyTasks, countTotalAssignedTasks } from "../utils/engineers";
 import { createEngineerTask } from "../utils/formulas";
 
 const STATUS_LABELS = { "on-track": "En curso", "at-risk": "En riesgo", blocked: "Bloqueado", completed: "Completado", "mejora-continua": "Mejora Continua" };
@@ -61,10 +61,17 @@ function EngineerProjectsTable({ eng, projects }) {
   return (
     <div className="metrics-container">
       <table className="metrics-table metrics-table--project">
-        <thead><tr><th>Proyecto vinculado</th><th>Esta semana</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Proyecto vinculado</th>
+            <th>Esta semana</th>
+            <th>Total Asignadas</th>
+          </tr>
+        </thead>
         <tbody>
           {projectsForEngineer.map(p => {
             const count = countActiveWeeklyTasks(eng.id, p);
+            const totalAssigned = countTotalAssignedTasks(eng.id, p);
             return (
               <tr key={p.id}>
                 <td>{p.project_name}</td>
@@ -72,6 +79,11 @@ function EngineerProjectsTable({ eng, projects }) {
                   {count > 0
                     ? <span className="eng-badge eng-badge--done">{count} tarea{count !== 1 ? "s" : ""}</span>
                     : <span className="eng-badge eng-badge--pending">Sin actividad</span>}
+                </td>
+                <td>
+                  {totalAssigned > 0
+                    ? <span className="eng-badge eng-badge--info">{totalAssigned} tarea{totalAssigned !== 1 ? "s" : ""}</span>
+                    : <span className="eng-badge eng-badge--pending">Sin tareas</span>}
                 </td>
               </tr>
             );
@@ -124,18 +136,6 @@ function EngineerCard({ eng, projects, onUpdate, onToggleActive, onOpenDetail })
   );
 }
 
-// ── Fecha de status_history, mismo lenguaje visual que EditView (solo lectura aquí) ──
-
-function HistoryDate({ label, value }) {
-  if (!value) return null;
-  return (
-    <span className="status-date-badge">
-      <span className="status-date-badge__label">{label}:</span>
-      <span className="status-date-badge__value">{value}</span>
-    </span>
-  );
-}
-
 // ── Sub-tarjeta de proyecto dentro del detalle del ingeniero ─────────────────
 
 function ProjectActivitiesCard({ project, engineerId }) {
@@ -143,14 +143,17 @@ function ProjectActivitiesCard({ project, engineerId }) {
   const statusLabel = STATUS_LABELS[project.status] || project.status;
   const active = hasActiveWeeklyTasks(engineerId, project);
 
+  const completedSet = new Set(project.task_status?.completed || []);
+  const inProgressSet = new Set(project.task_status?.in_progress || []);
+
   return (
     <div
       className="project-card"
       style={active ? { borderColor: "var(--green)", background: "var(--green-bg)" } : undefined}
     >
-      <div className="project-card__header">
+      <div className="project-card__header" style={{ marginBottom: 12 }}>
         <h3 className="project-card__name">
-          {active && <span title="Con actividad esta semana" style={{ marginRight: 6 }}>●</span>}
+          {active && <span title="Con actividad esta semana" style={{ marginRight: 6, color: "var(--green)" }}>●</span>}
           {project.project_name}
         </h3>
         <span className="status-pill">{statusLabel}</span>
@@ -160,18 +163,49 @@ function ProjectActivitiesCard({ project, engineerId }) {
           Sin actividades asignadas esta semana en este proyecto.
         </p>
       ) : (
-        <ul className="rpt-bullets rpt-bullets--compact">
-          {activities.map(a => (
-            <li key={a.id} className="rpt-bullets__item">
-              <div>{a.position}. {a.text}</div>
-              <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <HistoryDate label="Inscrita"    value={a.history.added} />
-                <HistoryDate label="En proceso"  value={a.history.in_progress} />
-                <HistoryDate label="Completada"  value={a.history.completed} />
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="metrics-container" style={{ overflowX: "auto" }}>
+          <table className="metrics-table metrics-table--project">
+            <thead>
+              <tr>
+                <th style={{ width: "40px", textAlign: "center" }}>#</th>
+                <th>Actividad</th>
+                <th style={{ width: "120px" }}>Estado</th>
+                <th style={{ width: "110px" }}>Inscrita</th>
+                <th style={{ width: "110px" }}>En proceso</th>
+                <th style={{ width: "110px" }}>Completada</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activities.map(a => {
+                const isCompleted = completedSet.has(a.id);
+                const isInProgress = inProgressSet.has(a.id);
+
+                let statusClass = "eng-badge--pending";
+                let statusLabelText = "No iniciada";
+                if (isCompleted) {
+                  statusClass = "eng-badge--done";
+                  statusLabelText = "Completada";
+                } else if (isInProgress) {
+                  statusClass = "eng-badge--wip";
+                  statusLabelText = "En proceso";
+                }
+
+                return (
+                  <tr key={a.id}>
+                    <td style={{ textAlign: "center", fontWeight: 700 }}>{a.position}</td>
+                    <td>{a.text}</td>
+                    <td>
+                      <span className={`eng-badge ${statusClass}`}>{statusLabelText}</span>
+                    </td>
+                    <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{a.history.added || "—"}</td>
+                    <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{a.history.in_progress || "—"}</td>
+                    <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{a.history.completed || "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -286,7 +320,7 @@ function EngineerDetail({ eng, projects, onUpdateTasks, onBack }) {
           en la pestaña "Editar" y agrégalo en su sección de Ingenieros.
         </p>
       ) : (
-        <div className="dashboard-grid">
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           {projectsForEngineer.map(p => (
             <ProjectActivitiesCard key={p.id} project={p} engineerId={eng.id} />
           ))}

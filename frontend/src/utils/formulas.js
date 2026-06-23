@@ -373,3 +373,69 @@ export function generateSingleProjectReportText(p, weekLabel, engineers) {
   txt += projectBlock(p, 0, buildEngineerIndex(engineers));
   return txt;
 }
+
+export function getActivityStatus(ts, actId) {
+  if (!ts) return "No iniciada";
+  if (Array.isArray(ts.completed) && ts.completed.includes(actId)) return "Completada";
+  if (Array.isArray(ts.in_progress) && ts.in_progress.includes(actId)) return "En proceso";
+  if (Array.isArray(ts.not_started) && ts.not_started.includes(actId)) return "No iniciada";
+  return "No iniciada";
+}
+
+export function generateAssignmentsMarkdown(projects, weekLabel) {
+  let md = `# Asignación de Actividades y Responsables\n`;
+  md += `**Reporte:** ${weekLabel}\n\n`;
+
+  const escapePipe = (str) => String(str || "").replace(/\|/g, "\\|");
+
+  projects.forEach((p, idx) => {
+    md += `## Proyecto: ${p.project_name || `Proyecto ${idx + 1}`}\n`;
+    const acts = p.activities_identified || [];
+    if (acts.length === 0) {
+      md += `*Sin actividades registradas.*\n\n`;
+      return;
+    }
+    
+    md += `| # | Actividad | Responsables | Estado | Fecha Asig. |\n`;
+    md += `|---|-----------|--------------|--------|-------------|\n`;
+    
+    acts.forEach((a, i) => {
+      const status = getActivityStatus(p.task_status, a.id);
+      const engineers = (a.assigned_engineers || []).map(e => e.name).join(", ") || "Sin asignar";
+      const date = a.assigned_date || "—";
+      md += `| ${i + 1} | ${escapePipe(a.text)} | ${escapePipe(engineers)} | ${escapePipe(status)} | ${escapePipe(date)} |\n`;
+    });
+    md += `\n`;
+  });
+  
+  return md;
+}
+
+export function generateAssignmentsPlainText(projects, weekLabel) {
+  let txt = `ASIGNACIÓN DE ACTIVIDADES Y RESPONSABLES\n`;
+  txt += `Reporte: ${weekLabel}\n`;
+  txt += `================================================================================\n\n`;
+
+  projects.forEach((p, idx) => {
+    txt += `Proyecto: ${p.project_name || `Proyecto ${idx + 1}`}\n`;
+    txt += `--------------------------------------------------------------------------------\n`;
+    const acts = p.activities_identified || [];
+    if (acts.length === 0) {
+      txt += `  Sin actividades registradas.\n\n`;
+      return;
+    }
+    
+    acts.forEach((a, i) => {
+      const status = getActivityStatus(p.task_status, a.id);
+      const engineers = (a.assigned_engineers || []).map(e => e.name).join(", ") || "Sin asignar";
+      const date = a.assigned_date || "—";
+      txt += `  ${i + 1}. ${a.text}\n`;
+      txt += `     Responsables : ${engineers}\n`;
+      txt += `     Estado       : ${status}\n`;
+      txt += `     Asignación   : ${date}\n\n`;
+    });
+    txt += `\n`;
+  });
+  
+  return txt;
+}

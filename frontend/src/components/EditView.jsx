@@ -99,9 +99,19 @@ function DeleteConfirmModal({ projectName, onConfirm, onCancel }) {
 
 // ── Lista de actividades numeradas ────────────────────────────────────────────
 
-function ActivitiesList({ activities, onChange }) {
+function ActivitiesList({
+  activities,
+  engineerCatalog,
+  taskStatus,
+  onChange,
+  onUpdateActivityMeta,
+  onAddActivity,
+}) {
   const [draft,   setDraft]   = useState("");
   const [adding,  setAdding]  = useState(false);
+  const [draftResponsible, setDraftResponsible] = useState("");
+  const [draftStatus, setDraftStatus] = useState("not_started");
+
   const [editIdx, setEditIdx] = useState(null);
   const [editVal, setEditVal] = useState("");
 
@@ -109,17 +119,40 @@ function ActivitiesList({ activities, onChange }) {
 
   const confirmAdd = () => {
     const t = draft.trim();
-    if (t) onChange([...acts, createActivity(t)]);
-    setDraft(""); setAdding(false);
+    if (t) {
+      onAddActivity(t, draftResponsible, draftStatus);
+    }
+    setDraft("");
+    setDraftResponsible("");
+    setDraftStatus("not_started");
+    setAdding(false);
   };
 
   const startEdit   = (i) => { setEditIdx(i); setEditVal(acts[i].text); };
   const confirmEdit = () => {
     const t = editVal.trim();
-    if (t) { const next = [...acts]; next[editIdx] = { ...next[editIdx], text: t }; onChange(next); }
+    if (t) {
+      const next = [...acts];
+      next[editIdx] = { ...next[editIdx], text: t };
+      onChange(next);
+    }
     setEditIdx(null); setEditVal("");
   };
   const removeAct = (i) => onChange(acts.filter((_, idx) => idx !== i));
+
+  const getAssignedEngId = (act) => {
+    const firstAssigned = (act.assigned_engineers || [])[0];
+    return firstAssigned ? firstAssigned.id : "";
+  };
+
+  const getStatusValue = (actId) => {
+    if (safeArr(taskStatus?.completed).includes(actId)) return "completed";
+    if (safeArr(taskStatus?.in_progress).includes(actId)) return "in_progress";
+    if (safeArr(taskStatus?.not_started).includes(actId)) return "not_started";
+    return "";
+  };
+
+  const activeEngineers = (engineerCatalog || []).filter(e => e.active);
 
   return (
     <div className="field">
@@ -136,17 +169,39 @@ function ActivitiesList({ activities, onChange }) {
       </div>
 
       {adding && (
-        <div className="list-field-draft">
+        <div className="list-field-draft list-field-draft--activity">
           <input
             className="field__input list-field-draft__input"
             autoFocus value={draft}
-            placeholder="Descripción de la actividad… (Enter para confirmar)"
+            placeholder="Descripción de la actividad…"
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmAdd(); }
               if (e.key === "Escape") { setDraft(""); setAdding(false); }
             }}
           />
+          <select
+            className="field__input list-field-draft__select"
+            value={draftResponsible}
+            onChange={e => setDraftResponsible(e.target.value)}
+            style={{ width: "160px", flexShrink: 0 }}
+          >
+            <option value="">— Responsable —</option>
+            {activeEngineers.map(e => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+          <select
+            className="field__input list-field-draft__select"
+            value={draftStatus}
+            onChange={e => setDraftStatus(e.target.value)}
+            style={{ width: "130px", flexShrink: 0 }}
+          >
+            <option value="">— Estado —</option>
+            <option value="not_started">No iniciada</option>
+            <option value="in_progress">En proceso</option>
+            <option value="completed">Completada</option>
+          </select>
           <button type="button" className="list-field-draft__ok"     onClick={confirmAdd}                         title="Confirmar">✓</button>
           <button type="button" className="list-field-draft__cancel" onClick={() => { setDraft(""); setAdding(false); }} title="Cancelar">✕</button>
         </div>
@@ -154,32 +209,68 @@ function ActivitiesList({ activities, onChange }) {
 
       {acts.length > 0 ? (
         <ol className="act-list">
-          {acts.map((act, i) => (
-            <li key={act.id} className="act-list__item">
-              {editIdx === i ? (
-                <div className="list-field-draft" style={{ flex: 1 }}>
-                  <input
-                    className="field__input list-field-draft__input"
-                    autoFocus value={editVal}
-                    onChange={e => setEditVal(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") { e.preventDefault(); confirmEdit(); }
-                      if (e.key === "Escape") setEditIdx(null);
-                    }}
-                  />
-                  <button type="button" className="list-field-draft__ok"     onClick={confirmEdit}           title="Guardar">✓</button>
-                  <button type="button" className="list-field-draft__cancel" onClick={() => setEditIdx(null)} title="Cancelar">✕</button>
-                </div>
-              ) : (
-                <>
-                  <span className="act-list__num">{i + 1}.</span>
-                  <span className="act-list__text">{act.text}</span>
-                  <button type="button" className="act-list__edit"   onClick={() => startEdit(i)} title="Editar">✎</button>
-                  <button type="button" className="act-list__remove" onClick={() => removeAct(i)} title="Eliminar">✕</button>
-                </>
-              )}
-            </li>
-          ))}
+          {acts.map((act, i) => {
+            const assignedEngId = getAssignedEngId(act);
+            const statusVal = getStatusValue(act.id);
+
+            let statusSelectClass = "act-list__select--status-pending";
+            if (statusVal === "completed") statusSelectClass = "act-list__select--status-completed";
+            else if (statusVal === "in_progress") statusSelectClass = "act-list__select--status-progress";
+
+            return (
+              <li key={act.id} className="act-list__item" style={{ alignItems: "center" }}>
+                {editIdx === i ? (
+                  <div className="list-field-draft" style={{ flex: 1, margin: 0 }}>
+                    <input
+                      className="field__input list-field-draft__input"
+                      autoFocus value={editVal}
+                      onChange={e => setEditVal(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") { e.preventDefault(); confirmEdit(); }
+                        if (e.key === "Escape") setEditIdx(null);
+                      }}
+                    />
+                    <button type="button" className="list-field-draft__ok"     onClick={confirmEdit}           title="Guardar">✓</button>
+                    <button type="button" className="list-field-draft__cancel" onClick={() => setEditIdx(null)} title="Cancelar">✕</button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="act-list__num">{i + 1}.</span>
+                    <span className="act-list__text">{act.text}</span>
+                    
+                    <select
+                      className="field__input act-list__select act-list__select--responsible"
+                      value={assignedEngId}
+                      onChange={e => onUpdateActivityMeta(act.id, e.target.value, undefined)}
+                      title="Asignar ingeniero responsable"
+                      style={{ width: "160px", flexShrink: 0 }}
+                    >
+                      <option value="">— Responsable —</option>
+                      {activeEngineers.map(e => (
+                        <option key={e.id} value={e.id}>{e.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      className={`field__input act-list__select act-list__select--status ${statusSelectClass}`}
+                      value={statusVal}
+                      onChange={e => onUpdateActivityMeta(act.id, undefined, e.target.value)}
+                      title="Cambiar estado de la actividad"
+                      style={{ width: "130px", flexShrink: 0 }}
+                    >
+                      <option value="">— Estado —</option>
+                      <option value="not_started">No iniciada</option>
+                      <option value="in_progress">En proceso</option>
+                      <option value="completed">Completada</option>
+                    </select>
+
+                    <button type="button" className="act-list__edit"   onClick={() => startEdit(i)} title="Editar texto">✎</button>
+                    <button type="button" className="act-list__remove" onClick={() => removeAct(i)} title="Eliminar">✕</button>
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ol>
       ) : (
         !adding && <p className="act-list__empty">Sin actividades aún. Agrega la primera.</p>
@@ -1025,6 +1116,171 @@ function CommentList({ comments, activities, onChange }) {
   );
 }
 
+// ── Panel de asignación masiva ───────────────────────────────────────────────
+// Permite seleccionar un ingeniero y marcar N actividades de una sola vez.
+
+function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign }) {
+  const [expanded,      setExpanded]      = useState(false);
+  const [selectedEngId, setSelectedEngId] = useState("");
+  const [checked,       setChecked]       = useState(new Set());
+  const [query,         setQuery]         = useState("");
+  const [filterOwned,   setFilterOwned]   = useState(false); // solo sin responsable
+
+  const acts          = safeActs(activities);
+  const completedSet  = new Set(safeArr((taskStatus || {}).completed));
+  const activeEngineers = (engineerCatalog || []).filter(e => e.active);
+
+  // Actividades no completadas (las completadas no necesitan reasignación masiva)
+  const assignable = acts.filter(a => !completedSet.has(a.id));
+
+  // Aplica filtros: búsqueda por texto + opción "sin responsable"
+  const visible = assignable.filter(a => {
+    if (filterOwned && (a.assigned_engineers || []).length > 0) return false;
+    if (query.trim()) {
+      const words = query.trim().toLowerCase().split(/\s+/);
+      const hay   = `${acts.indexOf(a) + 1} ${a.text}`.toLowerCase();
+      if (!words.every(w => hay.includes(w))) return false;
+    }
+    return true;
+  });
+
+  const toggleCheck = (id) =>
+    setChecked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const selectAll  = () => setChecked(new Set(visible.map(a => a.id)));
+  const clearAll   = () => setChecked(new Set());
+
+  const handleAssign = () => {
+    if (!selectedEngId || checked.size === 0) return;
+    onBulkAssign(selectedEngId, [...checked]);
+    setChecked(new Set());
+  };
+
+  if (!assignable.length) return null;
+
+  const selectedEng = activeEngineers.find(e => e.id === selectedEngId);
+  const countChecked = [...checked].filter(id => visible.some(a => a.id === id)).length;
+  // cuántas de las visibles están marcadas
+  const allVisibleChecked = visible.length > 0 && visible.every(a => checked.has(a.id));
+
+  return (
+    <div className="bulk-assign-panel">
+      {/* ── Cabecera colapsable ── */}
+      <div className="bulk-assign-panel__header" onClick={() => setExpanded(e => !e)}>
+        <span className="bulk-assign-panel__title">
+          ⚡ Asignación Masiva de Responsables
+          <span className="bulk-assign-panel__hint">
+            Selecciona un ingeniero y marca varias actividades de una vez
+          </span>
+        </span>
+        <span className="bulk-assign-panel__chevron">{expanded ? "▲" : "▼"}</span>
+      </div>
+
+      {expanded && (
+        <div className="bulk-assign-panel__body">
+          {/* ── Controles superiores ── */}
+          <div className="bulk-assign-panel__controls">
+            <select
+              className="field__input bulk-assign-panel__eng-select"
+              value={selectedEngId}
+              onChange={e => setSelectedEngId(e.target.value)}
+            >
+              <option value="">— Seleccionar ingeniero —</option>
+              {activeEngineers.map(e => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </select>
+
+            <div className="bulk-assign-panel__search-wrap">
+              <input
+                className="bulk-assign-panel__search"
+                type="text"
+                placeholder="Buscar actividad…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+              />
+              {query && (
+                <button type="button" className="bulk-assign-panel__search-clear" onClick={() => setQuery("")}>✕</button>
+              )}
+            </div>
+
+            <label className="bulk-assign-panel__filter-label">
+              <input
+                type="checkbox"
+                checked={filterOwned}
+                onChange={e => setFilterOwned(e.target.checked)}
+              />
+              Solo sin responsable
+            </label>
+
+            <div className="bulk-assign-panel__sel-btns">
+              <button
+                type="button"
+                className="bulk-assign-panel__sel-btn"
+                onClick={allVisibleChecked ? clearAll : selectAll}
+              >
+                {allVisibleChecked ? "✕ Deseleccionar todo" : "✓ Seleccionar todo"}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className={`btn bulk-assign-panel__apply-btn ${checked.size > 0 && selectedEngId ? "bulk-assign-panel__apply-btn--active" : ""}`}
+              disabled={!selectedEngId || checked.size === 0}
+              onClick={handleAssign}
+            >
+              Asignar {checked.size > 0 ? checked.size : ""} actividad{checked.size !== 1 ? "es" : ""}
+              {selectedEng ? ` → ${selectedEng.name.split(" ")[0]}` : ""}
+            </button>
+          </div>
+
+          {/* ── Lista de actividades ── */}
+          <div className="bulk-assign-panel__list">
+            {visible.length === 0 ? (
+              <p className="bulk-assign-panel__empty">
+                {query || filterOwned ? "Sin actividades que coincidan con los filtros." : "Sin actividades para asignar."}
+              </p>
+            ) : visible.map(a => {
+              const origIdx    = acts.indexOf(a);
+              const isChecked  = checked.has(a.id);
+              const currentEng = (a.assigned_engineers || [])[0];
+              return (
+                <label
+                  key={a.id}
+                  className={`bulk-assign-row${isChecked ? " bulk-assign-row--checked" : ""}`}
+                  onClick={() => toggleCheck(a.id)}
+                >
+                  <input
+                    type="checkbox"
+                    className="bulk-assign-row__chk"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    onClick={e => e.stopPropagation()}
+                  />
+                  <span className="bulk-assign-row__num">{origIdx + 1}.</span>
+                  <span className="bulk-assign-row__text">{a.text}</span>
+                  {currentEng ? (
+                    <span className="bulk-assign-row__owner">{currentEng.name}</span>
+                  ) : (
+                    <span className="bulk-assign-row__unassigned">Sin responsable</span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+
+          {checked.size > 0 && (
+            <div className="bulk-assign-panel__footer">
+              <span>{checked.size} actividad{checked.size !== 1 ? "es" : ""} seleccionada{checked.size !== 1 ? "s" : ""}</span>
+              <button type="button" className="bulk-assign-panel__clear-sel" onClick={clearAll}>Limpiar selección</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Asignación fija de actividades a ingenieros ───────────────────────────────
 // Persiste hasta que la actividad se marque como completada.
 // No se reinicia con "Nueva semana".
@@ -1364,6 +1620,149 @@ export default function EditView({
     });
   };
 
+  const handleUpdateActivityMeta = (actId, newEngId, newStatus) => {
+    let updatedActs = activities.map(a => {
+      if (a.id !== actId) return a;
+      let updatedEngs = a.assigned_engineers || [];
+      let updatedDate = a.assigned_date;
+      if (newEngId !== undefined) {
+        if (newEngId === "") {
+          updatedEngs = [];
+          updatedDate = null;
+        } else {
+          const eng = (engineerCatalog || []).find(e => e.id === newEngId);
+          if (eng) {
+            updatedEngs = [{ id: eng.id, name: eng.name }];
+            updatedDate = a.assigned_date || new Date().toISOString().slice(0, 10);
+          }
+        }
+      }
+      return {
+        ...a,
+        assigned_engineers: updatedEngs,
+        assigned_date: updatedDate,
+      };
+    });
+
+    let updatedTs = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+    if (newStatus !== undefined) {
+      const fromKey = ["completed", "in_progress", "not_started"].find(k => safeArr(updatedTs[k]).includes(actId));
+      const next = {
+        completed:   safeArr(updatedTs.completed).filter(s => s !== actId),
+        in_progress: safeArr(updatedTs.in_progress).filter(s => s !== actId),
+        not_started: safeArr(updatedTs.not_started).filter(s => s !== actId),
+      };
+      if (newStatus !== "") {
+        next[newStatus] = [...next[newStatus], actId];
+      }
+      
+      const today = () => new Date().toISOString().slice(0, 10);
+      const cDates = { ...(updatedTs.completed_dates || {}) };
+      if (newStatus === "completed") cDates[actId] = today();
+      else if (fromKey === "completed") delete cDates[actId];
+      next.completed_dates = cDates;
+
+      const hist = { ...(updatedTs.status_history || {}) };
+      if (!hist[actId]) hist[actId] = { added: today() };
+      const dateField = STATUS_DATE_FIELD[newStatus];
+      if (dateField) hist[actId] = { ...hist[actId], [dateField]: today() };
+      if (fromKey === "in_progress" && newStatus !== "in_progress") delete hist[actId].in_progress;
+      if (fromKey === "completed"   && newStatus !== "completed")   delete hist[actId].completed;
+      next.status_history = hist;
+
+      const completedBy = { ...(updatedTs.completed_by || {}) };
+      if (newStatus === "completed") {
+        const act = updatedActs.find(a => a.id === actId);
+        if (act && (act.assigned_engineers || []).length > 0) {
+          completedBy[actId] = act.assigned_engineers.map(e => ({ engineer_id: e.id, engineer_name: e.name }));
+        }
+      } else if (fromKey === "completed") {
+        delete completedBy[actId];
+      }
+      next.completed_by = completedBy;
+
+      updatedTs = next;
+    }
+
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: updatedActs,
+      task_status: updatedTs,
+      manual_metrics: buildAutoMetrics(updatedActs, updatedTs),
+    });
+  };
+
+  const handleBulkAssign = (engId, actIds) => {
+    const eng = (engineerCatalog || []).find(e => e.id === engId);
+    if (!eng) return;
+    const today  = new Date().toISOString().slice(0, 10);
+    const idSet  = new Set(actIds);
+    const newActs = activities.map(a => {
+      if (!idSet.has(a.id)) return a;
+      return {
+        ...a,
+        assigned_engineers: [{ id: eng.id, name: eng.name }],
+        assigned_date: a.assigned_date || today,
+      };
+    });
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
+    });
+  };
+
+  const handleAddActivity = (text, engId, status) => {
+    const newAct = createActivity(text);
+    const actId = newAct.id;
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    if (engId !== "") {
+      const eng = (engineerCatalog || []).find(e => e.id === engId);
+      if (eng) {
+        newAct.assigned_engineers = [{ id: eng.id, name: eng.name }];
+        newAct.assigned_date = todayStr;
+      }
+    }
+
+    const newActs = [...activities, newAct];
+
+    let updatedTs = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+    if (status !== "") {
+      const next = {
+        completed:   safeArr(updatedTs.completed),
+        in_progress: safeArr(updatedTs.in_progress),
+        not_started: safeArr(updatedTs.not_started),
+      };
+      next[status] = [...next[status], actId];
+
+      const cDates = { ...(updatedTs.completed_dates || {}) };
+      if (status === "completed") cDates[actId] = todayStr;
+      next.completed_dates = cDates;
+
+      const hist = { ...(updatedTs.status_history || {}) };
+      hist[actId] = { added: todayStr };
+      const dateField = STATUS_DATE_FIELD[status];
+      if (dateField) hist[actId][dateField] = todayStr;
+      next.status_history = hist;
+
+      const completedBy = { ...(updatedTs.completed_by || {}) };
+      if (status === "completed" && (newAct.assigned_engineers || []).length > 0) {
+        completedBy[actId] = newAct.assigned_engineers.map(e => ({ engineer_id: e.id, engineer_name: e.name }));
+      }
+      next.completed_by = completedBy;
+
+      updatedTs = next;
+    }
+
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      task_status: updatedTs,
+      manual_metrics: buildAutoMetrics(newActs, updatedTs),
+    });
+  };
+
   return (
     <div className="edit-view">
       {/* ── Pestañas ── */}
@@ -1466,8 +1865,22 @@ export default function EditView({
           {/* ══ 3. Actividades identificadas ══ */}
           <ActivitiesList
             activities={activities}
+            engineerCatalog={engineerCatalog}
+            taskStatus={p.task_status}
             onChange={handleActivitiesChange}
+            onUpdateActivityMeta={handleUpdateActivityMeta}
+            onAddActivity={handleAddActivity}
           />
+
+          {/* ══ 3b. Asignación masiva ══ */}
+          {activities.length > 0 && (
+            <BulkAssignPanel
+              activities={activities}
+              engineerCatalog={engineerCatalog}
+              taskStatus={p.task_status}
+              onBulkAssign={handleBulkAssign}
+            />
+          )}
 
           {/* ══ 4. Estado de actividades ══ */}
           {activities.length > 0 && (
@@ -1528,14 +1941,6 @@ export default function EditView({
               </div>
             )}
           </div>
-
-          {/* ══ 7. Asignación de Responsables ══ */}
-          <ActivityAssignmentSection
-            activities={activities}
-            taskStatus={p.task_status}
-            engineerCatalog={engineerCatalog}
-            onActivitiesChange={handleActivitiesChange}
-          />
 
           {/* ══ 8. Ingenieros ══ */}
           <div className="field field--optional">

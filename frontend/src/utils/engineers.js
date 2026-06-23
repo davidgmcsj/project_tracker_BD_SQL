@@ -14,6 +14,13 @@ export function countActiveWeeklyTasks(engineerId, project) {
   return engEntry?.weekly_detail?.length || 0;
 }
 
+// Cantidad de actividades asignadas en total (assigned) al ingeniero en ese proyecto.
+export function countTotalAssignedTasks(engineerId, project) {
+  const engEntry = (project.engineers || []).find(e => e.engineer_id === engineerId);
+  return engEntry?.assigned || 0;
+}
+
+
 // True si el ingeniero tiene al menos una actividad asignada esta semana (weekly_detail)
 // en ese proyecto. Se usa para resaltar el proyecto como "activo esta semana".
 export function hasActiveWeeklyTasks(engineerId, project) {

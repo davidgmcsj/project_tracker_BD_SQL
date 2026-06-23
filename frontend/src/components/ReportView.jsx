@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
-import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName } from "../utils/formulas";
+import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText } from "../utils/formulas";
 import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -354,7 +354,7 @@ function AIStatusSection({ project, autoRun }) {
   );
 }
 
-function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName, autoRunStatus, engineerCatalog }) {
+function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, generatingName, autoRunStatus, engineerCatalog, weekLabel, setToast }) {
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
@@ -364,6 +364,59 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
     e.weekly_total > 0 || (Array.isArray(e.weekly_detail) ? e.weekly_detail.length : (e.weekly_detail || "").trim())
   );
 
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleCopyAssignmentsMd = () => {
+    const md = generateAssignmentsMarkdown([p], weekLabel);
+    navigator.clipboard.writeText(md)
+      .then(() => { setToast(`✓ Asignaciones de "${p.project_name || "proyecto"}" copiadas en Markdown`); setTimeout(() => setToast(""), 2500); })
+      .catch(() => setToast("No se pudo copiar"));
+    setShowExportMenu(false);
+  };
+
+  const handleCopyAssignmentsTxt = () => {
+    const txt = generateAssignmentsPlainText([p], weekLabel);
+    navigator.clipboard.writeText(txt)
+      .then(() => { setToast(`✓ Asignaciones de "${p.project_name || "proyecto"}" copiadas en Texto Plano`); setTimeout(() => setToast(""), 2500); })
+      .catch(() => setToast("No se pudo copiar"));
+    setShowExportMenu(false);
+  };
+
+  const downloadFile = (content, filename, contentType) => {
+    const blob = new Blob([content], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadAssignmentsMd = () => {
+    const md = generateAssignmentsMarkdown([p], weekLabel);
+    const filename = `asignacion_responsables_${(p.project_name || "proyecto").toLowerCase().replace(/[\s\W]+/g, "_")}_${weekLabel.replace(/[\s—–]+/g, "_")}.md`;
+    downloadFile(md, filename, "text/markdown;charset=utf-8");
+    setShowExportMenu(false);
+  };
+
+  const handleDownloadAssignmentsTxt = () => {
+    const txt = generateAssignmentsPlainText([p], weekLabel);
+    const filename = `asignacion_responsables_${(p.project_name || "proyecto").toLowerCase().replace(/[\s\W]+/g, "_")}_${weekLabel.replace(/[\s—–]+/g, "_")}.txt`;
+    downloadFile(txt, filename, "text/plain;charset=utf-8");
+    setShowExportMenu(false);
+  };
+
   return (
     <div className="report-project">
       <div className="report-project__header">
@@ -371,7 +424,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
           <span className="report-project__icon">{st.icon}</span>
           {p.project_name || `Proyecto ${i + 1}`}
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }} ref={menuRef}>
           {p.report_date && (
             <span style={{ fontSize: "12px", color: "var(--text-2)" }}>📅 {p.report_date}</span>
           )}
@@ -388,6 +441,57 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
           >
             📋 Copiar reporte
           </button>
+          
+          <div style={{ position: "relative" }}>
+            <button 
+              className="btn btn--card-export" 
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              title="Exportar asignaciones de actividades y ingenieros responsables de este proyecto"
+            >
+              👥 Responsables ▾
+            </button>
+            {showExportMenu && (
+              <div 
+                className="export-dropdown-menu" 
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "100%",
+                  marginTop: "6px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+                  zIndex: 100,
+                  minWidth: "200px",
+                  padding: "4px 0",
+                  display: "flex",
+                  flexDirection: "column"
+                }}
+              >
+                <div style={{ padding: "6px 12px", fontSize: "10px", fontWeight: "bold", textTransform: "uppercase", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+                  Formato Markdown (.md)
+                </div>
+                <button className="export-dropdown-item" onClick={handleCopyAssignmentsMd} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+                  📋 Copiar Tabla .md
+                </button>
+                <button className="export-dropdown-item" onClick={handleDownloadAssignmentsMd} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", borderBottom: "1px solid var(--border)" }}>
+                  💾 Descargar Tabla .md
+                </button>
+                
+                <div style={{ padding: "6px 12px", fontSize: "10px", fontWeight: "bold", textTransform: "uppercase", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+                  Formato Texto Plano (.txt)
+                </div>
+                <button className="export-dropdown-item" onClick={handleCopyAssignmentsTxt} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+                  📋 Copiar Texto .txt
+                </button>
+                <button className="export-dropdown-item" onClick={handleDownloadAssignmentsTxt} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+                  💾 Descargar Texto .txt
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             className="btn btn--informe"
             onClick={() => onGenerateInforme(p)}
@@ -539,7 +643,21 @@ export default function ReportView({ projects, weekLabel, engineers, singleProje
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => <ProjectReport key={p.id} p={p} i={i} onGenerateInforme={handleGenerateInforme} onExportText={handleExportText} generating={generating} generatingName={generatingName} autoRunStatus={isSingle} engineerCatalog={engineers} />)}
+          {displayProjects.map((p, i) => (
+            <ProjectReport 
+              key={p.id} 
+              p={p} 
+              i={i} 
+              onGenerateInforme={handleGenerateInforme} 
+              onExportText={handleExportText} 
+              generating={generating} 
+              generatingName={generatingName} 
+              autoRunStatus={isSingle} 
+              engineerCatalog={engineers} 
+              weekLabel={weekLabel}
+              setToast={setToast}
+            />
+          ))}
         </>
       )}
     </div>
