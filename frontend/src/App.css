@@ -70,7 +70,7 @@
   gap: 18px;
 }
 .header__logo {
-  height: 56px;
+  height: 200px;
   width: auto;
   object-fit: contain;
   flex-shrink: 0;
@@ -2780,13 +2780,161 @@
   margin: 4px 0;
 }
 
-/* Estilos para el dropdown de exportación */
+/* ═══ EXPORT DROPDOWN ═══ */
+.export-dropdown-wrap {
+  position: relative;
+}
+.export-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+  z-index: 100;
+  min-width: 200px;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+.export-dropdown-label {
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
 .export-dropdown-item {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   transition: background-color 0.15s, color 0.15s;
 }
 .export-dropdown-item:hover {
-  background-color: var(--surface-2) !important;
-  color: var(--azul-claro) !important;
+  background-color: var(--surface-2);
+  color: var(--azul-claro);
+}
+.export-dropdown-item--separator {
+  border-bottom: 1px solid var(--border);
+}
+
+/* ═══ ACTIVIDADES POR INGENIERO ═══ */
+.report-by-engineer {
+  margin: 24px 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+.report-by-engineer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.report-by-engineer__hint {
+  font-size: 11px;
+  color: var(--text-3);
+  margin: 8px 0 6px;
+}
+.report-by-engineer__text {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+/* ═══ SELECTOR EQUIPO DEL PROYECTO ═══ */
+.project-team-selector {
+  margin-top: 4px;
+}
+.project-team-selector__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.project-team-selector__header .field__label {
+  white-space: nowrap;
+  margin-bottom: 0;
+}
+.project-team-selector__select {
+  max-width: 280px;
+}
+.project-team-selector__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+.project-team-selector__empty {
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+}
+.project-team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--azul-oscuro);
+  color: #fff;
+  border-radius: 20px;
+  padding: 3px 10px 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.project-team-chip__remove {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+.project-team-chip__remove:hover {
+  color: #fff;
+}
+
+/* ═══ PANEL ASIGNACIONES EN TARJETA DASHBOARD ═══ */
+.project-card__assign-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.btn--card-assign {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.btn--card-assign:hover {
+  background: var(--azul-claro);
+  color: #fff;
+  border-color: var(--azul-claro);
 }
 
 /* ═══ SELECTORES INLINE PARA ACTIVIDADES ═══ */

@@ -2,6 +2,7 @@
 
 require("dotenv/config");
 const sql = require("mssql");
+const { toArray, buildActivityIndexFlatFlat, buildEngineerIndex, resolveActText, resolveActArr } = require("./utils.cjs");
 
 // ── Conexión ──────────────────────────────────────────────────────────────────
 
@@ -32,36 +33,8 @@ async function getPool() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function safeArr(val) {
-  if (!val) return [];
-  if (Array.isArray(val)) return val.filter(Boolean);
-  return val.split("\n").map(s => s.trim()).filter(Boolean);
-}
-
-// activities_identified es un array de {id, text}. task_status, weekly_detail,
-// milestones.activity y comments.activity referencian el id, no el texto —
-// estas tablas SQL son reportes de solo texto, así que se resuelve antes de escribir.
-function buildActivityIndex(activities) {
-  const map = new Map();
-  (Array.isArray(activities) ? activities : []).forEach(a => {
-    if (a && a.id != null) map.set(a.id, a.text || "");
-  });
-  return map;
-}
-function resolveActText(index, id) { return index.get(id) ?? id ?? ""; }
-function resolveActArr(index, ids) { return safeArr(ids).map(id => resolveActText(index, id)); }
-
-// engineers[].engineer_id es ahora un id del catálogo data.engineers, no un nombre libre.
-// Si el ingeniero ya tiene sql_id (sincronizado), se usa directo. Si no, se cae al
-// fuzzy-match de resolveEngineer por nombre (compatibilidad con ingenieros aún no sincronizados).
-function buildEngineerCatalogIndex(engineersCatalog) {
-  const map = new Map();
-  (Array.isArray(engineersCatalog) ? engineersCatalog : []).forEach(e => {
-    if (e && e.id != null) map.set(e.id, { name: e.name || "", sqlId: e.sql_id || null });
-  });
-  return map;
-}
+// toArray, buildActivityIndexFlatFlat, buildEngineerIndex, resolveActText, resolveActArr
+// vienen de utils.cjs — funciones compartidas con server.cjs y gemini-report.cjs.
 
 function getWeekNumber(dateStr) {
   const d = new Date(dateStr + "T12:00:00");
@@ -260,7 +233,7 @@ async function resolveProject(pool, project, proyCache) {
 
 // Inserta actividades nuevas en un solo INSERT multi-row
 async function syncActividades(pool, proyectoID, activitiesArr) {
-  const acts = safeArr(activitiesArr).map(a => (a?.text || "").trim()).filter(Boolean);
+  const acts = toArray(activitiesArr).map(a => (a?.text || "").trim()).filter(Boolean);
   if (!acts.length) return;
 
   const existing = await pool.request()
@@ -295,7 +268,7 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const compartidas = Number(m.shared_tasks_discount || 0);
   const avance      = total > 0 ? Math.min(((completadas + enProceso * 0.5) / total) * 100, 100) : 0;
   const rawJson     = JSON.stringify(project);
-  const actIndex    = buildActivityIndex(project.activities_identified);
+  const actIndex    = buildActivityIndexFlat(project.activities_identified);
 
   // syncActividades y lookup del reporte existente en paralelo
   const [, existingRes] = await Promise.all([
@@ -402,7 +375,7 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const taskReq  = pool.request().input("rid", sql.Int, reporteID);
   let ti = 0;
   for (const [key, label] of Object.entries(statusMap)) {
-    for (const actId of safeArr(ts[key])) {
+    for (const actId of toArray(ts[key])) {
       const hist        = statusHistory[actId] || {};
       const fechaComp   = key === "completed" ? (completedDates[actId] || hist.completed || null) : null;
       const fechaInsc   = hist.added       || null;
@@ -509,7 +482,7 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
   const pool = await getPool();
 
   const { engCache, proyCache } = await preloadCaches(pool, projects);
-  const engineerCatalogIndex = buildEngineerCatalogIndex(engineersCatalog);
+  const engineerCatalogIndex = buildEngineerIndex(engineersCatalog);
 
   // Procesar todos los proyectos en paralelo
   await Promise.all(

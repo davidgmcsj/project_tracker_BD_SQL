@@ -197,7 +197,7 @@ export async function generateQuarterlyReport(project, engineerCatalog = [], sig
     const res = await fetch(`${API_BASE}/api/generate-report`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ project, quarterLabel }),
+      body:    JSON.stringify({ project, quarterLabel, engineerCatalog }),
       ...(signal ? { signal } : {}),
     });
     if (!res.ok) {

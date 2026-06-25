@@ -66,6 +66,9 @@ export default function App() {
   }, []);
 
   // ── Persistencia ───────────────────────────────────────────────────────────
+  // Patrón dual-write: localStorage (síncrono, fuente de verdad del cliente) +
+  // servidor/SQL (async, fire-and-forget). Si el servidor falla, el dato no se
+  // pierde — vive en localStorage hasta el siguiente save exitoso.
   const persist = useCallback(async (data, engs) => {
     setProjects(data);
     await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers, externalContacts);
@@ -439,6 +442,7 @@ export default function App() {
         {view === "dashboard" && (
           <Dashboard
             projects={projects}
+            engineers={engineers}
             onEdit={idx => { setEditingIdx(idx); setView("edit"); }}
             onAdd={addProject}
             onViewReport={viewProjectReport}

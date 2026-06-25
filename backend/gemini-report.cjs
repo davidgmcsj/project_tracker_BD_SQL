@@ -3,55 +3,12 @@
 
 const Groq                                  = require("groq-sdk");
 const https                                 = require("https");
-const { GoogleGenerativeAI, SchemaType }    = require("@google/generative-ai");
+const { GoogleGenerativeAI }                = require("@google/generative-ai");
+const { toArray, buildActivityIndex }       = require("./utils.cjs");
 
 // ── Catálogo de Proyectos (Contexto para evitar alucinaciones) ────────────────
 
-const PROJECT_CATALOG = {
-  "PRO-01: Modernización Base de datos ESAV": "Proceso de migración de la base de datos de ESAV desde SQL Server 2008 hacia Azure SQL Database (versión 2022), mejorando el rendimiento, seguridad y disponibilidad del sistema.",
-  "PRO-02: Gestor solicitudes": "Herramienta digital diseñada para automatizar la recepción, gestión y control de solicitudes internas dirigidas a la Oficina de Tecnología, permitiendo un manejo organizado y trazable de los requerimientos técnicos.",
-  "PRO-03: Interoperabilidad entre Salas especializadas de la corporación": "Este proyecto surge como respuesta a la necesidad técnica de optimizar el intercambio de información entre las salas de la Corporación ante trámites de impugnación. Mediante una integración directa en la plataforma ESAV, se habilitó el envío digital de expedientes entre las distintas salas, sustituyendo los flujos de trabajo manuales que históricamente generaban una alta carga de reproceso. La automatización de esta funcionalidad garantiza una transición ágil de los procesos, reduciendo tiempos de espera y asegurando la integridad de la información judicial en el entorno digital.",
-  "PRO-04: Modulo de Alertas de procesos Previamente Radicados en Esav (Alerta Radicado Cuestionado)": "Sistema desarrollado sobre la plataforma ESAV, orientado a la gestión, control y seguimiento de procesos previamente radicados. Este módulo permite identificar y generar alertas automáticas sobre radicados que presentan inconsistencias o requieren validación adicional, optimizando la trazabilidad y reduciendo riesgos operativos. La solución está diseñada específicamente para la Sala Civil (Secretaría), facilitando la supervisión continua de los procesos y mejorando la eficiencia en la toma de decisiones. A través de la automatización de alertas, se fortalece la gestión documental y se garantiza un control más riguroso sobre el estado de los radicados.",
-  "PRO-05: Automatización del reparto de procesos disciplinarios contra procurador": "Desarrollo e implementación de un módulo especializado para la automatización del reparto y asignación de procesos disciplinarios dirigidos contra el Procurador General de la Nación. Integrado directamente al ecosistema ESAV, el sistema utiliza algoritmos de selección aleatoria para designar a los Magistrados encargados de la evaluación y conducción de las etapas procesales. Esta solución elimina la discrecionalidad en la asignación, garantizando la transparencia, la equidad en la carga prestacional y el estricto cumplimiento de los términos legales mediante una trazabilidad digital inalterable de cada sorteo.",
-  "PRO-06: CLID (Conservación y localización de la Información Digital)": "Automatizar la gestión documental electrónica en sincronía con las tablas de retención documental, el portal institucional y los aplicativos que manejan las diferentes dependencias de la Corte Suprema de Justicia. Gestiona la Información Electronica que Nace y se Archiva en Corte Suprema.",
-  "PRO-07: Factor Calidad": "Solución digital institucional diseñada para operacionalizar el mecanismo de evaluación interna de la Corte Suprema de Justicia, enfocado en medir el desempeño cualitativo de los despachos judiciales, magistrados y dependencias a nivel nacional. Superando el enfoque tradicional de medición por volumen de procesos, la plataforma permite estructurar, registrar y consultar la calificación de la excelencia jurídica mediante criterios técnicos específicos, facilitando la firma electrónica de las evaluaciones y garantizando la trazabilidad del proceso. Esta herramienta transforma la evaluación del Factor Calidad en un activo de información estratégica para fortalecer la carrera judicial y la mejora continua de la función jurisdiccional en Colombia.",
-  "PRO-08: Migración y robustecimiento en la nube de la arquitectura de software para el sitio web": "Este proyecto tuvo como enfoques principales mejorar y estabilizar el sitio web de la Corte Suprema de Justicia, el cual inicialmente se encontraba alojado en una infraestructura local. Incluye el fortalecimiento de la postura de seguridad mediante la identificación y remediación de vulnerabilidades.",
-  "PRO-09: Notificaciones electrónicas automatizadas ESAV (notificaciones automáticas sala civil)": "Solución desarrollado sobre la plataforma ESAV para la automatización del envío de notificaciones electrónicas asociadas a providencias en procesos de impugnación de tutela. El sistema programa de manera automática el envío de correos electrónicos a los sujetos procesales intervinientes, una vez se consolida la providencia, garantizando oportunidad y consistencia en la comunicación. Este módulo, implementado para la Sala Civil (Secretaría), elimina la dependencia de procesos manuales, reduce tiempos operativos y minimiza errores en la gestión de notificaciones. Como resultado, se mejora significativamente la agilidad en la administración de los procesos y se fortalece el cumplimiento de los tiempos procesales.",
-  "PRO-10: GTH (Gestor de talento humano)": "GTH es una aplicación web desarrollada para modernizar y optimizar la gestión del archivo digital de historias laborales en la Corte Suprema de Justicia. Esta herramienta centraliza el registro, consulta y trazabilidad de los documentos laborales de los servidores judiciales y magistrados del país, automatizando procesos clave como nombramientos, licencias, comisiones, desvinculaciones y otras novedades administrativas. Entre sus funcionalidades destacan: generación de certificados laborales firmadas electrónicamente verificadas con código QR, reportes interactivos, organigrama actualizado de la planta de personal, creación y control de cargos y dependencias, así como la visualización estructurada de documentos históricos, alineadas con las políticas de gestión documental. Es una solución tecnológica impulsada por la Secretaría General y desarrollada por la Oficina de Tecnología como parte del compromiso con la transformación digital institucional.",
-  "PRO-11: Voto electrónico": "Aplicativo interno desarrollado para la gestión y ejecución de procesos de votación en la corte, orientado a la toma de decisiones estratégicas como la elección de magistrados, candidatos a procurador, entre otros procesos institucionales de alta relevancia. El sistema opera bajo un esquema de roles diferenciados: un rol administrador (Secretaría General), encargado de la configuración del proceso —incluyendo la definición de candidatos, votantes y rondas de votación—, y un rol de votante, que permite el acceso controlado al sistema para la emisión del voto de manera segura y estructurada. La solución incorpora capacidades de actualización automática y seguimiento en tiempo real, lo que garantiza transparencia, trazabilidad y eficiencia en cada etapa del proceso. Este enfoque digital reduce la carga operativa, minimiza errores y fortalece la confiabilidad en los mecanismos de decisión institucional.",
-  "PRO-12: Firma electrónica de documentos para todas las dependencias": "Servicio que permite a los funcionarios de la Corte firmar electrónicamente documentos institucionales, garantizando seguridad, trazabilidad y eficiencia en la gestión documental.",
-  "PRO-13: Super Supremo para consulta de providencias": "Solución avanzada de recuperación de información jurídica diseñada para centralizar, indexar y analizar la memoria jurisprudencial de la Corte Suprema de Justicia. Mediante la integración de Inteligencia Artificial y Procesamiento de Lenguaje Natural (NLP), el sistema trasciende la búsqueda por palabras clave para permitir consultas semánticas y estructuradas sobre las providencias. Su implementación optimiza los ciclos de investigación jurídica, garantiza la relevancia de los resultados y fortalece la seguridad jurídica, facilitando un acceso ágil y preciso al conocimiento judicial tanto para la Corporación como para la ciudadanía.",
-  "PRO-14: ESAV": "ESAV es el sistema de gestión procesal de la Corte Suprema de Justicia, diseñado para centralizar y optimizar la radicación y el reparto de los procesos judiciales de la Corporación. Esta plataforma permite la gestión integral de actuaciones, la notificación a sujetos procesales y la firma electrónica de documentos, culminando en la generación de sentencias y su correspondiente registro en relatoría. ESAV opera bajo un esquema de seguridad basado en roles, garantizando accesos y permisos diferenciados para Secretarías, Despachos, Magistrados y Relatoría.",
-  "PRO-15: Interoperabilidad En ESAV con registraduría y RUES": "Este proyecto establece un ecosistema de interoperabilidad técnica entre la Corporación, la Registraduría Nacional del Estado Civil y el RUES, mediante el desarrollo y despliegue de una API de integración diseñada para el consumo de datos desde aplicativos core como ESAV. La solución permite la consulta automatizada y en tiempo real de información ciudadana —incluyendo el estado de cédulas, registros civiles de nacimiento y actas de defunción—, con el propósito de centralizar el acceso a fuentes primarias, eliminar procesos manuales y garantizar una respuesta ágil y directa a los requerimientos de los usuarios de la institución.",
-  "PRO-16: Ciberseguridad de la información": "Programa integral de ciberseguridad institucional.",
-  "PRO-17: Ventanilla Virtual Penal": "Este proyecto representa la transición de la recepción de acciones de tutela desde canales informales, como el correo electrónico, hacia una plataforma web institucional especializada. El aplicativo permite a los ciudadanos interponer acciones de tutela ante la Sala Penal de manera estructurada, capturando los datos mínimos necesarios para asegurar una radicación precisa. Esta modernización optimiza el punto de contacto inicial entre el usuario y la Corporación, garantizando que la información ingrese de forma organizada y agilizando el inicio del trámite judicial.",
-  "PRO-18: Analizar la necesidad de mejorar métodos Encriptación Firma Electrónica": "Análisis para fortalecer algoritmos y mecanismos de firma electrónica.",
-  "PRO-19: Modernización Chatbot \"LuCA\" Coordinación Administrativa": "LuCA es un chatbot institucional de la Coordinación Administrativa de la Corte Suprema de Justicia que automatiza la atención de consultas frecuentes, facilita el acceso a información y trámites administrativos, y mejora la eficiencia del servicio mediante atención disponible 24/7 a través de canales digitales, el número del chat bot es: 3014471317",
-  "PRO-20: Gestor Despacho": "Plataforma integral de gestión del flujo de trabajo judicial diseñada para automatizar y estandarizar el ciclo de vida de los proyectos de sentencia. La solución facilita el registro centralizado, la asignación estratégica y el monitoreo en tiempo real de los estados procesales, garantizando una trazabilidad técnica absoluta desde la radicación hasta la firma. Su implementación optimiza la coordinación operativa del despacho y asegura el cumplimiento de los principios de oportunidad y celeridad, fortaleciendo la organización institucional y el control sobre la producción jurídica.",
-  "PRO-21: Identidad Digital": "1. Llave única de acceso: Identidad Digital es la llave única que permite a funcionarios y servidores judiciales acceder de forma segura a todos los aplicativos de la Rama Judicial (GestorRH, gestión documental, reportes, etc.) con un solo usuario corporativo. Adiós a las contraseñas duplicadas y a la fragmentación de credenciales. 2. Gobierno y trazabilidad de accesos: Centraliza la gobernanza mediante un modelo RBAC (control de acceso basado en roles) que permite saber en tiempo real quién puede hacer qué, en qué aplicativo y con qué alcance. Cada acción queda auditada, fortaleciendo el cumplimiento normativo y la rendición de cuentas. 3. Modernización y ciberseguridad: Migra la autenticación de soluciones legadas (IdentityServer4 / .NET Core 3.1) hacia Microsoft EntraID, el estándar empresarial de identidad en la nube. Habilita MFA, acceso condicional, detección de amenazas e integración nativa con Microsoft 365 -- alineando a la Corte con las mejores prácticas internacionales. 4. Habilitador estratégico de la transformación digital: No es solo autenticación: es la base sobre la que cada nuevo aplicativo de la Rama Judicial nace con identidad, roles y permisos consistentes desde el día uno. Acelera el desarrollo, reduce costos de integración y garantiza una experiencia uniforme para todos los usuarios institucionales.",
-  "PRO-22: Ventanilla Sala Civil": "Ventanilla Sala Civil es el desarrollo tecnológico especializado en la recepción y gestión inicial de procesos judiciales. Su propósito principal es optimizar la labor de los radicadores mediante la entrega de información técnica estructurada, lo que agiliza significativamente las etapas de radicación y reparto. Al estandarizar los datos de entrada, el sistema garantiza una transición eficiente de los expedientes hacia las fases de gestión procesal de la Sala Civil.",
-  "PRO-23: Interoperabilidad envío de tutelas a Corte Constitucional": "Interoperabilidad C.C. es un proyecto de transformación digital diseñado para automatizar el flujo de remisión de tutelas entre la Corte Suprema de Justicia y la Corte Constitucional. A través de la integración técnica de los sistemas ESAV y SICCOR, la plataforma simplifica el envío de expedientes mediante un proceso intuitivo de selección y transmisión directa. Esta iniciativa, desarrollada en colaboración por la Corte Suprema, la Corte Constitucional y la UTDI, reduce significativamente los tiempos de trámite y las cargas administrativas, fortaleciendo la eficiencia en la comunicación entre las altas cortes.",
-  "PRO-24: Automatización aplicativo de Consecutivos": "El Aplicativo de Automatización de Consecutivos es una solución técnica integrada nativamente en la plataforma ESAV, diseñada para la generación sistemática de números consecutivos para oficios y telegramas. Este módulo permite a la Corporación realizar una gestión, seguimiento y control exhaustivo de la comunicación oficial desde una infraestructura centralizada. Actualmente, su implementación en las secretarías de las salas Penal y Laboral garantiza la integridad documental y optimiza la trazabilidad de los trámites administrativos.",
-  "PRO-25: Analítica de datos con I.A.": "Implementación de una solución de analítica predictiva y descriptiva basada en Inteligencia Artificial para la extracción de conocimiento desde datos no estructurados presentes en las providencias judiciales. El sistema utiliza modelos entrenados de Procesamiento de Lenguaje Natural (NLP) para identificar, extraer y estructurar variables críticas, las cuales son almacenadas en una base de datos centralizada. Actualmente, el proyecto es funcional para la casuística de delitos sexuales contra menores de 14 años, transformando textos complejos en tableros de control en Power BI que proporcionan a los Magistrados reportes estadísticos precisos para una toma de decisiones informada y basada en evidencia.",
-  "PRO-26: Automatización procesos Coordinación Administrativa": "Automatización y digitalización de procesos internos.",
-  "PRO-27: Evolución y modernización Índice Electrónico": "Modernización del índice electrónico institucional.",
-  "PRO-28: Interoperabilidad ESAV - SGDE": "Este proyecto tiene como objetivo principal la integración técnica entre el sistema ESAV de la Corte Suprema de Justicia y el Sistema de Gestión Documental Electrónica (SGDE) del Consejo Superior de la Judicatura. A través de este desarrollo, se busca centralizar el repositorio de archivos de los procesos judiciales, garantizando la integridad y disponibilidad de la información en una plataforma única. Esta unificación facilita el flujo de retorno de los expedientes a los tribunales de origen, optimizando los tiempos de respuesta y asegurando una trazabilidad completa en la devolución de la información procesal.",
-  "PRO-29: Migración Directorio Activo a Nube": "Este proyecto busca eliminar la criticidad de los servicios de identidad mediante la implementación de un Directorio Activo moderno y redundante. La solución se basa en el despliegue de controladores de dominio bajo Windows Server 2022, distribuidos estratégicamente entre la infraestructura on-premise y máquinas virtuales en Azure. Este diseño permite que la nube funcione como un nodo de respaldo activo, asegurando que los servicios de autenticación, DNS y políticas de grupo permanecezcan disponibles ante contingencias locales. La integración se completa con la sincronización hacia Microsoft Entra ID, optimizando la gestión de identidades tanto para cargas de trabajo tradicionales como para servicios en la nube.",
-  "PRO-30: Interoperabilidad Firma Electrónica": "Servicios de interoperabilidad relacionados con firma electrónica.",
-  "PRO-31: Chatbot": "Desarrollo de un chatbot inteligente para atención automatizada.",
-  "PRO-32: Software Convocatoria": "Plataforma para gestión de convocatorias y procesos de selección.",
-  "PRO-33: Ventanilla PQRS Presidencia": "Portal de gestión de PQRS de la Presidencia.",
-  "PRO-34: Actualización Tecnológica Inventarios GLPI": "Actualización del sistema GLPI de inventario de activos TI.",
-  "PRO-35: Métricas con Inteligencia Artificial (Prueba piloto aplicativo copilot)": "Prueba piloto para generación de métricas y análisis con IA.",
-  "PRO-36: Eventos y encuentros presidencia": "Aplicativo para planificación, organización y seguimiento de eventos.",
-  "PRO-37: Administración y Monitoreo Infraestructura Nube Azure": "Implementación, administración y monitoreo de servicios en Azure para garantizar seguridad, alta disponibilidad y escalabilidad.",
-  "PRO-38: Gestión y Apoyo a Audiencias de la Corte Suprema de Justicia": "Agendamiento y seguimiento de audiencias presenciales y virtuales, asegurando el funcionamiento de equipos y el cargue de grabaciones.",
-  "PRO-39: JSReport - Generador de Reportes": "Solución técnica integrada para la producción dinámica de informes y plantillas editables. Esta funcionalidad permite transformar información estructurada en documentos finales en formato PDF y Microsoft Word, facilitando la estandarización de reportes en todas las áreas de la corporación. Gracias a su alta flexibilidad, el sistema puede ser empleado para cualquier tipo de requerimiento documental, optimizando los tiempos de respuesta y garantizando la precisión en la presentación de la información judicial y administrativa.",
-  "PRO-40: Firma Service": "Servicio en Python diseñado para insertar firmas digitales y validaciones en documentos PDF, integrado al flujo de ESAV.",
-  "PRO-41: Sitio Web Ambiente ON-Premise": "Este proyecto tuvo como enfoques principales mejorar y estabilizar el sitio web de la Corte Suprema de Justicia, el cual inicialmente se encontraba alojado en una infraestructura local (conocida como on-premise). Este término significa que los servidores y sistemas que soportaban el sitio web estaban físicamente instalados y gestionados dentro de las instalaciones de la institución, a diferencia de utilizar servicios en la nube.",
-  "PRO-42: Modelos de Inteligencia Artificial Aplicados a la Consulta de Jurisprudencia": "El Proyecto de extracción mediante Inteligencia Artificial consistió en el desarrollo y ejecución de un sistema de extracción automatizada de información a partir de providencias judiciales relacionadas con delitos contra menores de 14 años y casos de extradición, el objetivo fue entrenar y validar modelos de procesamiento de lenguaje natural (PLN) para identificar, extraer y clasificar datos relevantes dentro de documentos judiciales no estructurados, optimizando así la búsqueda y el análisis de este tipo de providencias.",
-  "PRO-43: Proyecto Transmedia - Presidencia": "Iniciativa multimedia desarrollada durante la presidencia del Magistrado Dr. Gerson Chaverra Castro, orientada a visibilizar el trabajo de los jueces en las zonas más apartadas del país, resaltando su labor y compromiso con la justicia."
-};
+const PROJECT_CATALOG = require("./project-catalog.json");
 
 function getProjectDescription(projectName) {
   if (!projectName) return "Descripción no disponible.";
@@ -116,10 +73,18 @@ const SYSTEM_PROMPT = "Eres un Ingeniero de Software Senior redactando un inform
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getMainEngineer(engineers) {
-  if (!engineers?.length) return "Equipo del proyecto";
-  const e = engineers[0];
-  return e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
+function resolveEngineerNames(projectEngineers, catalog) {
+  if (!projectEngineers?.length) return [];
+  const catMap = new Map((catalog || []).map(e => [e.id, e.name]));
+  return projectEngineers.map(e => {
+    if (e.engineer_id === "Otro...") return e.custom_name || "—";
+    return catMap.get(e.engineer_id) || e.engineer_id || "—";
+  }).filter(n => n && n !== "—");
+}
+
+function getMainEngineer(engineers, catalog) {
+  const names = resolveEngineerNames(engineers, catalog);
+  return names.length ? names[0] : "Equipo del proyecto";
 }
 
 function projectProgress(total, completed, inProgress) {
@@ -127,26 +92,12 @@ function projectProgress(total, completed, inProgress) {
   return Math.min(((Number(completed) + Number(inProgress) * 0.5) / Number(total)) * 100, 100);
 }
 
-function toLines(val) {
-  if (!val) return [];
-  if (Array.isArray(val)) return val.filter(Boolean);
-  return val.split("\n").map(s => s.trim()).filter(Boolean);
-}
-
-// activities_identified es un array de {id, text}. Todo lo demás (task_status,
-// weekly_detail, milestones.activity, comments.activity) referencia el id, no el texto.
-function buildActivityIndex(activities) {
-  const map = new Map();
-  (Array.isArray(activities) ? activities : []).forEach((a, i) => {
-    if (a && a.id != null) map.set(a.id, { text: a.text || "", position: i + 1 });
-  });
-  return map;
-}
+// toArray y buildActivityIndex vienen de utils.cjs
 function actText(index, id)  { return index.get(id)?.text ?? id ?? ""; }
 function actLabel(index, id) { const e = index.get(id); return e ? `${e.position}. ${e.text}` : (id || ""); }
-function resolveIds(index, ids) { return toLines(ids).map(id => actText(index, id)); }
+function resolveIds(index, ids) { return toArray(ids).map(id => actText(index, id)); }
 
-function buildProjectSummary(project) {
+function buildProjectSummary(project, engineerCatalog) {
   const description      = getProjectDescription(project.project_name);
   const projectDisplayName = (project.project_name || "").replace(/^PRO-\d+[-:\s]*/i, "").trim() || project.project_name || "Sin nombre";
   const m       = project.manual_metrics || {};
@@ -172,8 +123,9 @@ function buildProjectSummary(project) {
   const milestones = (project.milestones || []).filter(m => m.date || m.note);
   const comments   = (project.comments   || []).filter(c => c.text);
 
+  const catMap = new Map((engineerCatalog || []).map(e => [e.id, e.name]));
   const engLines = (project.engineers || []).map(e => {
-    const name   = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
+    const name = e.engineer_id === "Otro..." ? (e.custom_name || "—") : (catMap.get(e.engineer_id) || e.engineer_id || "—");
     const detail = resolveIds(actIndex, e.weekly_detail);
     return `  - ${name}: ${e.assigned || 0} asignadas, ${e.completed || 0} completadas, ${e.in_progress || 0} en proceso${detail.length ? `. Actividades esta semana: ${detail.join("; ")}` : " (sin actividades registradas esta semana)"}`;
   });
@@ -188,7 +140,7 @@ PROYECTO: ${projectDisplayName}
 DESCRIPCIÓN TÉCNICA: ${description}
 Fecha de reporte: ${project.report_date || "—"}
 Estado: ${status}
-Responsable principal: ${getMainEngineer(project.engineers)}
+Responsable principal: ${getMainEngineer(project.engineers, engineerCatalog)}
 
 MÉTRICAS GENERALES:
 - Total actividades: ${total}
@@ -233,8 +185,12 @@ ${/juan|steven/i.test(project.project_name || "") ? `⚠ CONTEXTO SOPORTE TRANSV
 `.trim();
 }
 
-function buildPrompt(project, quarterLabel) {
-  const summary = buildProjectSummary(project);
+function buildPrompt(project, quarterLabel, engineerCatalog) {
+  const summary = buildProjectSummary(project, engineerCatalog);
+  const teamNames = resolveEngineerNames(project.engineers, engineerCatalog);
+  const responsableHint = teamNames.length
+    ? `Usa el nombre real del ingeniero responsable del proyecto. Los ingenieros del equipo son: ${teamNames.join(", ")}. Asigna el responsable de cada acción al ingeniero más apropiado según su rol en el proyecto.`
+    : `Usa el nombre del responsable técnico del proyecto si está disponible, o "Equipo del proyecto" si no hay ingenieros registrados.`;
 
   return `# ROL Y CONTEXTO
 Actúa como un Ingeniero de Software Senior y Gestor de Proyectos Tecnológicos Experto. Tu tarea es analizar el reporte de actividades que se te proporciona y transformarlo en un Informe de Gestión Trimestral formal, analítico y de alto nivel ejecutivo. Responde ÚNICAMENTE con JSON válido, sin texto adicional ni bloques de código markdown.
@@ -353,7 +309,7 @@ PERIODO DEL INFORME: ${quarterLabel}
     "acciones": [
       {
         "accion": "Acción de mejora continua específica y medible, orientada a resolver una causa raíz real del reporte",
-        "responsable": "Rol o área responsable (ej. Desarrollo, Infraestructura, Gestión) — nunca nombres propios",
+        "responsable": "${responsableHint}",
         "fecha": "Mes Año",
         "estado": "Iniciada/Pendiente/Ejecutada"
       }
@@ -466,10 +422,10 @@ async function callGemini(messages, apiKey) {
 }
 
 // Gemini (principal) → OpenRouter (respaldo) → Groq (último respaldo)
-async function generateReportWithAI(project, quarterLabel) {
+async function generateReportWithAI(project, quarterLabel, engineerCatalog = []) {
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
-    { role: "user",   content: buildPrompt(project, quarterLabel) },
+    { role: "user",   content: buildPrompt(project, quarterLabel, engineerCatalog) },
   ];
 
   // 1. Gemini (principal)

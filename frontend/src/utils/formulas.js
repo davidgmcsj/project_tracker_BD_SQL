@@ -390,6 +390,61 @@ export function getActivityStatus(ts, actId) {
   return "No iniciada";
 }
 
+export function generateAssignmentsByEngineer(projects, engineerCatalog, weekLabel) {
+  // Construir mapa: engineerId → { name, actividades[] }
+  const engMap = {};
+  (engineerCatalog || []).forEach(e => {
+    engMap[e.id] = { name: e.name || e.id, acts: [] };
+  });
+
+  const unassigned = [];
+
+  projects.forEach(p => {
+    const projectName = p.project_name || "Proyecto sin nombre";
+    (p.activities_identified || []).forEach(a => {
+      const assignees = a.assigned_engineers || [];
+      if (assignees.length === 0) {
+        unassigned.push({ project: projectName, text: a.text });
+      } else {
+        assignees.forEach(e => {
+          if (!engMap[e.id]) engMap[e.id] = { name: e.name || e.id, acts: [] };
+          engMap[e.id].acts.push({ project: projectName, text: a.text });
+        });
+      }
+    });
+  });
+
+  let txt = `ACTIVIDADES POR INGENIERO\n`;
+  txt += `Reporte: ${weekLabel}\n`;
+  txt += `================================================================================\n\n`;
+
+  const engineers = Object.values(engMap).sort((a, b) => a.name.localeCompare(b.name));
+
+  engineers.forEach(eng => {
+    txt += `${eng.name}\n`;
+    txt += `${"─".repeat(Math.min(eng.name.length, 60))}\n`;
+    if (eng.acts.length === 0) {
+      txt += `  (Sin actividades asignadas)\n`;
+    } else {
+      eng.acts.forEach((a, i) => {
+        txt += `  ${i + 1}. [${a.project}] ${a.text}\n`;
+      });
+    }
+    txt += `\n`;
+  });
+
+  if (unassigned.length > 0) {
+    txt += `ACTIVIDADES SIN INGENIERO ASIGNADO\n`;
+    txt += `================================================================================\n`;
+    unassigned.forEach((a, i) => {
+      txt += `  ${i + 1}. [${a.project}] ${a.text}\n`;
+    });
+    txt += `\n`;
+  }
+
+  return txt;
+}
+
 export function generateAssignmentsMarkdown(projects, weekLabel) {
   let md = `# Asignación de Actividades y Responsables\n`;
   md += `**Reporte:** ${weekLabel}\n\n`;

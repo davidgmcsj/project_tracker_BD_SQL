@@ -28,6 +28,7 @@ const http    = require("http");
 const fs      = require("fs").promises;
 const path    = require("path");
 require("dotenv/config");
+const { toArray } = require("./utils.cjs");
 
 const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL } = (() => {
   try {
@@ -73,11 +74,7 @@ async function writeJson(file, data) {
   await fs.writeFile(file, JSON.stringify(data, null, 2));
 }
 
-function toArr(val) {
-  if (!val) return [];
-  if (Array.isArray(val)) return val.filter(Boolean);
-  return val.split("\n").map(s => s.trim()).filter(Boolean);
-}
+// toArray viene de utils.cjs
 
 // ── Migración de datos legados (string → array/objeto) ────────────────────────
 // Esta función corre UNA SOLA VEZ al inicio si detecta datos en formato antiguo.
@@ -101,23 +98,23 @@ async function migrateArrayFields() {
     changed = true;
 
     const milestonesArr = typeof p.milestones === "string" && p.milestones.trim()
-      ? toArr(p.milestones).map(note => ({ activity: "", date: "", note }))
+      ? toArray(p.milestones).map(note => ({ activity: "", date: "", note }))
       : (Array.isArray(p.milestones) ? p.milestones : []);
 
     const commentsArr = typeof p.comments === "string" && p.comments.trim()
-      ? toArr(p.comments).map(text => ({ activity: "", date: "", text }))
+      ? toArray(p.comments).map(text => ({ activity: "", date: "", text }))
       : (Array.isArray(p.comments) ? p.comments : []);
 
     return {
       ...p,
-      activities_identified: toArr(p.activities_identified),
-      weekly_achievements:   toArr(p.weekly_achievements),
-      next_week_plan:        toArr(p.next_week_plan),
+      activities_identified: toArray(p.activities_identified),
+      weekly_achievements:   toArray(p.weekly_achievements),
+      next_week_plan:        toArray(p.next_week_plan),
       milestones:            milestonesArr,
       comments:              commentsArr,
       engineers: (p.engineers || []).map(e => ({
         ...e,
-        weekly_detail: toArr(e.weekly_detail),
+        weekly_detail: toArray(e.weekly_detail),
       })),
     };
   });
@@ -385,11 +382,11 @@ app.post("/api/generate-report", async (req, res) => {
     return res.status(503).json({ error: "Módulo de IA no disponible" });
   }
   try {
-    const { project, quarterLabel } = req.body;
+    const { project, quarterLabel, engineerCatalog } = req.body;
     if (!project) return res.status(400).json({ error: "Falta el proyecto" });
 
     console.log("[AI] Generando informe para:", project.project_name);
-    const analysis = await generateReportWithAI(project, quarterLabel || "");
+    const analysis = await generateReportWithAI(project, quarterLabel || "", engineerCatalog || []);
     console.log("[AI] Informe generado OK");
     res.json({ ok: true, analysis });
   } catch (e) {

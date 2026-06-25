@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
-import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText } from "../utils/formulas";
+import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText, generateAssignmentsByEngineer } from "../utils/formulas";
 import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
+import { useClickOutside } from "../hooks/useClickOutside";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -366,16 +367,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
 
   const [showExportMenu, setShowExportMenu] = useState(false);
   const menuRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setShowExportMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useClickOutside(menuRef, () => setShowExportMenu(false));
 
   const handleCopyAssignmentsMd = () => {
     const md = generateAssignmentsMarkdown([p], weekLabel);
@@ -442,50 +434,28 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
             📋 Copiar reporte
           </button>
           
-          <div style={{ position: "relative" }}>
-            <button 
-              className="btn btn--card-export" 
+          <div className="export-dropdown-wrap">
+            <button
+              className="btn btn--card-export"
               onClick={() => setShowExportMenu(!showExportMenu)}
               title="Exportar asignaciones de actividades y ingenieros responsables de este proyecto"
             >
               👥 Responsables ▾
             </button>
             {showExportMenu && (
-              <div 
-                className="export-dropdown-menu" 
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "100%",
-                  marginTop: "6px",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
-                  boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
-                  zIndex: 100,
-                  minWidth: "200px",
-                  padding: "4px 0",
-                  display: "flex",
-                  flexDirection: "column"
-                }}
-              >
-                <div style={{ padding: "6px 12px", fontSize: "10px", fontWeight: "bold", textTransform: "uppercase", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
-                  Formato Markdown (.md)
-                </div>
-                <button className="export-dropdown-item" onClick={handleCopyAssignmentsMd} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+              <div className="export-dropdown-menu">
+                <div className="export-dropdown-label">Formato Markdown (.md)</div>
+                <button className="export-dropdown-item" onClick={handleCopyAssignmentsMd}>
                   📋 Copiar Tabla .md
                 </button>
-                <button className="export-dropdown-item" onClick={handleDownloadAssignmentsMd} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", borderBottom: "1px solid var(--border)" }}>
+                <button className="export-dropdown-item export-dropdown-item--separator" onClick={handleDownloadAssignmentsMd}>
                   💾 Descargar Tabla .md
                 </button>
-                
-                <div style={{ padding: "6px 12px", fontSize: "10px", fontWeight: "bold", textTransform: "uppercase", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
-                  Formato Texto Plano (.txt)
-                </div>
-                <button className="export-dropdown-item" onClick={handleCopyAssignmentsTxt} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+                <div className="export-dropdown-label">Formato Texto Plano (.txt)</div>
+                <button className="export-dropdown-item" onClick={handleCopyAssignmentsTxt}>
                   📋 Copiar Texto .txt
                 </button>
-                <button className="export-dropdown-item" onClick={handleDownloadAssignmentsTxt} style={{ background: "none", border: "none", color: "var(--text)", padding: "8px 12px", fontSize: "12px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+                <button className="export-dropdown-item" onClick={handleDownloadAssignmentsTxt}>
                   💾 Descargar Texto .txt
                 </button>
               </div>
@@ -556,6 +526,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
 
 export default function ReportView({ projects, weekLabel, engineers, singleProjectIdx, onClearSingle, generatingInforme, generatingName, onGenerateInforme, onCancelInforme }) {
   const [toast, setToast] = useState("");
+  const [showByEngineer, setShowByEngineer] = useState(false);
 
   const isSingle        = singleProjectIdx != null;
   const displayProjects = isSingle ? [projects[singleProjectIdx]] : projects;
@@ -597,7 +568,7 @@ export default function ReportView({ projects, weekLabel, engineers, singleProje
           {isSingle && (
             <>
               <button
-                className="btn btn--primary"
+                className="btn btn--accent"
                 onClick={() => onGenerateInforme(singleProjectIdx)}
                 disabled={generatingInforme}
                 title="Genera el Informe de Gestión institucional en formato Word (.docx)"
@@ -633,21 +604,50 @@ export default function ReportView({ projects, weekLabel, engineers, singleProje
               <GlobalMetricsTable projects={projects} />
             </div>
           )}
-          {displayProjects.map((p, i) => (
-            <ProjectReport 
-              key={p.id} 
-              p={p} 
-              i={i} 
-              onGenerateInforme={handleGenerateInforme} 
-              onExportText={handleExportText} 
-              generating={generating} 
-              generatingName={generatingName} 
-              autoRunStatus={isSingle} 
-              engineerCatalog={engineers} 
-              weekLabel={weekLabel}
-              setToast={setToast}
-            />
-          ))}
+          {displayProjects.map((p, i) => {
+            const projectIdx = isSingle ? singleProjectIdx : i;
+            return (
+              <ProjectReport
+                key={p.id}
+                p={p}
+                i={i}
+                onGenerateInforme={() => onGenerateInforme(projectIdx)}
+                onExportText={handleExportText}
+                generating={generatingInforme}
+                generatingName={generatingName}
+                autoRunStatus={isSingle}
+                engineerCatalog={engineers}
+                weekLabel={weekLabel}
+                setToast={setToast}
+              />
+            );
+          })}
+
+          {!isSingle && projects.length > 0 && (
+            <div className="report-by-engineer">
+              <div className="report-by-engineer__header">
+                <h3 className="report-section-title">Actividades por Ingeniero</h3>
+                <button
+                  className="btn btn--secondary"
+                  onClick={() => setShowByEngineer(v => !v)}
+                >
+                  {showByEngineer ? "Ocultar" : "Ver listado"}
+                </button>
+              </div>
+              {showByEngineer && (
+                <>
+                  <p className="report-by-engineer__hint">
+                    Selecciona todo el texto y cópialo (Ctrl+A → Ctrl+C).
+                  </p>
+                  <textarea
+                    className="report-by-engineer__text"
+                    readOnly
+                    value={generateAssignmentsByEngineer(projects, engineers, weekLabel)}
+                  />
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator,
   createDefaultImpediment, createDefaultMilestone, createDefaultComment,
   createActivity, buildActivityIndex, activityText, activityLabel,
 } from "../utils/formulas";
+import { useClickOutside } from "../hooks/useClickOutside";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -72,13 +73,7 @@ function AssigneeDropdown({ assignables, assignedIds, placeholder, onSelect, onC
     setNewName(""); setNewComp(""); setCreating(false);
   };
 
-  // Cierra el popover al hacer clic fuera
-  useEffect(() => {
-    if (!creating) return;
-    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setCreating(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [creating]);
+  useClickOutside(wrapRef, () => setCreating(false), creating);
 
   return (
     <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
@@ -797,14 +792,7 @@ function ActivitySelect({ value, activities, onChange }) {
     setQuery("");
   };
 
-  // Cierra el dropdown al hacer clic fuera
-  useEffect(() => {
-    const handler = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  useClickOutside(rootRef, () => setOpen(false));
 
   const handleOpen = () => {
     setOpen(true);
@@ -1754,6 +1742,20 @@ export default function EditView({
   const updateEngineer = (i, f, v) => onUpdateProject(editingIdx, "engineers",   engineers.map((e, idx)   => idx === i ? { ...e,   [f]: v } : e));
   const removeEngineer = (i)       => onUpdateProject(editingIdx, "engineers",   engineers.filter((_, idx) => idx !== i));
 
+  // Agrega un ingeniero al proyecto desde el selector rápido del header
+  const addEngineerFromCatalog = (engId) => {
+    if (!engId) return;
+    const alreadyInTeam = engineers.some(e => e.engineer_id === engId);
+    if (alreadyInTeam) return;
+    const newRow = { ...createDefaultEngineer(), engineer_id: engId };
+    onUpdateProject(editingIdx, "engineers", [...engineers, newRow]);
+  };
+
+  // Quita un ingeniero del equipo del proyecto (desde el selector rápido del header)
+  const removeEngineerFromTeam = (engId) => {
+    onUpdateProject(editingIdx, "engineers", engineers.filter(e => e.engineer_id !== engId));
+  };
+
   const addIndicator    = () => onUpdateProject(editingIdx, "indicators",  [...indicators,  createDefaultIndicator()]);
   const updateIndicator = (i, f, v) => onUpdateProject(editingIdx, "indicators",  indicators.map((ind, idx) => idx === i ? { ...ind, [f]: v } : ind));
   const removeIndicator = (i)       => onUpdateProject(editingIdx, "indicators",  indicators.filter((_, idx) => idx !== i));
@@ -2026,6 +2028,43 @@ export default function EditView({
                 placeholder="https://tasks.office.com/…"
                 onChange={e => onUpdateProject(editingIdx, "planner_url", e.target.value)}
               />
+            </div>
+          </div>
+
+          {/* ══ 1b. Equipo del proyecto (selector rápido) ══ */}
+          <div className="field project-team-selector">
+            <div className="project-team-selector__header">
+              <label className="field__label">Equipo del Proyecto</label>
+              <select
+                className="field__input project-team-selector__select"
+                value=""
+                onChange={e => addEngineerFromCatalog(e.target.value)}
+              >
+                <option value="">+ Agregar ingeniero al equipo…</option>
+                {(engineerCatalog || [])
+                  .filter(e => e.active && !engineers.some(r => r.engineer_id === e.id))
+                  .map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div className="project-team-selector__chips">
+              {engineers.length === 0 && (
+                <span className="project-team-selector__empty">Sin ingenieros asignados al proyecto</span>
+              )}
+              {engineers.map(row => {
+                const cat = (engineerCatalog || []).find(e => e.id === row.engineer_id);
+                const name = cat?.name || row.engineer_id || "Sin nombre";
+                return (
+                  <span key={row.engineer_id || name} className="project-team-chip">
+                    {name}
+                    <button
+                      className="project-team-chip__remove"
+                      type="button"
+                      title="Quitar del equipo"
+                      onClick={() => removeEngineerFromTeam(row.engineer_id)}
+                    >×</button>
+                  </span>
+                );
+              })}
             </div>
           </div>
 
