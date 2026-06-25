@@ -36,11 +36,104 @@ function safeActs(val) {
   return Array.isArray(val) ? val : [];
 }
 
+// Mezcla ingenieros activos + externos activos en un único array para dropdowns de asignación.
+// type: 'engineer' | 'external' permite distinguirlos visualmente.
+function buildAssignables(engineerCatalog, externalContacts) {
+  const engineers = (engineerCatalog || []).filter(e => e.active).map(e => ({
+    id: e.id, name: e.name, type: "engineer",
+  }));
+  const externals = (externalContacts || []).filter(c => c.active).map(c => ({
+    id: c.id, name: c.name, company: c.company || "", type: "external",
+  }));
+  return [...engineers, ...externals];
+}
+
 // Filtra items: todas las palabras del query deben aparecer en el texto (case-insensitive)
 function matchesSearch(text, query) {
   if (!query.trim()) return true;
   const lower = text.toLowerCase();
   return query.trim().toLowerCase().split(/\s+/).every(word => lower.includes(word));
+}
+
+// ── Dropdown de asignación con soporte de externos y creación en popover ──────
+function AssigneeDropdown({ assignables, assignedIds, placeholder, onSelect, onCreateExternal }) {
+  const [creating, setCreating] = useState(false);
+  const [newName,  setNewName]  = useState("");
+  const [newComp,  setNewComp]  = useState("");
+  const wrapRef = useRef(null);
+
+  const engineers = assignables.filter(a => a.type === "engineer" && !assignedIds.has(a.id));
+  const externals = assignables.filter(a => a.type === "external" && !assignedIds.has(a.id));
+
+  const handleConfirmCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    onCreateExternal(name, newComp.trim());
+    setNewName(""); setNewComp(""); setCreating(false);
+  };
+
+  // Cierra el popover al hacer clic fuera
+  useEffect(() => {
+    if (!creating) return;
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setCreating(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [creating]);
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
+      <select
+        className="field__input act-assign-row__select"
+        value=""
+        onChange={e => {
+          const val = e.target.value;
+          if (val === "__new_external__") { setCreating(true); return; }
+          if (val) onSelect(val);
+        }}
+      >
+        <option value="">{placeholder}</option>
+        {engineers.length > 0 && (
+          <>
+            <option disabled>── Equipo interno ──</option>
+            {engineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </>
+        )}
+        {externals.length > 0 && (
+          <>
+            <option disabled>── Colaboradores externos ──</option>
+            {externals.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ""}</option>)}
+          </>
+        )}
+        <option disabled>──────────────────</option>
+        <option value="__new_external__">+ Agregar colaborador externo…</option>
+      </select>
+
+      {creating && (
+        <div className="assignee-create-popover">
+          <p className="assignee-create-popover__title">Nuevo colaborador externo</p>
+          <input
+            className="assignee-create-popover__input field__input"
+            placeholder="Nombre completo…"
+            value={newName}
+            autoFocus
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleConfirmCreate(); } if (e.key === "Escape") setCreating(false); }}
+          />
+          <input
+            className="assignee-create-popover__input field__input"
+            placeholder="Empresa / entidad (ej: Microsoft)"
+            value={newComp}
+            onChange={e => setNewComp(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleConfirmCreate(); } if (e.key === "Escape") setCreating(false); }}
+          />
+          <div className="assignee-create-popover__actions">
+            <button type="button" className="assignee-create-popover__cancel" onClick={() => setCreating(false)}>Cancelar</button>
+            <button type="button" className="assignee-create-popover__ok" onClick={handleConfirmCreate} disabled={!newName.trim()}>Agregar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Hook para drag-and-drop de reordenamiento dentro de una lista
@@ -102,10 +195,12 @@ function DeleteConfirmModal({ projectName, onConfirm, onCancel }) {
 function ActivitiesList({
   activities,
   engineerCatalog,
+  externalContacts,
   taskStatus,
   onChange,
   onUpdateActivityMeta,
   onAddActivity,
+  onCreateExternal,
 }) {
   const [draft,   setDraft]   = useState("");
   const [adding,  setAdding]  = useState(false);
@@ -153,6 +248,17 @@ function ActivitiesList({
   };
 
   const activeEngineers = (engineerCatalog || []).filter(e => e.active);
+  const allAssignables  = buildAssignables(engineerCatalog, externalContacts);
+
+  const handleDraftCreateExternal = (name, company) => {
+    const newId = onCreateExternal ? onCreateExternal(name, company) : null;
+    if (newId) setDraftResponsible(newId);
+  };
+
+  const handleActCreateExternal = (actId, name, company) => {
+    const newId = onCreateExternal ? onCreateExternal(name, company) : null;
+    if (newId) onUpdateActivityMeta(actId, { action: 'add', engId: newId }, undefined);
+  };
 
   return (
     <div className="field">
@@ -180,17 +286,13 @@ function ActivitiesList({
               if (e.key === "Escape") { setDraft(""); setAdding(false); }
             }}
           />
-          <select
-            className="field__input list-field-draft__select"
-            value={draftResponsible}
-            onChange={e => setDraftResponsible(e.target.value)}
-            style={{ width: "160px", flexShrink: 0 }}
-          >
-            <option value="">— Responsable —</option>
-            {activeEngineers.map(e => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
+          <AssigneeDropdown
+            assignables={allAssignables}
+            assignedIds={draftResponsible ? new Set([draftResponsible]) : new Set()}
+            placeholder="— Responsable —"
+            onSelect={id => setDraftResponsible(id)}
+            onCreateExternal={handleDraftCreateExternal}
+          />
           <select
             className="field__input list-field-draft__select"
             value={draftStatus}
@@ -210,7 +312,6 @@ function ActivitiesList({
       {acts.length > 0 ? (
         <ol className="act-list">
           {acts.map((act, i) => {
-            const assignedEngId = getAssignedEngId(act);
             const statusVal = getStatusValue(act.id);
 
             let statusSelectClass = "act-list__select--status-pending";
@@ -238,18 +339,37 @@ function ActivitiesList({
                     <span className="act-list__num">{i + 1}.</span>
                     <span className="act-list__text">{act.text}</span>
                     
-                    <select
-                      className="field__input act-list__select act-list__select--responsible"
-                      value={assignedEngId}
-                      onChange={e => onUpdateActivityMeta(act.id, e.target.value, undefined)}
-                      title="Asignar ingeniero responsable"
-                      style={{ width: "160px", flexShrink: 0 }}
-                    >
-                      <option value="">— Responsable —</option>
-                      {activeEngineers.map(e => (
-                        <option key={e.id} value={e.id}>{e.name}</option>
-                      ))}
-                    </select>
+                    {/* ── Multi-responsables: chips + dropdown para agregar ── */}
+                    <div className="act-list__eng-chips" style={{ width: "260px", flexShrink: 0 }}>
+                      {(act.assigned_engineers || []).map(eng => {
+                        const isExternal = eng.id.startsWith("ext_");
+                        const extEntry   = isExternal ? (externalContacts || []).find(c => c.id === eng.id) : null;
+                        const chipLabel  = isExternal
+                          ? `${eng.name.split(' ')[0]}${extEntry?.company ? ` · ${extEntry.company}` : ""}`
+                          : eng.name.split(' ')[0];
+                        return (
+                          <span key={eng.id} className={`act-list__eng-chip${isExternal ? " act-list__eng-chip--external" : ""}`} title={isExternal ? `${eng.name}${extEntry?.company ? ` (${extEntry.company})` : ""}` : eng.name}>
+                            {isExternal && <span className="act-list__eng-chip-ext">Ext</span>}
+                            <span className="act-list__eng-chip-name">{chipLabel}</span>
+                            <button
+                              type="button"
+                              className="act-list__eng-chip-rm"
+                              onClick={() => onUpdateActivityMeta(act.id, { action: 'remove', engId: eng.id }, undefined)}
+                              title={`Quitar a ${eng.name}`}
+                            >✕</button>
+                          </span>
+                        );
+                      })}
+                      {allAssignables.some(a => !(act.assigned_engineers || []).some(e => e.id === a.id)) && (
+                        <AssigneeDropdown
+                          assignables={allAssignables}
+                          assignedIds={new Set((act.assigned_engineers || []).map(e => e.id))}
+                          placeholder={(act.assigned_engineers || []).length === 0 ? '— Resp. —' : '+ Agregar'}
+                          onSelect={id => onUpdateActivityMeta(act.id, { action: 'add', engId: id }, undefined)}
+                          onCreateExternal={(name, company) => handleActCreateExternal(act.id, name, company)}
+                        />
+                      )}
+                    </div>
 
                     <select
                       className={`field__input act-list__select act-list__select--status ${statusSelectClass}`}
@@ -1119,7 +1239,7 @@ function CommentList({ comments, activities, onChange }) {
 // ── Panel de asignación masiva ───────────────────────────────────────────────
 // Permite seleccionar un ingeniero y marcar N actividades de una sola vez.
 
-function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign }) {
+function BulkAssignPanel({ activities, engineerCatalog, externalContacts, taskStatus, onBulkAssign }) {
   const [expanded,      setExpanded]      = useState(false);
   const [selectedEngId, setSelectedEngId] = useState("");
   const [checked,       setChecked]       = useState(new Set());
@@ -1128,10 +1248,19 @@ function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign
 
   const acts          = safeActs(activities);
   const completedSet  = new Set(safeArr((taskStatus || {}).completed));
+  const inProgressSet = new Set(safeArr((taskStatus || {}).in_progress));
   const activeEngineers = (engineerCatalog || []).filter(e => e.active);
+  const activeExternals = (externalContacts || []).filter(c => c.active);
+  const allAssignables  = buildAssignables(engineerCatalog, externalContacts);
 
-  // Actividades no completadas (las completadas no necesitan reasignación masiva)
-  const assignable = acts.filter(a => !completedSet.has(a.id));
+  const getActStatus = (actId) => {
+    if (completedSet.has(actId))  return "completed";
+    if (inProgressSet.has(actId)) return "in_progress";
+    return "not_started";
+  };
+
+  // Muestra TODAS las actividades (incluyendo completadas)
+  const assignable = acts;
 
   // Aplica filtros: búsqueda por texto + opción "sin responsable"
   const visible = assignable.filter(a => {
@@ -1185,10 +1314,19 @@ function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign
               value={selectedEngId}
               onChange={e => setSelectedEngId(e.target.value)}
             >
-              <option value="">— Seleccionar ingeniero —</option>
-              {activeEngineers.map(e => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
+              <option value="">— Seleccionar responsable —</option>
+              {activeEngineers.length > 0 && (
+                <>
+                  <option disabled>── Equipo interno ──</option>
+                  {activeEngineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </>
+              )}
+              {activeExternals.length > 0 && (
+                <>
+                  <option disabled>── Colaboradores externos ──</option>
+                  {activeExternals.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ""}</option>)}
+                </>
+              )}
             </select>
 
             <div className="bulk-assign-panel__search-wrap">
@@ -1243,7 +1381,10 @@ function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign
             ) : visible.map(a => {
               const origIdx    = acts.indexOf(a);
               const isChecked  = checked.has(a.id);
-              const currentEng = (a.assigned_engineers || [])[0];
+              const assignedEngs = a.assigned_engineers || [];
+              const actStatus  = getActStatus(a.id);
+              const statusLabel = actStatus === "completed" ? "Completada" : actStatus === "in_progress" ? "En proceso" : "No iniciada";
+              const statusMod   = actStatus === "completed" ? "bulk-assign-row__status--done" : actStatus === "in_progress" ? "bulk-assign-row__status--progress" : "bulk-assign-row__status--pending";
               return (
                 <label
                   key={a.id}
@@ -1259,8 +1400,11 @@ function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign
                   />
                   <span className="bulk-assign-row__num">{origIdx + 1}.</span>
                   <span className="bulk-assign-row__text">{a.text}</span>
-                  {currentEng ? (
-                    <span className="bulk-assign-row__owner">{currentEng.name}</span>
+                  <span className={`bulk-assign-row__status ${statusMod}`}>{statusLabel}</span>
+                  {assignedEngs.length > 0 ? (
+                    <span className="bulk-assign-row__owner">
+                      {assignedEngs.map(e => e.name.split(' ')[0]).join(' · ')}
+                    </span>
                   ) : (
                     <span className="bulk-assign-row__unassigned">Sin responsable</span>
                   )}
@@ -1288,13 +1432,15 @@ function BulkAssignPanel({ activities, engineerCatalog, taskStatus, onBulkAssign
 const ROW_HEIGHT_PX = 44; // altura aproximada de cada fila
 const MAX_VISIBLE   = 7;
 
-function ActivityAssignmentRow({ activity, position, engineerCatalog, completedBy, onToggleEngineer }) {
-  const isCompleted    = !!completedBy;
-  const assignedIds    = new Set((activity.assigned_engineers || []).map(e => e.id));
-  const activeEngineers = (engineerCatalog || []).filter(e => e.active || assignedIds.has(e.id));
+function ActivityAssignmentRow({ activity, position, engineerCatalog, externalContacts, completedBy, onToggleEngineer, onCreateExternal }) {
+  const isCompleted = !!completedBy;
+  const assignedIds = new Set((activity.assigned_engineers || []).map(e => e.id));
+  const assignables = buildAssignables(engineerCatalog, externalContacts);
+
+  // Incluir también asignados que ya no estén activos en el catálogo (para no perder el chip)
+  const allAssigned = activity.assigned_engineers || [];
 
   if (isCompleted) {
-    // completedBy es array [{engineer_id, engineer_name}]
     const names = Array.isArray(completedBy)
       ? completedBy.map(e => e.engineer_name).filter(Boolean).join(", ")
       : (completedBy.engineer_name || "—");
@@ -1307,6 +1453,8 @@ function ActivityAssignmentRow({ activity, position, engineerCatalog, completedB
     );
   }
 
+  const hasUnassigned = assignables.some(a => !assignedIds.has(a.id));
+
   return (
     <div className="act-assign-row act-assign-row--multi">
       <div className="act-assign-row__top">
@@ -1314,35 +1462,40 @@ function ActivityAssignmentRow({ activity, position, engineerCatalog, completedB
         <span className="act-assign-row__text">{activity.text}</span>
       </div>
       <div className="act-assign-row__chips">
-        {(activity.assigned_engineers || []).map(e => (
-          <span key={e.id} className="act-assign-chip">
-            {e.name}
-            <button
-              type="button"
-              className="act-assign-chip__remove"
-              onClick={() => onToggleEngineer(activity.id, e.id, false)}
-              title={`Quitar a ${e.name}`}
-            >✕</button>
-          </span>
-        ))}
-        {activeEngineers.filter(e => !assignedIds.has(e.id)).length > 0 && (
-          <select
-            className="field__input act-assign-row__select"
-            value=""
-            onChange={e => { if (e.target.value) onToggleEngineer(activity.id, e.target.value, true); }}
-          >
-            <option value="">{assignedIds.size === 0 ? "Asignar…" : "+ Otro…"}</option>
-            {activeEngineers.filter(e => !assignedIds.has(e.id)).map(e => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
+        {allAssigned.map(e => {
+          const isExternal = e.id.startsWith("ext_");
+          const extEntry   = isExternal ? (externalContacts || []).find(c => c.id === e.id) : null;
+          const chipLabel  = isExternal
+            ? `${e.name.split(' ')[0]}${extEntry?.company ? ` · ${extEntry.company}` : ""}`
+            : e.name;
+          return (
+            <span key={e.id} className={`act-assign-chip${isExternal ? " act-assign-chip--external" : ""}`} title={isExternal ? `${e.name}${extEntry?.company ? ` (${extEntry.company})` : ""}` : e.name}>
+              {isExternal && <span className="act-assign-chip__ext-tag">Ext</span>}
+              {chipLabel}
+              <button
+                type="button"
+                className="act-assign-chip__remove"
+                onClick={() => onToggleEngineer(activity.id, e.id, false)}
+                title={`Quitar a ${e.name}`}
+              >✕</button>
+            </span>
+          );
+        })}
+        {hasUnassigned && (
+          <AssigneeDropdown
+            assignables={assignables}
+            assignedIds={assignedIds}
+            placeholder={assignedIds.size === 0 ? "Asignar…" : "+ Otro…"}
+            onSelect={id => onToggleEngineer(activity.id, id, true)}
+            onCreateExternal={(name, company) => onCreateExternal(activity.id, name, company)}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, onActivitiesChange }) {
+function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, externalContacts, onActivitiesChange, onCreateExternal }) {
   const [query,         setQuery]         = useState("");
   const [filterEngId,   setFilterEngId]   = useState("");  // "" = todos
 
@@ -1390,27 +1543,46 @@ function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, on
   const needsScroll       = totalRows > MAX_VISIBLE;
   const listMaxHeight     = needsScroll ? `${MAX_VISIBLE * ROW_HEIGHT_PX}px` : undefined;
 
-  const handleToggleEngineer = (actId, engineerId, add) => {
-    const catalog  = engineerCatalog || [];
-    const engEntry = catalog.find(e => e.id === engineerId);
-    const today    = new Date().toISOString().slice(0, 10);
-    const newActs  = allActs.map(a => {
+  const handleToggleEngineer = (actId, personId, add) => {
+    // Busca primero en el catálogo de ingenieros, luego en externos
+    const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
+    const entry       = allContacts.find(e => e.id === personId);
+    const today       = new Date().toISOString().slice(0, 10);
+    const newActs     = allActs.map(a => {
       if (a.id !== actId) return a;
       const current = a.assigned_engineers || [];
       const updated = add
-        ? (current.some(e => e.id === engineerId) ? current : [...current, { id: engineerId, name: engEntry?.name || "" }])
-        : current.filter(e => e.id !== engineerId);
+        ? (current.some(e => e.id === personId) ? current : [...current, { id: personId, name: entry?.name || "" }])
+        : current.filter(e => e.id !== personId);
       return {
         ...a,
         assigned_engineers: updated,
         assigned_date: updated.length > 0 ? (a.assigned_date || today) : null,
       };
     });
-    // Si el ingeniero quitado era el del filtro activo y ya no tiene actividades, limpiamos el filtro
-    if (!add && filterEngId === engineerId) {
-      const stillHas = newActs.some(a => (a.assigned_engineers || []).some(e => e.id === engineerId));
+    if (!add && filterEngId === personId) {
+      const stillHas = newActs.some(a => (a.assigned_engineers || []).some(e => e.id === personId));
       if (!stillHas) setFilterEngId("");
     }
+    onActivitiesChange(newActs);
+  };
+
+  // Crea un externo nuevo y lo asigna inmediatamente a la actividad
+  const handleCreateExternal = (actId, name, company) => {
+    const newId = onCreateExternal(name, company); // devuelve el ext_xxx nuevo
+    // onCreateExternal actualiza el catálogo; lo asignamos usando el id que acaba de retornar
+    // pero como es async (persistencia), forzamos aquí la asignación directa con los datos conocidos
+    const today   = new Date().toISOString().slice(0, 10);
+    const newActs = allActs.map(a => {
+      if (a.id !== actId) return a;
+      const current = a.assigned_engineers || [];
+      if (current.some(e => e.id === newId)) return a;
+      return {
+        ...a,
+        assigned_engineers: [...current, { id: newId, name }],
+        assigned_date: a.assigned_date || today,
+      };
+    });
     onActivitiesChange(newActs);
   };
 
@@ -1453,16 +1625,24 @@ function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, on
           )}
         </div>
 
-        {/* Filtro por ingeniero — solo muestra los que tienen actividades asignadas */}
+        {/* Filtro por responsable — solo muestra los que tienen actividades asignadas */}
         <select
           className="field__input act-assign-filter-eng"
           value={filterEngId}
           onChange={e => setFilterEngId(e.target.value)}
         >
-          <option value="">Todos los ingenieros</option>
-          {assignedEngineers.map(e => (
+          <option value="">Todos los responsables</option>
+          {assignedEngineers.filter(e => !e.id.startsWith("ext_")).map(e => (
             <option key={e.id} value={e.id}>{e.name}</option>
           ))}
+          {assignedEngineers.some(e => e.id.startsWith("ext_")) && (
+            <>
+              <option disabled>── Externos ──</option>
+              {assignedEngineers.filter(e => e.id.startsWith("ext_")).map(e => (
+                <option key={e.id} value={e.id}>{e.name} (ext.)</option>
+              ))}
+            </>
+          )}
         </select>
 
         {/* Contador de resultados + limpiar filtros */}
@@ -1494,8 +1674,10 @@ function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, on
                 activity={a}
                 position={positionMap.get(a.id)}
                 engineerCatalog={engineerCatalog}
+                externalContacts={externalContacts}
                 completedBy={null}
                 onToggleEngineer={handleToggleEngineer}
+                onCreateExternal={handleCreateExternal}
               />
             ))}
             {visibleCompleted.length > 0 && (
@@ -1507,8 +1689,10 @@ function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, on
                     activity={a}
                     position={positionMap.get(a.id)}
                     engineerCatalog={engineerCatalog}
+                    externalContacts={externalContacts}
                     completedBy={completedBy[a.id]}
                     onToggleEngineer={handleToggleEngineer}
+                    onCreateExternal={handleCreateExternal}
                   />
                 ))}
               </>
@@ -1530,6 +1714,7 @@ export default function EditView({
   onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges,
   onReorderProjects, onAddProject, onRemoveProject, onViewReport, onExportReport,
   engineerCatalog, onCreateEngineer,
+  externalContacts, onAddExternalContact, onToggleExternalActive,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
@@ -1626,14 +1811,29 @@ export default function EditView({
       let updatedEngs = a.assigned_engineers || [];
       let updatedDate = a.assigned_date;
       if (newEngId !== undefined) {
-        if (newEngId === "") {
+        const today = new Date().toISOString().slice(0, 10);
+        if (newEngId !== null && typeof newEngId === 'object') {
+          // Multi-assign format: { action: 'add'|'remove', engId }
+          if (newEngId.action === 'add') {
+            const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
+            const eng = allContacts.find(e => e.id === newEngId.engId);
+            if (eng && !updatedEngs.some(e => e.id === eng.id)) {
+              updatedEngs = [...updatedEngs, { id: eng.id, name: eng.name }];
+              updatedDate = updatedDate || today;
+            }
+          } else if (newEngId.action === 'remove') {
+            updatedEngs = updatedEngs.filter(e => e.id !== newEngId.engId);
+            if (updatedEngs.length === 0) updatedDate = null;
+          }
+        } else if (newEngId === '') {
           updatedEngs = [];
           updatedDate = null;
         } else {
-          const eng = (engineerCatalog || []).find(e => e.id === newEngId);
+          const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
+          const eng = allContacts.find(e => e.id === newEngId);
           if (eng) {
             updatedEngs = [{ id: eng.id, name: eng.name }];
-            updatedDate = a.assigned_date || new Date().toISOString().slice(0, 10);
+            updatedDate = a.assigned_date || today;
           }
         }
       }
@@ -1693,15 +1893,18 @@ export default function EditView({
   };
 
   const handleBulkAssign = (engId, actIds) => {
-    const eng = (engineerCatalog || []).find(e => e.id === engId);
+    const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
+    const eng = allContacts.find(e => e.id === engId);
     if (!eng) return;
     const today  = new Date().toISOString().slice(0, 10);
     const idSet  = new Set(actIds);
     const newActs = activities.map(a => {
       if (!idSet.has(a.id)) return a;
+      // Si ya está asignado, no duplicar
+      if ((a.assigned_engineers || []).some(e => e.id === eng.id)) return a;
       return {
         ...a,
-        assigned_engineers: [{ id: eng.id, name: eng.name }],
+        assigned_engineers: [...(a.assigned_engineers || []), { id: eng.id, name: eng.name }],
         assigned_date: a.assigned_date || today,
       };
     });
@@ -1866,10 +2069,12 @@ export default function EditView({
           <ActivitiesList
             activities={activities}
             engineerCatalog={engineerCatalog}
+            externalContacts={externalContacts}
             taskStatus={p.task_status}
             onChange={handleActivitiesChange}
             onUpdateActivityMeta={handleUpdateActivityMeta}
             onAddActivity={handleAddActivity}
+            onCreateExternal={onAddExternalContact}
           />
 
           {/* ══ 3b. Asignación masiva ══ */}
@@ -1877,6 +2082,7 @@ export default function EditView({
             <BulkAssignPanel
               activities={activities}
               engineerCatalog={engineerCatalog}
+              externalContacts={externalContacts}
               taskStatus={p.task_status}
               onBulkAssign={handleBulkAssign}
             />
@@ -1941,6 +2147,22 @@ export default function EditView({
               </div>
             )}
           </div>
+
+          {/* ══ 7. Asignación de Responsables ══ */}
+          {activities.length > 0 && (
+            <ActivityAssignmentSection
+              activities={activities}
+              taskStatus={p.task_status}
+              engineerCatalog={engineerCatalog}
+              externalContacts={externalContacts}
+              onActivitiesChange={newActs => onUpdateProjectFull(editingIdx, {
+                ...p,
+                activities_identified: newActs,
+                manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
+              })}
+              onCreateExternal={onAddExternalContact}
+            />
+          )}
 
           {/* ══ 8. Ingenieros ══ */}
           <div className="field field--optional">

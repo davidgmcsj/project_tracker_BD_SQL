@@ -8,7 +8,7 @@ const STATUS = {
   "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
-export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExportReport }) {
+export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme }) {
   return (
     <div>
       {projects.length > 0 && (
@@ -21,6 +21,7 @@ export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExp
       <div className="dashboard-grid">
         {projects.map((p, i) => {
           const st = STATUS[p.status] || STATUS["on-track"];
+          const isGeneratingThis = generatingInforme && generatingName === (p.project_name || `Proyecto ${i + 1}`);
           return (
             <div key={p.id} className="project-card" onClick={() => onEdit(i)}>
               <div className="project-card__header">
@@ -40,6 +41,20 @@ export default function Dashboard({ projects, onEdit, onAdd, onViewReport, onExp
                 <button className="btn btn--card-export" onClick={() => onExportReport(i)}>
                   📋 Copiar reporte
                 </button>
+                {isGeneratingThis ? (
+                  <button className="btn btn--card-cancel" onClick={onCancelInforme}>
+                    ✕ Cancelar
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn--card-informe"
+                    onClick={() => onGenerateInforme(i)}
+                    disabled={generatingInforme}
+                    title="Generar Informe de Gestión (.docx)"
+                  >
+                    {generatingInforme && !isGeneratingThis ? "⏳ Generando…" : "📝 Informe"}
+                  </button>
+                )}
               </div>
             </div>
           );

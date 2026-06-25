@@ -44,7 +44,7 @@ export async function loadProjects() {
     if (data.projects?.length) {
       localStorage.setItem(LS_PROJECTS, JSON.stringify(data.projects));
       if (data.weekLabel) localStorage.setItem(LS_WEEK, data.weekLabel);
-      return { projects: data.projects, weekLabel: data.weekLabel, engineers: data.engineers || [] };
+      return { projects: data.projects, weekLabel: data.weekLabel, engineers: data.engineers || [], externalContacts: data.externalContacts || [] };
     }
   } catch {
     // servidor no disponible — intentar localStorage
@@ -62,7 +62,7 @@ export async function loadProjects() {
 
 // ── Persistencia base ─────────────────────────────────────────────────────────
 
-export async function saveProjects(projects, weekLabel, engineers) {
+export async function saveProjects(projects, weekLabel, engineers, externalContacts) {
   // localStorage primero: garantiza que el usuario no pierde datos
   // aunque la llamada al servidor falle
   localStorage.setItem(LS_PROJECTS, JSON.stringify(projects));
@@ -71,7 +71,7 @@ export async function saveProjects(projects, weekLabel, engineers) {
     await apiFetch("/api/projects", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ projects, weekLabel, engineers }),
+      body:    JSON.stringify({ projects, weekLabel, engineers, externalContacts: externalContacts || [] }),
     });
   } catch { /* guardado local completado */ }
 }
@@ -130,6 +130,20 @@ export async function syncEngineerTaskToSQL(engineer, task) {
       body:    JSON.stringify({ engineer, task }),
     });
   } catch { /* el cambio local ya quedó guardado */ }
+}
+
+// ── Sincronización de colaboradores externos con SQL ─────────────────────────
+export async function syncExternalContactToSQL(contact) {
+  try {
+    const data = await apiFetch("/api/external-contacts/sync-one", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ contact }),
+    });
+    return data.sql_id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteEngineerTaskFromSQL(taskId) {

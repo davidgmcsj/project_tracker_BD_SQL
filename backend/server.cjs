@@ -60,7 +60,7 @@ function getDataDir() {
 const DATA_DIR     = getDataDir();
 const DATA_FILE    = path.join(DATA_DIR, "data.json");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
-const PORT         = process.env.PORT || 3001;
+const PORT         = process.env.PORT || 3002;
 
 // ── Helpers de archivo ────────────────────────────────────────────────────────
 
@@ -214,6 +214,27 @@ app.post("/api/projects", async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Error guardando proyectos" });
+  }
+});
+
+// ── API: Sincronización de colaboradores externos ─────────────────────────────
+
+app.post("/api/external-contacts/sync-one", async (req, res) => {
+  const { syncExternalContactToSQL } = (() => {
+    try { return require("./db-operations.cjs"); } catch { return {}; }
+  })();
+
+  if (!syncExternalContactToSQL) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { contact } = req.body;
+    if (!contact?.name) return res.status(400).json({ error: "Falta el nombre del colaborador" });
+    const sqlId = await syncExternalContactToSQL(contact);
+    res.json({ ok: true, sql_id: sqlId });
+  } catch (e) {
+    console.error("[SQL] Error sincronizando colaborador externo:", e.message);
+    res.status(500).json({ error: "Error sincronizando colaborador externo", detail: e.message });
   }
 });
 

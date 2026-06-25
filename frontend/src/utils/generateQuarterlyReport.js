@@ -28,10 +28,18 @@ function getQuarterLabel(dateStr) {
   return `${names[Math.ceil(m / 3) - 1]} trimestre ${y}`;
 }
 
-function getMainEngineer(engineers) {
-  if (!engineers?.length) return "Equipo del proyecto";
-  const e = engineers[0];
-  return e.engineer_id === "Otro..." ? (e.custom_name || "—") : (e.engineer_id || "—");
+function resolveEngineerName(engineerId, catalog) {
+  if (!engineerId) return "—";
+  if (engineerId === "Otro...") return "—";
+  const found = (catalog || []).find(e => e.id === engineerId);
+  return found ? found.name : engineerId;
+}
+
+function getMainEngineer(projectEngineers, catalog) {
+  if (!projectEngineers?.length) return "Equipo del proyecto";
+  const e = projectEngineers[0];
+  if (e.engineer_id === "Otro...") return e.custom_name || "—";
+  return resolveEngineerName(e.engineer_id, catalog);
 }
 
 function nextMonthLabel(dateStr) {
@@ -42,12 +50,12 @@ function nextMonthLabel(dateStr) {
 
 // ── Convierte el JSON de la IA en el mapa de reemplazos para la plantilla ────
 
-function buildReplacements(project, analysis) {
+function buildReplacements(project, analysis, catalog) {
   const date             = project.report_date || new Date().toISOString().slice(0, 10);
-  const responsible      = getMainEngineer(project.engineers);
+  const responsible      = getMainEngineer(project.engineers, catalog);
   const projectDisplayName = (project.project_name || "").replace(/^PRO-\d+[-:\s]*/i, "").trim() || project.project_name || "—";
   const allEngineers     = (project.engineers || [])
-    .map(e => e.engineer_id === "Otro..." ? (e.custom_name || "") : (e.engineer_id || ""))
+    .map(e => e.engineer_id === "Otro..." ? (e.custom_name || "") : resolveEngineerName(e.engineer_id, catalog))
     .filter(Boolean)
     .join(", ") || responsible;
   const quarterLabel = getQuarterLabel(date);
@@ -130,17 +138,17 @@ function buildReplacements(project, analysis) {
 
     // ── Sección 4 ──────────────────────────────────────────────────────────
     ["Durante el periodo se identificaron las siguientes salidas no conformes:",
-      s4.intro || "Durante el periodo evaluado se analizaron las salidas no conformes del proceso."],
+      "No se presentaron salidas no conformes en este trimestre."],
 
-    ["[Descripción breve de la no conformidad] ", sit[0] || "No se registraron no conformidades formales."],
-    ["[Cantidad o frecuencia] ",                  sit[1] || ""],
+    ["[Descripción breve de la no conformidad] ", "No aplica."],
+    ["[Cantidad o frecuencia] ",                  "No aplica."],
 
-    ["[Correcciones realizadas] ",            acc4[0] || "Seguimiento a actividades en proceso."],
-    ["[Acciones correctivas implementadas] ", acc4[1] || "Ajuste en la planificación de fases."],
+    ["[Correcciones realizadas] ",            "No aplica."],
+    ["[Acciones correctivas implementadas] ", "No aplica."],
 
-    ["[Causas principales] ",        a4[0] || ""],
-    ["[Reincidencia o no] ",         a4[1] || "No se evidencia reincidencia estructural."],
-    ["[Efectividad de las acciones] ", a4[2] || "Se validará en el siguiente periodo."],
+    ["[Causas principales] ",          "No aplica."],
+    ["[Reincidencia o no] ",           "No aplica."],
+    ["[Efectividad de las acciones] ", "No aplica."],
 
     // ── Sección 5 — tabla plan de mejoramiento ─────────────────────────────
     ["[Acción 1]",         acc0.accion],
@@ -179,7 +187,7 @@ function applyReplacements(xml, replacements) {
 
 // ── Función principal ─────────────────────────────────────────────────────────
 
-export async function generateQuarterlyReport(project) {
+export async function generateQuarterlyReport(project, engineerCatalog = [], signal = null) {
   const date         = project.report_date || new Date().toISOString().slice(0, 10);
   const quarterLabel = getQuarterLabel(date);
 
@@ -190,6 +198,7 @@ export async function generateQuarterlyReport(project) {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ project, quarterLabel }),
+      ...(signal ? { signal } : {}),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -198,6 +207,7 @@ export async function generateQuarterlyReport(project) {
     const data = await res.json();
     analysis   = data.analysis;
   } catch (e) {
+    if (e.name === "AbortError") throw e;
     throw new Error(`Error al generar análisis con IA: ${e.message}`);
   }
 
@@ -210,7 +220,7 @@ export async function generateQuarterlyReport(project) {
   // 3. Desempaquetar, editar XML, reempaquetar
   const zip        = await JSZip.loadAsync(templateBuffer);
   const docXmlRaw  = await zip.file("word/document.xml").async("string");
-  const replacements = buildReplacements(project, analysis);
+  const replacements = buildReplacements(project, analysis, engineerCatalog);
   const docXmlNew  = applyReplacements(docXmlRaw, replacements);
   zip.file("word/document.xml", docXmlNew);
 

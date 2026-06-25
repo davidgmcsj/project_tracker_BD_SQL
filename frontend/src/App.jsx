@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Dashboard     from "./components/Dashboard";
 import EditView      from "./components/EditView";
 import ReportView    from "./components/ReportView";
@@ -7,12 +7,14 @@ import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
-  createEngineer,
+  createEngineer, createExternalContact,
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
   syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
+  syncExternalContactToSQL,
 } from "./utils/storage";
+import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import "./App.css";
 
 const STAT_CARDS = [
@@ -34,6 +36,7 @@ function getStatValue(dot, stats, projects) {
 export default function App() {
   const [projects,          setProjects]          = useState([]);
   const [engineers,         setEngineers]         = useState([]);
+  const [externalContacts,  setExternalContacts]  = useState([]);
   const [view,              setView]              = useState("dashboard");
   const [editingIdx,        setEditingIdx]        = useState(null);
   const [weekLabel,         setWeekLabel]         = useState(getWeekLabel());
@@ -41,17 +44,21 @@ export default function App() {
   const [hasUnsavedChanges, setHasUnsaved]        = useState(false);
   const [reportProjectIdx,  setReportProjectIdx]  = useState(null);
   const [saveToast,         setSaveToast]         = useState("");
+  const [generatingInforme, setGeneratingInforme] = useState(false);
+  const [generatingName,    setGeneratingName]    = useState("");
+  const abortCtrlRef = useRef(null);
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
     async function init() {
-      const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers } = await loadProjects();
+      const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers, externalContacts: savedExternals } = await loadProjects();
       if (saved?.length) {
         setProjects(saved);
         const firstDate = saved[0]?.report_date;
         if (firstDate) setReportDate(firstDate);
       }
       if (savedEngineers?.length) setEngineers(savedEngineers);
+      if (savedExternals?.length) setExternalContacts(savedExternals);
       const wl = savedWeek || getStoredWeekLabel();
       if (wl) setWeekLabel(wl);
     }
@@ -61,14 +68,19 @@ export default function App() {
   // ── Persistencia ───────────────────────────────────────────────────────────
   const persist = useCallback(async (data, engs) => {
     setProjects(data);
-    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers);
+    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers, externalContacts);
     setHasUnsaved(false);
-  }, [weekLabel, engineers]);
+  }, [weekLabel, engineers, externalContacts]);
 
   const persistEngineers = useCallback(async (nextEngineers) => {
     setEngineers(nextEngineers);
-    await saveProjects(projects, weekLabel, nextEngineers);
-  }, [projects, weekLabel]);
+    await saveProjects(projects, weekLabel, nextEngineers, externalContacts);
+  }, [projects, weekLabel, externalContacts]);
+
+  const persistExternals = useCallback(async (nextExternals) => {
+    setExternalContacts(nextExternals);
+    await saveProjects(projects, weekLabel, engineers, nextExternals);
+  }, [projects, weekLabel, engineers]);
 
   // ── Limpiado de campos semanales ───────────────────────────────────────────
   const applyWeekReset = async (newDate, newLabel) => {
@@ -189,6 +201,32 @@ export default function App() {
     });
   };
 
+  const generateInforme = async (idx) => {
+    const project = projects[idx];
+    if (!project) return;
+    const ctrl = new AbortController();
+    abortCtrlRef.current = ctrl;
+    setGeneratingInforme(true);
+    setGeneratingName(project.project_name || "proyecto");
+    try {
+      await generateQuarterlyReport(project, engineers, ctrl.signal);
+      setSaveToast(`✓ Informe de "${project.project_name || "proyecto"}" generado y descargado`);
+    } catch (e) {
+      if (e.name === "AbortError") {
+        setSaveToast("Generación cancelada");
+      } else {
+        setSaveToast("Error generando informe: " + e.message);
+      }
+    } finally {
+      abortCtrlRef.current = null;
+      setGeneratingInforme(false);
+      setGeneratingName("");
+      setTimeout(() => setSaveToast(""), 3500);
+    }
+  };
+
+  const cancelInforme = () => { abortCtrlRef.current?.abort(); };
+
   // ── Catálogo de ingenieros ─────────────────────────────────────────────────
   // Cada cambio se guarda localmente de inmediato (respuesta instantánea en la UI)
   // y en paralelo se empuja a SQL. Cuando vuelve el sql_id (creación), se guarda
@@ -238,6 +276,33 @@ export default function App() {
     const newIds = new Set(tasks.map(t => t.id));
     oldTasks.forEach(t => { if (!newIds.has(t.id)) deleteEngineerTaskFromSQL(t.id); });
     tasks.forEach(t => syncEngineerTaskToSQL(eng, t));
+  };
+
+  // ── Catálogo de colaboradores externos ────────────────────────────────────
+  const syncAndStoreSqlIdExternal = async (contactSnapshot) => {
+    const sqlId = await syncExternalContactToSQL(contactSnapshot);
+    if (sqlId && !contactSnapshot.sql_id) {
+      setExternalContacts(curr => {
+        const next = curr.map(c => c.id === contactSnapshot.id ? { ...c, sql_id: sqlId } : c);
+        saveProjects(projects, weekLabel, engineers, next);
+        return next;
+      });
+    }
+  };
+
+  const addExternalContact = (name, company) => {
+    const contact = createExternalContact(name, company);
+    const next = [...externalContacts, contact];
+    persistExternals(next);
+    syncAndStoreSqlIdExternal(contact);
+    return contact.id;
+  };
+
+  const toggleExternalContactActive = (id) => {
+    const next = externalContacts.map(c => c.id === id ? { ...c, active: !c.active } : c);
+    persistExternals(next);
+    const updated = next.find(c => c.id === id);
+    syncAndStoreSqlIdExternal(updated);
   };
 
   // ── Restaurar desde BD ────────────────────────────────────────────────────
@@ -355,6 +420,10 @@ export default function App() {
             projects={projects} weekLabel={weekLabel} engineers={engineers}
             singleProjectIdx={reportProjectIdx}
             onClearSingle={() => setReportProjectIdx(null)}
+            generatingInforme={generatingInforme}
+            generatingName={generatingName}
+            onGenerateInforme={generateInforme}
+            onCancelInforme={cancelInforme}
           />
         )}
         {view === "engineers" && (
@@ -374,6 +443,10 @@ export default function App() {
             onAdd={addProject}
             onViewReport={viewProjectReport}
             onExportReport={exportProjectReport}
+            onGenerateInforme={generateInforme}
+            generatingInforme={generatingInforme}
+            generatingName={generatingName}
+            onCancelInforme={cancelInforme}
           />
         )}
         {view === "edit" && (
@@ -391,6 +464,9 @@ export default function App() {
             onExportReport={exportProjectReport}
             engineerCatalog={engineers}
             onCreateEngineer={addEngineer}
+            externalContacts={externalContacts}
+            onAddExternalContact={addExternalContact}
+            onToggleExternalActive={toggleExternalContactActive}
           />
         )}
       </main>

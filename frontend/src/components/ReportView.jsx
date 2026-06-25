@@ -554,13 +554,13 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export default function ReportView({ projects, weekLabel, engineers, singleProjectIdx, onClearSingle }) {
-  const [toast, setToast]               = useState("");
-  const [generating, setGenerating]     = useState(false);
-  const [generatingName, setGeneratingName] = useState("");
+export default function ReportView({ projects, weekLabel, engineers, singleProjectIdx, onClearSingle, generatingInforme, generatingName, onGenerateInforme, onCancelInforme }) {
+  const [toast, setToast] = useState("");
 
   const isSingle        = singleProjectIdx != null;
   const displayProjects = isSingle ? [projects[singleProjectIdx]] : projects;
+  const isGeneratingThis = generatingInforme && isSingle &&
+    generatingName === (projects[singleProjectIdx]?.project_name || "");
 
   const handleCopy = () => {
     const text = isSingle
@@ -576,21 +576,6 @@ export default function ReportView({ projects, weekLabel, engineers, singleProje
     navigator.clipboard.writeText(text)
       .then(() => { setToast(`✓ Reporte de "${project.project_name || "proyecto"}" copiado`); setTimeout(() => setToast(""), 2500); })
       .catch(() => setToast("No se pudo copiar al portapapeles"));
-  };
-
-  const handleGenerateInforme = async (project) => {
-    setGenerating(true);
-    setGeneratingName(project.project_name || "proyecto");
-    try {
-      await generateQuarterlyReport(project);
-      setToast("✓ Informe de gestión generado y descargado");
-    } catch (e) {
-      setToast("Error generando informe: " + e.message);
-    } finally {
-      setGenerating(false);
-      setGeneratingName("");
-      setTimeout(() => setToast(""), 3000);
-    }
   };
 
   return (
@@ -613,17 +598,22 @@ export default function ReportView({ projects, weekLabel, engineers, singleProje
             <>
               <button
                 className="btn btn--primary"
-                onClick={() => handleGenerateInforme(projects[singleProjectIdx])}
-                disabled={generating}
+                onClick={() => onGenerateInforme(singleProjectIdx)}
+                disabled={generatingInforme}
                 title="Genera el Informe de Gestión institucional en formato Word (.docx)"
               >
                 📄 Generar Informe
               </button>
-              {generating && (
-                <span className="generating-inline">
-                  <span className="generating-inline__spinner" />
-                  Generando informe
-                </span>
+              {isGeneratingThis && (
+                <>
+                  <span className="generating-inline">
+                    <span className="generating-inline__spinner" />
+                    Generando informe
+                  </span>
+                  <button className="btn btn--danger" onClick={onCancelInforme} title="Cancelar generación del informe">
+                    ✕ Cancelar
+                  </button>
+                </>
               )}
             </>
           )}

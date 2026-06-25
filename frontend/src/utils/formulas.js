@@ -172,6 +172,14 @@ export function createEngineer(name = "", role = "") {
   return { id: genEngineerId(), name, role, active: true, created_at: getToday(), tasks: [] };
 }
 
+export function genExternalContactId() {
+  return "ext_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+export function createExternalContact(name = "", company = "") {
+  return { id: genExternalContactId(), name, company, active: true, created_at: getToday() };
+}
+
 // Construye un índice id → nombre a partir del catálogo de ingenieros.
 export function buildEngineerIndex(engineers) {
   const map = new Map();

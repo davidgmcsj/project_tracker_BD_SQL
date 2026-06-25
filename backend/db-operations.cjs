@@ -143,6 +143,34 @@ async function syncEngineerToSQL(engineer) {
   return ins.recordset[0].IngenieroID;
 }
 
+// ── Sync de colaboradores externos ───────────────────────────────────────────
+// Crea o actualiza un registro en Colaboradores_Externos.
+// Devuelve el ColaboradorID de SQL para guardarlo como sql_id en el catálogo local.
+
+async function syncExternalContactToSQL(contact) {
+  const pool    = await getPool();
+  const name    = (contact.name    || "").trim();
+  const company = (contact.company || "").trim();
+  const active  = contact.active !== false ? 1 : 0;
+
+  if (contact.sql_id) {
+    await pool.request()
+      .input("id",      sql.Int,           contact.sql_id)
+      .input("nombre",  sql.NVarChar(150),  name)
+      .input("empresa", sql.NVarChar(150),  company)
+      .input("activo",  sql.Bit,            active)
+      .query("UPDATE Colaboradores_Externos SET Nombre=@nombre, Empresa=@empresa, Activo=@activo WHERE ColaboradorID=@id");
+    return contact.sql_id;
+  }
+
+  const ins = await pool.request()
+    .input("nombre",  sql.NVarChar(150), name)
+    .input("empresa", sql.NVarChar(150), company)
+    .input("activo",  sql.Bit,           active)
+    .query("INSERT INTO Colaboradores_Externos (Nombre, Empresa, Activo) OUTPUT INSERTED.ColaboradorID VALUES (@nombre, @empresa, @activo)");
+  return ins.recordset[0].ColaboradorID;
+}
+
 // ── Tareas sueltas del ingeniero (no asociadas a ningún proyecto/reporte) ─────
 // Cada tarea tiene un id local estable (etask_xxx, AppTaskID en SQL). Upsert por
 // ese id: si ya existe la fila, se actualiza; si no, se inserta. Esto permite
@@ -491,4 +519,4 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
 
 // ── Exportar ──────────────────────────────────────────────────────────────────
 
-module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL };
+module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncExternalContactToSQL };
