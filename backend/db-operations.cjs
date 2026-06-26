@@ -2,7 +2,7 @@
 
 require("dotenv/config");
 const sql = require("mssql");
-const { toArray, buildActivityIndexFlatFlat, buildEngineerIndex, resolveActText, resolveActArr } = require("./utils.cjs");
+const { toArray, buildActivityIndexFlat, buildEngineerIndex, resolveActText, resolveActArr } = require("./utils.cjs");
 
 // ── Conexión ──────────────────────────────────────────────────────────────────
 

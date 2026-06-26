@@ -49,27 +49,58 @@ function getProjectDescription(projectName) {
 // ── Modelos de IA ─────────────────────────────────────────────────────────────
 
 const OPENROUTER_MODELS = [
-  "deepseek/deepseek-v4-flash:free",
-  "nousresearch/hermes-3-llama-3.1-405b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "openai/gpt-oss-120b:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "minimax/minimax-m2.5:free",
-  "google/gemma-4-31b-it:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
+  "openai/gpt-oss-120b:free",              // 120B, JSON nativo, contexto 131K
+  "nvidia/nemotron-3-ultra-550b-a55b:free",// 550B MoE, razonamiento avanzado, 1M contexto
+  "nvidia/nemotron-3-super-120b-a12b:free",// 120B, uso general
+  "google/gemma-4-31b-it:free",            // 31B, multilingüe 140+ idiomas, 256K contexto
+  "google/gemma-4-26b-a4b-it:free",        // 26B MoE, balance calidad/velocidad
+  "poolside/laguna-m.1:free",              // razonamiento estructurado, JSON, 256K contexto
+  "openai/gpt-oss-20b:free",              // 21B, structured outputs, 131K contexto
+  "meta-llama/llama-3.3-70b-instruct:free",// respaldo probado
 ];
 
-// Modelos Gemini a intentar en orden (verificados con la API key, mayo 2026).
+// Modelos Gemini disponibles con esta API key (verificados junio 2026).
 const GEMINI_MODELS = [
-  "gemini-3.5-flash",            // más capaz disponible en la key
-  "gemini-3.1-pro-preview",      // razonamiento avanzado
-  "gemini-3-flash-preview",      // multimodal, fuerte en razonamiento
-  "gemini-2.5-pro",              // alta capacidad, 1M tokens contexto
-  "gemini-2.5-flash",            // estable, buena relación calidad/latencia
-  "gemini-2.0-flash",            // respaldo rápido
+  "gemini-3.5-flash",         // más capaz disponible
+  "gemini-3.1-pro-preview",   // razonamiento avanzado
+  "gemini-3-flash-preview",   // rápido y capaz
+  "gemini-2.5-pro",           // 1M contexto, alta calidad
+  "gemini-2.5-flash",         // estable, buena relación calidad/latencia
+  "gemini-2.5-flash-lite",    // ligero, respaldo rápido
+  "gemini-2.0-flash",         // respaldo final
 ];
 
-const SYSTEM_PROMPT = "Eres un Ingeniero de Software Senior redactando un informe ejecutivo sobre tu propio trabajo. El informe está escrito en voz impersonal — siempre con verbos reflexivos: 'se desarrolló', 'se completó', 'se implementó', 'se identificó'. Nunca uses primera persona ni menciones nombres de personas en el texto. Reglas absolutas: (1) Voz impersonal siempre — nunca 'yo', 'nosotros', 'el ingeniero X' ni ningún nombre propio. (2) Nunca uses adjetivos vagos como 'intensa', 'ardua', 'exhaustiva', 'robusta', 'significativa' — reemplázalos con datos concretos o elimínalos. (3) Nunca uses 'crítico', 'errores', 'problemas', 'fallas', 'retrasos graves', 'no se cumplió', 'no se ejecutó', 'incumplimiento' — usa 'desafíos técnicos', 'puntos de atención', 'actividades programadas para fases siguientes' o 'en gestión con terceros'. (4) Nunca uses frases de relleno como 'cabe destacar', 'es importante mencionar', 'en este sentido'. (5) Nunca uses vocabulario ágil como 'épica', 'sprint', 'backlog', 'story' — usa 'módulo', 'componente', 'fase' o 'entregable'. (6) Las actividades no iniciadas NUNCA son incumplimientos — son actividades identificadas cuya ejecución depende de terceros, fases previas o aprobaciones institucionales, y forman parte del plan de maduración del proyecto bajo Mejora Continua. (7) Escribe en español formal institucional con enfoque siempre positivo y propositivo. (8) Fidelidad absoluta a los datos: cada afirmación, logro, indicador, riesgo o plan debe estar respaldado por información presente en los datos del proyecto — nunca inventes actividades, módulos, fechas, integraciones ni avances que no estén registrados. Si un campo no tiene respaldo, redáctalo en términos de lo que está en curso según los datos reales. (9) Responde SIEMPRE con JSON válido y sin texto adicional fuera del JSON.";
+const SYSTEM_PROMPT = `Eres parte del equipo de la Oficina de Tecnología e Informática de la Corte Suprema de Justicia. Redactas informes de gestión de proyectos para presentar el trabajo realizado por el equipo.
+
+LENGUAJE Y ESTILO:
+- Escribe en voz impersonal: "se completó", "se configuró", "se avanzó", "se identificó". Nunca en primera persona.
+- Usa palabras simples y directas. Si puedes decirlo con una palabra más sencilla, úsala.
+- Las oraciones deben ser cortas y fluir de una a otra sin saltos bruscos.
+- El texto debe sonar natural al leerlo en voz alta.
+- Usa el pasado para lo que ya se hizo, y el presente o futuro para lo que está en curso o viene.
+
+CÓMO INTERPRETAR LAS ACTIVIDADES:
+- Completadas: se ejecutaron y se deben presentar como logros concretos del periodo.
+- En proceso: están siendo trabajadas actualmente. Se presentan como avances en curso, no como retrasos.
+- No iniciadas: son los próximos pasos planificados. Se presentan como la continuación natural del trabajo, no como tareas pendientes o incumplimientos.
+
+PROHIBIDO INVENTAR:
+- No menciones fechas, módulos, funcionalidades, integraciones ni avances que no estén en los datos recibidos.
+- No generalices con frases como "se realizaron múltiples mejoras" si no hay actividades que lo respalden.
+- Si un campo no tiene datos suficientes, redáctalo en función de lo que sí está registrado.
+
+PALABRAS Y FRASES PROHIBIDAS:
+- Adjetivos vacíos: "robusto", "exhaustivo", "significativo", "arduo", "intenso", "dinámico", "óptimo". Cámbialos por datos concretos o elimínalos.
+- Frases de relleno: "cabe destacar", "es importante mencionar", "en este sentido", "a nivel de", "de cara al siguiente ciclo", "a lo largo del periodo".
+- Palabras negativas sobre el trabajo del equipo: "error", "falla", "incumplimiento", "retraso grave". Usa en cambio: "punto de atención", "actividad en gestión", "pendiente de coordinación".
+- Términos ágiles: "sprint", "backlog", "épica", "story". Usa: "tarea", "fase", "componente", "módulo".
+
+CUANDO SE MENCIONA UN TERCERO:
+- Mantén un tono tranquilo y neutral. No culpes ni señales.
+- Preséntalo como una coordinación en curso o una dependencia que se está gestionando.
+- Ejemplo correcto: "la actividad avanza en coordinación con el área responsable". Ejemplo incorrecto: "el tercero no ha entregado lo requerido".
+
+RESPONDE SIEMPRE con JSON válido, sin texto fuera del JSON.`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -189,148 +220,130 @@ function buildPrompt(project, quarterLabel, engineerCatalog) {
   const summary = buildProjectSummary(project, engineerCatalog);
   const teamNames = resolveEngineerNames(project.engineers, engineerCatalog);
   const responsableHint = teamNames.length
-    ? `Usa el nombre real del ingeniero responsable del proyecto. Los ingenieros del equipo son: ${teamNames.join(", ")}. Asigna el responsable de cada acción al ingeniero más apropiado según su rol en el proyecto.`
-    : `Usa el nombre del responsable técnico del proyecto si está disponible, o "Equipo del proyecto" si no hay ingenieros registrados.`;
+    ? `Asigna el responsable de cada acción a uno de los miembros del equipo: ${teamNames.join(", ")}.`
+    : `Usa "Equipo de tecnología" si no hay ingenieros registrados.`;
 
-  return `# ROL Y CONTEXTO
-Actúa como un Ingeniero de Software Senior y Gestor de Proyectos Tecnológicos Experto. Tu tarea es analizar el reporte de actividades que se te proporciona y transformarlo en un Informe de Gestión Trimestral formal, analítico y de alto nivel ejecutivo. Responde ÚNICAMENTE con JSON válido, sin texto adicional ni bloques de código markdown.
+  return `Analiza los datos del proyecto y genera un Informe de Gestión para el periodo indicado. Responde ÚNICAMENTE con JSON válido, sin texto fuera del JSON.
 
-# LINEAMIENTOS DE TONO Y REDACCIÓN
-- Tono: Profesional, técnico, objetivo y orientado a resultados. El informe lo redacta el propio ingeniero para presentar su trabajo — no es un reporte de un tercero sobre otro.
-- Voz: Impersonal con verbos reflexivos. Usa siempre construcciones como "se desarrolló", "se completó", "se identificó", "se implementó", "se validó". Nunca uses primera persona ("realicé", "implementé") ni menciones nombres de personas en el texto del informe.
-- Estilo: Directo y preciso. Sin clichés como "se avanzó a paso firme", "gracias al esfuerzo", "de manera exitosa". Usa terminología técnica precisa: "interoperabilidad", "deuda técnica", "bloqueos de gobernanza", "despliegue en la nube".
-- Enfoque siempre positivo y propositivo: el informe debe reflejar avance, control y gestión activa. Nunca redactes en términos de incumplimiento, falta de ejecución o actividades no realizadas.
-- Balance: Resalta el valor técnico entregado. Describe las actividades pendientes siempre como parte planificada del ciclo de vida, no como deudas ni fallos.
-- Idioma: Español formal institucional. Verbos en pasado para lo ejecutado, presente para el estado actual.
-- Naturalidad: La redacción debe fluir bien al leerla en voz alta. Si una oración suena forzada o artificial, reescríbela.
+PRINCIPIO CENTRAL — LEE ESTO PRIMERO:
+El informe debe ser analítico, no descriptivo. No se trata de repetir los datos en prosa — se trata de explicar qué significan, qué relación tienen entre sí y qué implican para el proyecto, usando únicamente la información disponible. Si los datos no respaldan una afirmación, no la escribas. Nunca inferir, nunca asumir, nunca completar con ideas propias.
 
-# RESTRICCIONES DE VOCABULARIO
-- Palabras prohibidas por negativas: "crítico", "errores", "problemas", "fallas", "retrasos graves", "no se cumplió", "no se ejecutó", "no se inició", "incumplimiento", "pendiente sin avance". Reemplaza con: "desafíos técnicos", "puntos de atención", "actividades programadas para fases siguientes", "en gestión con terceros", "sujeto a validación".
-- Adjetivos intensificadores prohibidos: "intensa", "intenso", "ardua", "arduo", "exhaustiva", "exhaustivo", "robusta", "robusto", "significativa", "significativo", "amplia", "profunda", "extensa", "externo". Estos adjetivos son vagos y suenan artificiales. Reemplaza con datos concretos o elimínalos.
-- Frases de relleno prohibidas: "cabe destacar que", "es importante mencionar", "en este sentido", "a lo largo del periodo", "de cara al siguiente ciclo", "en aras de". Escribe directo al punto.
-- Vocabulario ágil prohibido: "épica", "sprint", "backlog", "story", "kanban", "scrum", "velocity". Reemplaza con: "módulo", "componente", "fase", "entregable", "funcionalidad", "ciclo de desarrollo".
-- Siempre que se hable de actividades pendientes o en proceso, enlárcalas dentro del enfoque de Mejora Continua: son oportunidades de avance planificado, no incumplimientos.
+REGLAS ANTES DE ESCRIBIR:
+1. Usa solo la información presente en los datos. No inventes actividades, fechas, módulos, causas ni conclusiones que no estén en los datos.
+2. Analiza, no describas: en lugar de decir "se completaron X actividades", explica qué representa ese avance para el estado del proyecto según lo que dicen los datos.
+3. Cada idea debe ser distinta. Si una oración repite lo que ya dijo otra con otras palabras, elimínala.
+4. Si un campo del JSON no tiene datos suficientes para escribir algo con sustancia, escribe una sola oración con lo que sí hay. No rellenes con frases genéricas.
+5. Las actividades completadas son hechos: descríbelas y analiza qué aportan según los datos.
+6. Las actividades en proceso son trabajo actual: descríbelas y explica qué las sostiene o qué las condiciona, según los datos.
+7. Las actividades no iniciadas son pasos siguientes: preséntals como continuación planificada, explicando su relación con lo completado si los datos lo permiten.
+8. Si hay terceros en un bloqueo, descríbelo de forma neutral: "se avanza en coordinación con el área correspondiente". Sin culpar.
+9. Usa los números concretos de los datos: completadas, en proceso, no iniciadas, totales. Los números dan contexto al análisis.
+10. No calcules ni menciones porcentajes propios. Usa solo el porcentaje de avance que ya viene en los datos.
 
-# MARCO CONCEPTUAL — LEER ANTES DE ANALIZAR
-El universo de actividades registrado en el reporte representa la identificación COMPLETA del alcance del proyecto, no el plan de ejecución del trimestre. Esto significa:
-- Las actividades "no iniciadas" NO son incumplimientos. Son actividades identificadas que aún no tienen ventana de ejecución asignada, porque dependen de terceros, de fases previas, de aprobaciones institucionales o de capacidad de infraestructura.
-- Las actividades "en proceso" reflejan gestión activa en curso, no retrasos.
-- El avance real del proyecto se mide por las actividades completadas en relación con las planificadas para el periodo, no frente al universo total identificado.
-- Todo el proyecto opera bajo Mejora Continua: cada ciclo aporta valor incremental. Las actividades futuras son parte del plan de maduración, no tareas atrasadas.
-Nunca uses el total de actividades identificadas para concluir que el proyecto tiene bajo cumplimiento. No existe un número definido de actividades a ejecutar por trimestre — la priorización es dinámica y responde a dependencias, disponibilidad de infraestructura y coordinación con terceros. Por tanto, NUNCA calcules ni menciones un porcentaje de cumplimiento de actividades (ej. "se cumplió el 69% de las actividades priorizadas"). Esa métrica no existe en este modelo de gestión y su uso distorsiona la realidad del proyecto. En su lugar, describe cualitativamente el valor entregado: qué funcionalidades se completaron, qué fases avanzaron y qué componentes quedaron activos para el siguiente ciclo.
-
-# FIDELIDAD A LOS DATOS — REGLA ABSOLUTA
-Todo indicador, medición, conclusión, logro, riesgo o plan que aparezca en el informe DEBE estar respaldado por información presente en los datos del proyecto proporcionados. Está terminantemente prohibido:
-- Inventar actividades, logros o avances que no estén en los datos.
-- Asumir integraciones, validaciones o despliegues que no estén explícitamente mencionados.
-- Generalizar con frases como "se realizaron múltiples mejoras" sin que los datos las soporten.
-- Fabricar fechas, porcentajes, nombres de módulos o estados que no provengan del reporte.
-Si un campo de la estructura JSON no tiene respaldo en los datos, redáctalo en términos de lo que está en curso o planificado según lo que sí está registrado — nunca lo inventes. La credibilidad del informe depende de que cada afirmación sea trazable a los datos reales del proyecto.
-
-# LÓGICA DE ANÁLISIS SENIOR
-1. Universo de tareas: Interpreta el total de actividades como el mapa completo del proyecto, no como el plan del trimestre. Agrupa las actividades completadas por componente funcional o módulo. Nunca uses términos ágiles como "épica", "sprint" o "backlog" — usa "módulo", "componente", "fase", "entregable".
-2. Actividades en proceso y no iniciadas: Explícalas siempre por su causa técnica o de dependencia (ej. "en coordinación con terceros", "sujeta a ventana de despliegue", "pendiente de aprobación de infraestructura", "programada para la siguiente fase del ciclo"). Nunca las presentes como incumplimientos ni como indicadores negativos.
-3. Plan de mejoramiento: Estructura propuestas concretas bajo mejora continua: refinamiento de requerimientos con usuarios, validación en ambientes de prueba antes del despliegue productivo, y ajuste del alcance frente a la capacidad real del equipo e infraestructura disponible.
-
-# DATOS DEL PROYECTO
+DATOS DEL PROYECTO:
 ${summary}
 
-PERIODO DEL INFORME: ${quarterLabel}
+PERIODO: ${quarterLabel}
 
-# ESTRUCTURA JSON DE SALIDA — OBLIGATORIA Y EXACTA
+INSTRUCCIÓN IMPORTANTE PARA INDICADORES (sección2.indicadores):
+- Genera UNA entrada por cada indicador que aparezca en la sección INDICADORES de los datos.
+- Si los datos tienen 4 indicadores, el array debe tener exactamente 4 entradas.
+- Usa el nombre exacto de cada indicador tal como está en los datos. No los renombres ni los reemplaces.
+- El campo "resultado" debe tomar el porcentaje calculado que aparece en los datos para ese indicador, no uno inventado.
+- Si no hay indicadores registrados en los datos, genera una sola entrada con nombre "Avance general del proyecto" usando las métricas generales.
+
+Devuelve exactamente este JSON:
 
 {
   "seccion1": {
-    "intro": "Párrafo introductorio (3-4 oraciones) que contextualiza el proyecto, describe el objetivo del periodo y el enfoque del ciclo de vida actual. NO menciones porcentajes de cumplimiento de actividades — describe cualitativamente el valor entregado y el estado del proyecto.",
+    "intro": "3 a 4 oraciones. Presenta el proyecto y su estado en el periodo usando los datos disponibles. Incluye el total de actividades, cuántas se completaron y cuántas están en curso. No repitas en las siguientes secciones lo mismo que digas aquí.",
     "principales_resultados": [
-      "Resultado 1: funcionalidades o componentes completados en el periodo y su aporte al sistema",
-      "Resultado 2: módulo o componente funcional completado y su impacto técnico u operativo",
-      "Resultado 3: estado de integraciones o interoperabilidad logradas en el periodo",
-      "Resultado 4: estado de infraestructura, despliegue o validación de ambientes"
+      "Qué representa el volumen de actividades completadas para el avance del proyecto — analiza su peso relativo (ej: si son 18 de 24, eso es el 75% del alcance identificado) usando solo cifras de los datos",
+      "Qué aportan concretamente las actividades completadas al proyecto — según los nombres y descripciones reales de las actividades en los datos, no en términos genéricos",
+      "Qué implica el estado de las actividades en proceso: cuántas son, qué representan y qué las sostiene o condiciona según los datos",
+      "Qué lugar ocupan las actividades no iniciadas en el conjunto: cuántas son y cómo se relacionan con lo ya completado, según los datos"
     ],
     "logros_destacados": [
-      "Logro 1: hito técnico o funcional entregado con descripción de su valor para el negocio",
-      "Logro 2: integración, módulo o componente completado con impacto en el sistema",
-      "Logro 3: validación, prueba o aprobación técnica obtenida en el periodo"
+      "El logro más relevante del periodo según los datos — qué se completó y qué habilita o resuelve eso según la información disponible",
+      "Otro logro concreto extraído de las actividades completadas o de los logros de la semana registrados",
+      "Un tercer logro solo si los datos lo respaldan con información específica — si no, omite este elemento completamente"
     ],
     "dificultades": [
-      "Desafío técnico 1: descripción como desafío de arquitectura, infraestructura o dependencia externa con causa raíz (no como falla)",
-      "Desafío técnico 2: bloqueo de gobernanza, requerimiento en desarrollo o punto de atención identificado"
+      "Si hay bloqueantes o riesgos registrados en los datos: descríbelos, explica qué efecto tienen sobre el avance según los datos, con tono neutral. Si no hay ninguno registrado, escribe exactamente: 'Sin puntos de atención registrados para el periodo.'"
     ]
   },
   "seccion2": {
     "indicadores": [
       {
-        "nombre": "Nombre técnico del indicador (ej. Cobertura de desarrollo funcional)",
+        "nombre": "Nombre exacto del indicador según los datos — no lo cambies ni lo inventes",
         "meta": "100%",
-        "resultado": "XX%",
-        "cumplimiento": "Alto/Medio/Bajo",
-        "analisis": "Análisis técnico: causa del gap si existe, tendencia y relación con bloqueos o dependencias identificadas"
+        "resultado": "Porcentaje de avance del indicador según los datos — tómalo de los datos, no lo calcules",
+        "cumplimiento": "Alto si es ≥ 75%, Medio si es 50-74%, Bajo si es < 50%",
+        "analisis": "Explica qué significa ese resultado para el indicador: cuántas actividades lo componen, cuántas están completas y cuántas en proceso según los datos. Si hay una brecha respecto a la meta, analiza qué la origina según la información disponible — sin inventar causas."
       }
     ],
     "analisis_general": [
-      "Análisis del ritmo de desarrollo frente a la velocidad de despliegue o validación de usuarios — las actividades en proceso y las programadas para fases siguientes se explican por sus dependencias técnicas o institucionales, nunca como incumplimientos",
-      "Tendencia del avance cualitativo y factores técnicos que lo explican",
-      "Oportunidades de mejora identificadas en el ciclo y su impacto proyectado en el siguiente periodo"
+      "Analiza el conjunto de indicadores: qué patrón muestran, si hay consistencia entre ellos o si alguno está por encima o debajo del promedio general del proyecto — usando solo los datos",
+      "Qué relación hay entre las actividades en proceso y el avance de los indicadores — según los datos disponibles",
+      "Qué oportunidad de mejora concreta se identifica para el siguiente ciclo a partir de los datos actuales — solo si los datos la sugieren"
     ]
   },
   "seccion3": {
     "riesgos": [
       {
-        "nombre": "Nombre del riesgo extraído de comentarios o impedimentos reales del reporte",
-        "estado": "Activo",
-        "impacto": "Alto/Medio/Bajo",
-        "control": "Acción de mitigación técnica planificada o en ejecución (concreta, no genérica)"
+        "nombre": "Nombre del riesgo o bloqueante registrado en los datos. Si no hay ninguno, escribe: 'Sin riesgos registrados'",
+        "estado": "Activo o Gestionado — según los datos",
+        "impacto": "Alto, Medio o Bajo — según lo que indiquen los datos",
+        "control": "Qué se está haciendo para manejarlo según los datos. Si hay terceros involucrados, usa tono neutral: 'se avanza en coordinación con el área correspondiente'."
       }
     ],
     "analisis": [
-      "Evaluación del impacto de los puntos de atención sobre el cronograma y la ruta de entrega",
-      "Análisis de dependencias externas (gobernanza, infraestructura, terceros) como origen de los bloqueos",
-      "Recomendación técnica para reducir la exposición a los bloqueos identificados en el siguiente ciclo"
+      "Analiza qué efecto concreto tienen los puntos de atención sobre el avance actual del proyecto — solo si los datos lo respaldan. Si no hay riesgos, escribe: 'No se registran puntos de atención que afecten el avance en el periodo.'",
+      "Si hay dependencias externas registradas, analiza cómo condicionan el avance sin emitir juicios sobre terceros",
+      "Qué acción concreta podría reducir la exposición a estos puntos en el siguiente ciclo — solo si los datos sugieren algo específico"
     ]
   },
   "seccion4": {
-    "intro": "Declaración objetiva sobre desviaciones en el periodo. Si hay demoras en entornos o entregas, catalogarlas estrictamente como oportunidades de mejora del flujo de entrega, no como fallas.",
+    "intro": "Una oración que establezca el estado general de las actividades no completadas. Si no hay situaciones de mejora identificadas, indícalo directamente.",
     "situaciones": [
-      "Oportunidad de mejora 1: desviación identificada descrita con enfoque constructivo y su impacto en el cronograma",
-      "Oportunidad de mejora 2: brecha de proceso o dependencia no resuelta con causa raíz identificada"
+      "Si hay actividades en proceso o no iniciadas que representan un punto de atención, analiza por qué y qué implican para el proyecto según los datos. Si no hay ninguna, escribe exactamente: 'No se identificaron situaciones de mejora para el periodo.'"
     ],
     "acciones": [
-      "Acción correctiva 1: medida técnica inmediata implementada por el equipo con resultado esperado",
-      "Acción correctiva 2: ajuste de proceso o planificación para prevenir recurrencia en el siguiente ciclo"
+      "Acción concreta que se está tomando o se tomará, extraída directamente de los datos del reporte — plan de próxima semana, comentarios o actividades en proceso",
+      "Otra acción solo si los datos la respaldan con información específica"
     ],
     "analisis": [
-      "Identificación de la causa raíz de las desviaciones: si es estructural, coyuntural o por dependencia externa",
-      "Evaluación de reincidencia: si el patrón es sistémico o puntual y qué lo determina",
-      "Plan de seguimiento para validar la efectividad de las acciones correctivas implementadas"
+      "Analiza por qué se generó la situación si los datos lo explican — sin inferir causas no registradas",
+      "Si el patrón podría repetirse, qué ajuste concreto sugieren los datos",
+      "Cómo se dará seguimiento, basado en el plan registrado o en las actividades en proceso"
     ]
   },
   "seccion5": {
     "acciones": [
       {
-        "accion": "Acción de mejora continua específica y medible, orientada a resolver una causa raíz real del reporte",
+        "accion": "Acción de mejora específica y medible, derivada directamente de las actividades en proceso o no iniciadas registradas en los datos",
         "responsable": "${responsableHint}",
-        "fecha": "Mes Año",
-        "estado": "Iniciada/Pendiente/Ejecutada"
+        "fecha": "Mes y año del periodo o el siguiente — según los datos",
+        "estado": "Iniciada, Pendiente o Ejecutada — según corresponda con los datos"
       }
     ],
     "enfoque": [
-      "Eje 1: refinamiento continuo de requisitos mediante revisión sistemática con usuarios finales y minutas de sesiones operativas",
-      "Eje 2: aseguramiento de calidad (QA) mediante estabilización y validación previa en ambientes espejo antes del despliegue productivo",
-      "Eje 3: revisión periódica del alcance (scope) frente a la capacidad real de la infraestructura y las ventanas de despliegue disponibles"
+      "Primer eje para el siguiente ciclo: qué grupo de actividades no iniciadas o en proceso marca la dirección, según los datos",
+      "Segundo eje: coordinaciones o validaciones pendientes que los datos mencionan explícitamente",
+      "Tercer eje: solo si los datos identifican una oportunidad de mejora al proceso — si no, omite este elemento"
     ]
   },
   "seccion6": {
     "conclusiones": [
-      "Balance técnico cuantitativo del trimestre: avance real, bloques funcionales completados y valor entregado al sistema",
-      "Evaluación del estado de madurez: en qué fase se encuentra el proyecto (construcción, estabilización, integración o despliegue)"
+      "Balance del periodo con cifras: cuántas actividades se completaron, cuántas están en curso y cuántas quedan por iniciar. Analiza qué significa ese resultado para el estado general del proyecto según los datos.",
+      "Evaluación del estado actual del proyecto: en qué punto se encuentra y qué tan cerca está de sus objetivos según la información disponible — sin proyecciones inventadas"
     ],
     "prioritario": [
-      "Prioridad 1: acción de mayor impacto en la ruta de entrega para el siguiente ciclo",
-      "Prioridad 2: dependencia externa o interna que debe resolverse para desbloquear el avance",
-      "Prioridad 3: validación o entrega pendiente con mayor impacto en el usuario final"
+      "La prioridad más importante para el siguiente ciclo según las actividades en proceso o no iniciadas registradas",
+      "Segunda prioridad si los datos la respaldan con información específica",
+      "Tercera prioridad solo si los datos la mencionan — si no, omite este elemento"
     ],
-    "enfoque_siguiente": "Descripción del pivote estratégico bajo mejora continua: de qué fase sale el equipo y hacia qué fase entra en el siguiente ciclo (ej. de construcción a estabilización y despliegue controlado con validación de usuarios)."
+    "enfoque_siguiente": "Una o dos oraciones sobre la dirección del proyecto en el siguiente periodo, basadas en el plan de próxima semana o en las actividades no iniciadas registradas. Sin proyecciones ni afirmaciones que no estén en los datos."
   }
 }`;
 }
@@ -541,4 +554,124 @@ async function generateStatusSummaryWithAI(project) {
   return parseAIResponse(completion.choices[0]?.message?.content || "");
 }
 
-module.exports = { generateReportWithAI, generateStatusSummaryWithAI };
+// ── Status Global (multi-proyecto) ───────────────────────────────────────────
+
+function buildGlobalStatusPrompt(projects, weekLabel, mode) {
+  const withTasks = projects.filter(p => Number(p.manual_metrics?.total_tasks || 0) > 0);
+
+  const rows = withTasks.map(p => {
+    const m          = p.manual_metrics || {};
+    const total      = Number(m.total_tasks      || 0);
+    const done       = Number(m.completed_tasks  || 0);
+    const wip        = Number(m.in_progress_tasks || 0);
+    const notStarted = Math.max(0, total - done - wip);
+    const pct        = Math.round(projectProgress(total, done, wip));
+    const blockers   = (p.impediments || []).filter(i => i.category === "blocker").map(b => b.description).join("; ") || "Ninguno";
+    const statusMap  = { "on-track": "En curso", "at-risk": "En riesgo", blocked: "Bloqueado", completed: "Completado", "mejora-continua": "Mejora Continua" };
+    return `- ${p.project_name || "Sin nombre"} | Estado: ${statusMap[p.status] || p.status} | Total: ${total} | Completadas: ${done} | En proceso: ${wip} | No iniciadas: ${notStarted} | Avance: ${pct}% | Bloqueantes: ${blockers}`;
+  }).join("\n");
+
+  const totalActs  = withTasks.reduce((s, p) => s + Number(p.manual_metrics?.total_tasks      || 0), 0);
+  const totalDone  = withTasks.reduce((s, p) => s + Number(p.manual_metrics?.completed_tasks  || 0), 0);
+  const totalWip   = withTasks.reduce((s, p) => s + Number(p.manual_metrics?.in_progress_tasks || 0), 0);
+  const totalNS    = Math.max(0, totalActs - totalDone - totalWip);
+  const avgPct     = withTasks.length > 0
+    ? Math.round(withTasks.reduce((s, p) => {
+        const m = p.manual_metrics || {};
+        return s + projectProgress(Number(m.total_tasks || 0), Number(m.completed_tasks || 0), Number(m.in_progress_tasks || 0));
+      }, 0) / withTasks.length)
+    : 0;
+
+  const rangoLabel = avgPct >= 91 ? "AVANCE ÓPTIMO (≥ 91%)"
+    : avgPct >= 70 ? "AVANCE SATISFACTORIO (70–90%)"
+    : avgPct >= 50 ? "AVANCE EN SEGUIMIENTO (50–69%)"
+    : "AVANCE CRÍTICO (< 50%)";
+
+  const globales = `Período: ${weekLabel || "Sin definir"}
+Total proyectos analizados: ${withTasks.length}
+Total actividades: ${totalActs} | Completadas: ${totalDone} (${totalActs > 0 ? Math.round(totalDone / totalActs * 100) : 0}%) | En proceso: ${totalWip} | No iniciadas: ${totalNS}
+Avance promedio global: ${avgPct}% — ${rangoLabel}`;
+
+  if (mode === "executive") {
+    return `${globales}
+
+PROYECTOS:
+${rows}
+
+INSTRUCCIÓN: Redacta UN ÚNICO párrafo ejecutivo en español formal institucional, voz impersonal, estilo gerencial. El párrafo debe mencionar: el período, el número de proyectos y actividades, el avance global con su rango, los proyectos con mejor desempeño y el que presenta menor avance con su causa principal si tiene bloqueante. Máximo 5 oraciones. Sin bullets. Sin secciones. Sin texto fuera del JSON.
+
+Devuelve exactamente este JSON:
+{ "parrafo": "texto del párrafo ejecutivo" }`;
+  }
+
+  return `${globales}
+
+PROYECTOS:
+${rows}
+
+INSTRUCCIÓN: Analiza los datos anteriores y genera un informe de status global estructurado en español formal institucional, voz impersonal. Sin texto fuera del JSON.
+
+Devuelve exactamente este JSON:
+{
+  "resumen_ejecutivo": "párrafo narrativo (3-5 oraciones) con: período, proyectos, actividades totales, % avance global y rango",
+  "proyectos_destacados": [
+    { "nombre": "nombre del proyecto", "avance": 95, "nota": "descripción breve del logro o motivo del buen avance" }
+  ],
+  "alertas": [
+    { "nombre": "nombre del proyecto", "avance": 60, "motivo": "descripción del bloqueante o causa del bajo avance" }
+  ],
+  "proximos_pasos": ["acción concreta 1", "acción concreta 2", "acción concreta 3"]
+}
+
+Reglas:
+- proyectos_destacados: incluye los proyectos con avance ≥ 85% (máximo 4). Si ninguno alcanza ese umbral, incluye los 2 de mayor avance.
+- alertas: incluye proyectos con avance < 70% O con bloqueantes activos. Si ninguno cumple, devuelve array vacío [].
+- proximos_pasos: acciones concretas basadas en los bloqueantes, proyectos en riesgo o actividades no iniciadas.`;
+}
+
+async function generateGlobalStatusWithAI(projects, weekLabel, engineerCatalog = [], mode = "full") {
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user",   content: buildGlobalStatusPrompt(projects, weekLabel, mode) },
+  ];
+
+  const tag = `[AI-GLOBAL-${mode.toUpperCase()}]`;
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      console.log(`${tag} Usando Gemini...`);
+      const text   = await callGemini(messages, geminiKey);
+      const result = parseAIResponse(text);
+      console.log(`${tag} OK con Gemini`);
+      return result;
+    } catch (e) {
+      console.warn(`${tag} Gemini falló: ${e.message} — probando OpenRouter.`);
+    }
+  }
+
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    try {
+      console.log(`${tag} Usando OpenRouter...`);
+      const text   = await callOpenRouter(messages, openrouterKey);
+      const result = parseAIResponse(text);
+      console.log(`${tag} OK con OpenRouter`);
+      return result;
+    } catch (e) {
+      console.warn(`${tag} OpenRouter falló: ${e.message} — probando Groq.`);
+    }
+  }
+
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) throw new Error("Ningún proveedor de IA configurado");
+  console.log(`${tag} Usando Groq...`);
+  const groq = new Groq({ apiKey: groqKey });
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile", temperature: 0.3, messages,
+    response_format: { type: "json_object" },
+  });
+  return parseAIResponse(completion.choices[0]?.message?.content || "");
+}
+
+module.exports = { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI };

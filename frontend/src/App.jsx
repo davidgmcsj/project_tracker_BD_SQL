@@ -44,8 +44,13 @@ export default function App() {
   const [hasUnsavedChanges, setHasUnsaved]        = useState(false);
   const [reportProjectIdx,  setReportProjectIdx]  = useState(null);
   const [saveToast,         setSaveToast]         = useState("");
-  const [generatingInforme, setGeneratingInforme] = useState(false);
-  const [generatingName,    setGeneratingName]    = useState("");
+  const [generatingInforme,     setGeneratingInforme]     = useState(false);
+  const [generatingName,        setGeneratingName]        = useState("");
+  const [includedInAvg,         setIncludedInAvg]         = useState(null);
+  const [globalStatus,          setGlobalStatus]          = useState(null);
+  const [globalStatusMode,      setGlobalStatusMode]      = useState(null);
+  const [generatingGlobalStatus,setGeneratingGlobalStatus]= useState(false);
+  const [globalStatusOpen,      setGlobalStatusOpen]      = useState(false);
   const abortCtrlRef = useRef(null);
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
@@ -54,6 +59,7 @@ export default function App() {
       const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers, externalContacts: savedExternals } = await loadProjects();
       if (saved?.length) {
         setProjects(saved);
+        setIncludedInAvg(new Set(saved.map(p => p.id)));
         const firstDate = saved[0]?.report_date;
         if (firstDate) setReportDate(firstDate);
       }
@@ -167,10 +173,21 @@ export default function App() {
     setHasUnsaved(true);
   };
 
+  const toggleIncludeInAvg = (id) => {
+    setIncludedInAvg(prev => {
+      // Si null (aún no cargado), inicializar con todos los IDs actuales
+      const base = prev ?? new Set(projects.map(p => p.id));
+      const next = new Set(base);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
   const addProject = () => {
     const p    = { ...createDefaultProject(), report_date: reportDate };
     const next = [...projects, p];
     setProjects(next);
+    setIncludedInAvg(prev => new Set([...(prev ?? projects.map(q => q.id)), p.id]));
     setHasUnsaved(true);
     setEditingIdx(next.length - 1);
     setView("edit");
@@ -229,6 +246,31 @@ export default function App() {
   };
 
   const cancelInforme = () => { abortCtrlRef.current?.abort(); };
+
+  const handleGenerateGlobalStatus = async (mode) => {
+    const projectsToAnalyze = filteredForAvg.filter(p => Number(p.manual_metrics?.total_tasks || 0) > 0);
+    if (!projectsToAnalyze.length) return;
+    setGeneratingGlobalStatus(true);
+    setGlobalStatusMode(mode);
+    setGlobalStatusOpen(true);
+    setGlobalStatus(null);
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${API_BASE}/api/generate-global-status`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ projects: projectsToAnalyze, weekLabel, engineerCatalog: engineers, mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setGlobalStatus(data.analysis);
+    } catch (e) {
+      setSaveToast("Error generando status: " + e.message);
+      setTimeout(() => setSaveToast(""), 3000);
+    } finally {
+      setGeneratingGlobalStatus(false);
+    }
+  };
 
   // ── Catálogo de ingenieros ─────────────────────────────────────────────────
   // Cada cambio se guarda localmente de inmediato (respuesta instantánea en la UI)
@@ -351,7 +393,8 @@ export default function App() {
     await applyWeekReset(newFriday, newLabel);
   };
 
-  const stats = globalStats(projects);
+  const filteredForAvg = includedInAvg ? projects.filter(p => includedInAvg.has(p.id)) : projects;
+  const stats = globalStats(filteredForAvg);
 
   return (
     <div className="app">
@@ -451,6 +494,14 @@ export default function App() {
             generatingInforme={generatingInforme}
             generatingName={generatingName}
             onCancelInforme={cancelInforme}
+            includedInAvg={includedInAvg}
+            onToggleIncludeInAvg={toggleIncludeInAvg}
+            globalStatus={globalStatus}
+            globalStatusMode={globalStatusMode}
+            generatingGlobalStatus={generatingGlobalStatus}
+            globalStatusOpen={globalStatusOpen}
+            onToggleGlobalStatusOpen={() => setGlobalStatusOpen(o => !o)}
+            onGenerateGlobalStatus={handleGenerateGlobalStatus}
           />
         )}
         {view === "edit" && (

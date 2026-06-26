@@ -41,12 +41,12 @@ const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngi
   }
 })();
 
-const { generateReportWithAI, generateStatusSummaryWithAI } = (() => {
+const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = (() => {
   try {
     return require("./gemini-report.cjs");
   } catch (e) {
     console.error("[AI] Error cargando gemini-report.cjs:", e.message);
-    return { generateReportWithAI: null, generateStatusSummaryWithAI: null };
+    return { generateReportWithAI: null, generateStatusSummaryWithAI: null, generateGlobalStatusWithAI: null };
   }
 })();
 
@@ -411,6 +411,25 @@ app.post("/api/project-status", async (req, res) => {
   } catch (e) {
     console.error("[AI-STATUS] Error:", e.message);
     res.status(500).json({ error: "Error generando status", detail: e.message });
+  }
+});
+
+// ── API: Status Global con IA ─────────────────────────────────────────────────
+
+app.post("/api/generate-global-status", async (req, res) => {
+  if (!generateGlobalStatusWithAI) {
+    return res.status(503).json({ error: "Módulo de IA no disponible" });
+  }
+  try {
+    const { projects, weekLabel, engineerCatalog, mode } = req.body;
+    if (!projects?.length) return res.status(400).json({ error: "Sin proyectos para analizar" });
+    console.log(`[AI-GLOBAL] Generando status ${mode || "full"} para ${projects.length} proyectos...`);
+    const analysis = await generateGlobalStatusWithAI(projects, weekLabel || "", engineerCatalog || [], mode || "full");
+    console.log("[AI-GLOBAL] OK");
+    res.json({ ok: true, analysis });
+  } catch (e) {
+    console.error("[AI-GLOBAL] Error:", e.message);
+    res.status(500).json({ error: "Error generando status global", detail: e.message });
   }
 });
 

@@ -10,7 +10,7 @@ const STATUS = {
   "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
-export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme }) {
+export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus }) {
   const [toast, setToast] = useState("");
 
   const handleCopyAssign = (p, i, e) => {
@@ -31,7 +31,105 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
       {projects.length > 0 && (
         <div className="dashboard-metrics">
           <h3 className="dashboard-metrics__title">Resumen Global</h3>
-          <GlobalMetricsTable projects={projects} />
+          <GlobalMetricsTable projects={projects} includedIds={includedInAvg} />
+        </div>
+      )}
+
+      {projects.length > 0 && (
+        <div className="global-status-bar">
+          <button
+            className="btn btn--global-status btn--executive"
+            onClick={() => onGenerateGlobalStatus("executive")}
+            disabled={generatingGlobalStatus}
+            title="Párrafo ejecutivo resumido para compartir"
+          >
+            {generatingGlobalStatus && globalStatusMode === "executive" ? "⏳ Analizando…" : "✨ Status Ejecutivo"}
+          </button>
+          <button
+            className="btn btn--global-status btn--full"
+            onClick={() => onGenerateGlobalStatus("full")}
+            disabled={generatingGlobalStatus}
+            title="Análisis estructurado con secciones"
+          >
+            {generatingGlobalStatus && globalStatusMode === "full" ? "⏳ Analizando…" : "📊 Análisis Completo"}
+          </button>
+          {(globalStatus || generatingGlobalStatus) && (
+            <button className="btn btn--global-status-toggle" onClick={onToggleGlobalStatusOpen}>
+              {globalStatusOpen ? "▲ Ocultar" : "▼ Ver análisis"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {globalStatusOpen && (globalStatus || generatingGlobalStatus) && (
+        <div className="global-status-panel">
+          {generatingGlobalStatus && (
+            <p className="global-status-panel__loading">Generando análisis con IA…</p>
+          )}
+
+          {globalStatus && globalStatusMode === "executive" && (
+            <div className="global-status-panel__section">
+              <h4>Status Ejecutivo</h4>
+              <p>{globalStatus.parrafo}</p>
+            </div>
+          )}
+
+          {globalStatus && globalStatusMode === "full" && (
+            <>
+              {globalStatus.resumen_ejecutivo && (
+                <div className="global-status-panel__section">
+                  <h4>Resumen ejecutivo</h4>
+                  <p>{globalStatus.resumen_ejecutivo}</p>
+                </div>
+              )}
+              {globalStatus.proyectos_destacados?.length > 0 && (
+                <div className="global-status-panel__section">
+                  <h4>Proyectos destacados</h4>
+                  <ul>
+                    {globalStatus.proyectos_destacados.map((p, i) => (
+                      <li key={i}><strong>{p.nombre}</strong> — {p.avance}% — {p.nota}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {globalStatus.alertas?.length > 0 && (
+                <div className="global-status-panel__section global-status-panel__section--alert">
+                  <h4>Alertas</h4>
+                  <ul>
+                    {globalStatus.alertas.map((a, i) => (
+                      <li key={i}><strong>{a.nombre}</strong> — {a.avance}% — {a.motivo}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {globalStatus.proximos_pasos?.length > 0 && (
+                <div className="global-status-panel__section">
+                  <h4>Próximos pasos</h4>
+                  <ul>
+                    {globalStatus.proximos_pasos.map((paso, i) => <li key={i}>{paso}</li>)}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+
+          {globalStatus && (
+            <div className="global-status-panel__actions">
+              <button className="btn btn--card-export" onClick={() => {
+                const text = globalStatusMode === "executive"
+                  ? (globalStatus.parrafo || "")
+                  : [
+                      globalStatus.resumen_ejecutivo || "",
+                      (globalStatus.proyectos_destacados?.length ? "\nProyectos destacados:\n" + globalStatus.proyectos_destacados.map(p => `• ${p.nombre} (${p.avance}%): ${p.nota}`).join("\n") : ""),
+                      (globalStatus.alertas?.length ? "\nAlertas:\n" + globalStatus.alertas.map(a => `• ${a.nombre} (${a.avance}%): ${a.motivo}`).join("\n") : ""),
+                      (globalStatus.proximos_pasos?.length ? "\nPróximos pasos:\n" + globalStatus.proximos_pasos.map(p => `• ${p}`).join("\n") : ""),
+                    ].filter(Boolean).join("\n");
+                navigator.clipboard.writeText(text);
+              }}>
+                📋 Copiar análisis
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -51,6 +149,14 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
                 </h3>
                 <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
               </div>
+              <label className="project-card__avg-toggle" onClick={e => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={!includedInAvg || includedInAvg.has(p.id)}
+                  onChange={() => onToggleIncludeInAvg && onToggleIncludeInAvg(p.id)}
+                />
+                <span>Incluir en promedio</span>
+              </label>
               <div className="project-card__metrics" onClick={e => e.stopPropagation()}>
                 <ProjectMetricsTableCompact project={p} />
               </div>

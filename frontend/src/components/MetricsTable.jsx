@@ -47,15 +47,17 @@ function IndicatorRows({ indicators }) {
 
 // ── Tablas exportadas ─────────────────────────────────────────────────────────
 
-export function GlobalMetricsTable({ projects }) {
-  const totalAct    = projects.reduce((s, p) => s + Number(p.manual_metrics?.total_tasks     || 0), 0);
-  const totalDone   = projects.reduce((s, p) => s + Number(p.manual_metrics?.completed_tasks || 0), 0);
-  const totalPend   = projects.reduce((s, p) => {
+export function GlobalMetricsTable({ projects, includedIds }) {
+  const filtered    = includedIds ? projects.filter(p => includedIds.has(p.id)) : projects;
+  const excluded    = includedIds ? projects.length - filtered.length : 0;
+  const totalAct    = filtered.reduce((s, p) => s + Number(p.manual_metrics?.total_tasks     || 0), 0);
+  const totalDone   = filtered.reduce((s, p) => s + Number(p.manual_metrics?.completed_tasks || 0), 0);
+  const totalPend   = filtered.reduce((s, p) => {
     const m = p.manual_metrics || {};
     return s + Math.max(0, (m.total_tasks || 0) - (m.completed_tasks || 0) - (m.in_progress_tasks || 0));
   }, 0);
-  const avgPct      = Math.round(globalProgress(projects));
-  const withBlocker = projects.filter(p => (p.impediments || []).some(im => im.category === "blocker"));
+  const avgPct      = Math.round(globalProgress(filtered));
+  const withBlocker = filtered.filter(p => (p.impediments || []).some(im => im.category === "blocker"));
 
   return (
     <div className="metrics-container">
@@ -79,7 +81,10 @@ export function GlobalMetricsTable({ projects }) {
           </tr>
         </tbody>
       </table>
-      <p className="metrics-note">* El porcentaje de avance se calcula según las tareas identificadas en cada proyecto.</p>
+      <p className="metrics-note">
+        * El porcentaje de avance se calcula según las tareas identificadas en cada proyecto.
+        {excluded > 0 && ` ${excluded} proyecto${excluded !== 1 ? "s" : ""} excluido${excluded !== 1 ? "s" : ""} del promedio.`}
+      </p>
     </div>
   );
 }
