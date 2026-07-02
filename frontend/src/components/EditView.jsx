@@ -1,11 +1,11 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   projectProgress,
-  createDefaultEngineer, createDefaultIndicator,
-  createDefaultImpediment, createDefaultMilestone, createDefaultComment,
+  createDefaultEngineer, createDefaultIndicator, createDefaultImpediment,
   createActivity, buildActivityIndex, activityText, activityLabel,
 } from "../utils/formulas";
 import { useClickOutside } from "../hooks/useClickOutside";
+import ActivityDetailModal from "./ActivityDetailModal";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -202,8 +202,9 @@ function ActivitiesList({
   const [draftResponsible, setDraftResponsible] = useState("");
   const [draftStatus, setDraftStatus] = useState("not_started");
 
-  const [editIdx, setEditIdx] = useState(null);
-  const [editVal, setEditVal] = useState("");
+  const [editIdx,      setEditIdx]      = useState(null);
+  const [editVal,      setEditVal]      = useState("");
+  const [confirmDelId, setConfirmDelId] = useState(null); // ID de actividad pendiente de confirmar borrado
 
   const acts = safeActs(activities);
 
@@ -228,7 +229,13 @@ function ActivitiesList({
     }
     setEditIdx(null); setEditVal("");
   };
-  const removeAct = (i) => onChange(acts.filter((_, idx) => idx !== i));
+  // Pide confirmación antes de borrar — guarda el ID (no el índice) para que
+  // no cambie si el usuario desplaza la lista mientras el diálogo está abierto.
+  const requestRemoveAct = (i) => setConfirmDelId(acts[i].id);
+  const confirmRemoveAct = () => {
+    onChange(acts.filter(a => a.id !== confirmDelId));
+    setConfirmDelId(null);
+  };
 
   const getAssignedEngId = (act) => {
     const firstAssigned = (act.assigned_engineers || [])[0];
@@ -379,8 +386,8 @@ function ActivitiesList({
                       <option value="completed">Completada</option>
                     </select>
 
-                    <button type="button" className="act-list__edit"   onClick={() => startEdit(i)} title="Editar texto">✎</button>
-                    <button type="button" className="act-list__remove" onClick={() => removeAct(i)} title="Eliminar">✕</button>
+                    <button type="button" className="act-list__edit"   onClick={() => startEdit(i)}         title="Editar texto">✎</button>
+                    <button type="button" className="act-list__remove" onClick={() => requestRemoveAct(i)} title="Eliminar">✕</button>
                   </>
                 )}
               </li>
@@ -390,6 +397,25 @@ function ActivitiesList({
       ) : (
         !adding && <p className="act-list__empty">Sin actividades aún. Agrega la primera.</p>
       )}
+
+      {/* Diálogo de confirmación de eliminación de actividad */}
+      {confirmDelId && (() => {
+        const actToDelete = acts.find(a => a.id === confirmDelId);
+        return (
+          <div className="act-del-overlay">
+            <div className="act-del-dialog">
+              <div className="act-del-dialog__icon">🗑️</div>
+              <h4 className="act-del-dialog__title">¿Eliminar actividad?</h4>
+              <p className="act-del-dialog__name">"{actToDelete?.text || confirmDelId}"</p>
+              <p className="act-del-dialog__warn">Esta acción no se puede deshacer.</p>
+              <div className="act-del-dialog__actions">
+                <button className="btn btn--secondary" onClick={() => setConfirmDelId(null)}>Cancelar</button>
+                <button className="btn btn--danger-solid" onClick={confirmRemoveAct}>Eliminar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -766,169 +792,6 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, e
   );
 }
 
-// ── Combobox de actividad con búsqueda integrada ──────────────────────────────
-
-function ActivitySelect({ value, activities, onChange }) {
-  const [open,  setOpen]  = useState(false);
-  const [query, setQuery] = useState("");
-  const rootRef  = useRef(null);
-  const inputRef = useRef(null);
-
-  const acts = safeActs(activities);
-  const opts = acts.map((act, ai) => ({ id: act.id, label: `${ai + 1}. ${act.text}` }));
-  const visible = opts.filter(o => matchesSearch(o.label, query));
-  const selectedLabel = opts.find(o => o.id === value)?.label || "";
-
-  const select = (opt) => {
-    onChange(opt.id);
-    setOpen(false);
-    setQuery("");
-  };
-
-  const clear = (e) => {
-    e.stopPropagation();
-    onChange("");
-    setOpen(false);
-    setQuery("");
-  };
-
-  useClickOutside(rootRef, () => setOpen(false));
-
-  const handleOpen = () => {
-    setOpen(true);
-    setQuery("");
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
-  return (
-    <div className="act-entry-select" ref={rootRef}>
-      {/* Trigger — muestra el valor seleccionado */}
-      <div
-        className={`act-entry-select__trigger ${open ? "act-entry-select__trigger--open" : ""}`}
-        onClick={handleOpen}
-        tabIndex={0}
-        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(); } }}
-      >
-        <span className={`act-entry-select__trigger-text ${!value ? "act-entry-select__trigger-text--placeholder" : ""}`}>
-          {selectedLabel || "— Sin actividad —"}
-        </span>
-        <div className="act-entry-select__trigger-icons">
-          {value && (
-            <button type="button" className="act-entry-select__x" onClick={clear} title="Quitar selección">✕</button>
-          )}
-          <span className="act-entry-select__arrow">{open ? "▲" : "▼"}</span>
-        </div>
-      </div>
-
-      {/* Dropdown */}
-      {open && (
-        <div className="act-entry-select__dropdown">
-          <div className="act-entry-select__search">
-            <input
-              ref={inputRef}
-              className="act-entry-select__search-input"
-              type="text" placeholder="Buscar actividad…"
-              value={query} onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Escape") setOpen(false);
-                if (e.key === "Enter" && visible.length === 1) select(visible[0]);
-              }}
-            />
-            {query && (
-              <button type="button" className="act-entry-select__search-clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
-            )}
-          </div>
-          <ul className="act-entry-select__list">
-            <li
-              className={`act-entry-select__opt act-entry-select__opt--none ${!value ? "act-entry-select__opt--active" : ""}`}
-              onMouseDown={() => select({ id: "" })}
-            >
-              — Sin actividad —
-            </li>
-            {visible.length === 0 ? (
-              <li className="act-entry-select__opt act-entry-select__opt--empty">Sin coincidencias</li>
-            ) : (
-              visible.map((opt) => (
-                <li
-                  key={opt.id}
-                  className={`act-entry-select__opt ${value === opt.id ? "act-entry-select__opt--active" : ""}`}
-                  onMouseDown={() => select(opt)}
-                >
-                  {opt.label}
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Fechas clave estructuradas ────────────────────────────────────────────────
-
-function ActivityEntryList({ items, activities, textField, placeholder, onChange }) {
-  const update = (i, field, val) => onChange(items.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
-  const remove = (i)             => onChange(items.filter((_, idx) => idx !== i));
-  const actIndex = buildActivityIndex(safeActs(activities));
-
-  const byActivity = {};
-  items.forEach((item, i) => {
-    const key = item.activity || "__sin__";
-    if (!byActivity[key]) byActivity[key] = [];
-    byActivity[key].push({ ...item, _idx: i });
-  });
-
-  return (
-    <>
-      {Object.entries(byActivity).map(([actKey, group]) => (
-        <div key={actKey} className="milestone-group">
-          {actKey !== "__sin__" && (
-            <div className="milestone-group__header">
-              <span className="milestone-group__act">{activityLabel(actIndex, actKey)}</span>
-            </div>
-          )}
-          {group.map((item) => (
-            <div key={item._idx} className="milestone-row">
-              <div className="milestone-row__fields">
-                <div className="field" style={{ flex: 2, minWidth: 0 }}>
-                  <label className="field__label" style={{ fontSize: "11px" }}>Actividad</label>
-                  <ActivitySelect
-                    value={item.activity || ""}
-                    activities={activities}
-                    onChange={val => update(item._idx, "activity", val)}
-                  />
-                </div>
-                <div className="field" style={{ flex: "0 0 160px" }}>
-                  <label className="field__label" style={{ fontSize: "11px" }}>Fecha</label>
-                  <input
-                    type="date" className="field__input"
-                    value={item.date || ""}
-                    onChange={e => update(item._idx, "date", e.target.value)}
-                  />
-                </div>
-                <div className="field" style={{ flex: 3, minWidth: 0 }}>
-                  <label className="field__label" style={{ fontSize: "11px" }}>{textField === "note" ? "Descripción / Hito" : "Comentario"}</label>
-                  <input
-                    type="text" className="field__input"
-                    value={item[textField] || ""}
-                    placeholder={placeholder}
-                    onChange={e => update(item._idx, textField, e.target.value)}
-                  />
-                </div>
-                <button
-                  type="button" className="milestone-row__remove btn btn--danger"
-                  onClick={() => remove(item._idx)} title="Eliminar"
-                >✕</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
-    </>
-  );
-}
-
 // ── Clasificador de estado de actividades ─────────────────────────────────────
 
 const TASK_STATUS_COLS = [
@@ -970,10 +833,11 @@ function StatusDateBadge({ label, value, onEdit }) {
   );
 }
 
-function TaskStatusSelector({ taskStatus, activities, onChange }) {
+function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) {
   const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
   const acts = safeActs(activities);
-  const actIndex = buildActivityIndex(acts);
+  const actIndex  = buildActivityIndex(acts);
+  const actByIdMap = new Map(acts.map(a => [a.id, a]));
 
   // Ids válidos: solo los que existen en activities_identified
   const validIds     = new Set(acts.map(act => act.id));
@@ -1124,7 +988,20 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                 <ul className="task-status-col__list">
                   {items.map((item, i) => {
                     const otherCols = TASK_STATUS_COLS.filter(c => c.key !== col.key);
-                    const hist = ts.status_history?.[item] || {};
+                    const hist    = ts.status_history?.[item] || {};
+                    const act     = actByIdMap.get(item);
+                    const prio    = act?.priority || "media";
+                    const PRIO_STYLE = {
+                      alta:  { bg: "#fee2e2", color: "#991b1b", label: "Alta"  },
+                      media: { bg: "#fef3c7", color: "#92400e", label: "Media" },
+                      baja:  { bg: "#dbeafe", color: "#1e40af", label: "Baja"  },
+                    };
+                    const prioStyle = PRIO_STYLE[prio] || PRIO_STYLE.media;
+                    const fmtKanbanDate = (d) => {
+                      if (!d) return null;
+                      const [y, m, day] = d.split("-");
+                      return `${day}/${m}/${y}`;
+                    };
                     return (
                       <li
                         key={item} className="task-status-col__item"
@@ -1138,6 +1015,14 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                           <span className="task-status-col__item__grip">⠿</span>
                           <span className="task-status-col__item-text">{activityLabel(actIndex, item)}</span>
                           <div className="task-status-col__item-actions">
+                            {onOpenDetail && (
+                              <button
+                                type="button"
+                                className="task-status-col__detail-btn"
+                                title="Ver detalles"
+                                onClick={() => onOpenDetail(item)}
+                              >⊞</button>
+                            )}
                             {otherCols.map(other => (
                               <button
                                 key={other.key} type="button"
@@ -1155,24 +1040,19 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
                           </div>
                         </div>
                         <div className="task-status-col__dates">
-                          <StatusDateBadge
-                            label="Inscrita"
-                            value={hist.added || null}
-                            onEdit={v => editHistoryDate(item, "added", v)}
-                          />
-                          {col.key === "in_progress" && (
-                            <StatusDateBadge
-                              label="En proceso"
-                              value={hist.in_progress || null}
-                              onEdit={v => editHistoryDate(item, "in_progress", v)}
-                            />
+                          <span
+                            className="task-status-col__prio-badge"
+                            style={{ background: prioStyle.bg, color: prioStyle.color }}
+                          >{prioStyle.label}</span>
+                          {act?.start_date && (
+                            <span className="task-status-col__date-chip">
+                              Inicio: {fmtKanbanDate(act.start_date)}
+                            </span>
                           )}
-                          {col.key === "completed" && (
-                            <StatusDateBadge
-                              label="Completada"
-                              value={hist.completed || null}
-                              onEdit={v => editHistoryDate(item, "completed", v)}
-                            />
+                          {act?.due_date && (
+                            <span className="task-status-col__date-chip task-status-col__date-chip--end">
+                              Fin: {fmtKanbanDate(act.due_date)}
+                            </span>
                           )}
                         </div>
                       </li>
@@ -1184,42 +1064,6 @@ function TaskStatusSelector({ taskStatus, activities, onChange }) {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function MilestoneList({ milestones, activities, onChange }) {
-  const items = Array.isArray(milestones) ? milestones : [];
-  return (
-    <div className="field field--optional">
-      <div className="field__header">
-        <label className="field__label">📅 Fechas Clave</label>
-        <button type="button" className="btn-add-item" onClick={() => onChange([...items, createDefaultMilestone()])}>
-          + Agregar fecha
-        </button>
-      </div>
-      {items.length === 0
-        ? <p className="act-list__empty">Sin fechas clave. Agrega la primera.</p>
-        : <ActivityEntryList items={items} activities={activities} textField="note" placeholder="Ej: Entrega de back, Deploy a producción…" onChange={onChange} />
-      }
-    </div>
-  );
-}
-
-function CommentList({ comments, activities, onChange }) {
-  const items = Array.isArray(comments) ? comments : [];
-  return (
-    <div className="field field--optional">
-      <div className="field__header">
-        <label className="field__label">💬 Comentarios</label>
-        <button type="button" className="btn-add-item" onClick={() => onChange([...items, createDefaultComment()])}>
-          + Agregar comentario
-        </button>
-      </div>
-      {items.length === 0
-        ? <p className="act-list__empty">Sin comentarios. Agrega el primero.</p>
-        : <ActivityEntryList items={items} activities={activities} textField="text" placeholder="Escribe el comentario…" onChange={onChange} />
-      }
     </div>
   );
 }
@@ -1483,6 +1327,81 @@ function ActivityAssignmentRow({ activity, position, engineerCatalog, externalCo
   );
 }
 
+// ── Campo "Estado actual del proyecto" con modo lectura / edición ─────────────
+// En modo lectura muestra una tarjeta con el texto formateado y un botón "Editar".
+// En modo edición muestra el textarea y botones "Guardar" / "Cancelar".
+// Nunca muestra los dos al mismo tiempo.
+function StatusNotesField({ value, onChange }) {
+  const [editing,  setEditing]  = useState(false);
+  const [draft,    setDraft]    = useState(value);
+
+  // Si el valor externo cambia (ej: carga de proyecto) sincronizamos el draft
+  // solo cuando NO estamos editando, para no pisar lo que el usuario está escribiendo.
+  const prevValue = useRef(value);
+  useEffect(() => {
+    if (!editing && value !== prevValue.current) {
+      setDraft(value);
+      prevValue.current = value;
+    }
+  }, [value, editing]);
+
+  const handleEdit = () => { setDraft(value); setEditing(true); };
+
+  const handleSave = () => {
+    onChange(draft);
+    setEditing(false);
+    prevValue.current = draft;
+  };
+
+  const handleCancel = () => {
+    setDraft(value);
+    setEditing(false);
+  };
+
+  return (
+    <div className="field field--optional">
+      <div className="field__header" style={{ marginBottom: 8 }}>
+        <label className="field__label">📋 Estado actual del proyecto</label>
+        {!editing && (
+          <button type="button" className="sn-edit-btn" onClick={handleEdit}>
+            {value ? "✎ Editar" : "+ Agregar"}
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        // ── Modo edición ──────────────────────────────────────────────────────
+        <div className="sn-edit-wrap">
+          <textarea
+            className="field__textarea status-notes__textarea"
+            rows={6}
+            autoFocus
+            placeholder="Redacta aquí el estado actual del proyecto: avances, decisiones tomadas, bloqueos, contexto importante..."
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+          />
+          <div className="sn-edit-actions">
+            <button type="button" className="btn btn--secondary" onClick={handleCancel}>Cancelar</button>
+            <button type="button" className="btn btn--primary"   onClick={handleSave}>Guardar</button>
+          </div>
+        </div>
+      ) : value ? (
+        // ── Modo lectura: tarjeta con el texto ───────────────────────────────
+        <div className="sn-card" onClick={handleEdit} title="Clic para editar">
+          {value.split("\n").map((line, i) =>
+            line.trim() ? <p key={i} className="sn-card__line">{line}</p> : <br key={i} />
+          )}
+        </div>
+      ) : (
+        // ── Sin contenido aún ────────────────────────────────────────────────
+        <p className="sn-empty" onClick={handleEdit}>
+          Sin estado registrado. Haz clic aquí o en "+ Agregar" para redactar.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, externalContacts, onActivitiesChange, onCreateExternal }) {
   const [query,         setQuery]         = useState("");
   const [filterEngId,   setFilterEngId]   = useState("");  // "" = todos
@@ -1699,13 +1618,14 @@ function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, ex
 
 export default function EditView({
   projects, editingIdx, hasUnsavedChanges,
-  onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges,
+  onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges, onSaveProjectsDirect,
   onReorderProjects, onAddProject, onRemoveProject, onViewReport, onExportReport,
   engineerCatalog, onCreateEngineer,
   externalContacts, onAddExternalContact, onToggleExternalActive,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
+  const [modalActId,      setModalActId]      = useState(null);
   const dragSrcIdx = useRef(null);
 
   const handleDragStart = (e, i) => { dragSrcIdx.current = i; e.dataTransfer.effectAllowed = "move"; };
@@ -1789,20 +1709,12 @@ export default function EditView({
         completed_dates: pruneObjKeys(ts.completed_dates),
         status_history:  pruneObjKeys(ts.status_history),
       },
-      manual_metrics:        buildAutoMetrics(newActs, newTs),
-      weekly_achievements:   pruneArr(p.weekly_achievements),
-      next_week_plan:        pruneArr(p.next_week_plan),
+      manual_metrics:      buildAutoMetrics(newActs, newTs),
+      weekly_achievements: pruneArr(p.weekly_achievements),
+      next_week_plan:      pruneArr(p.next_week_plan),
       engineers: (p.engineers || []).map(eng => ({
         ...eng,
         weekly_detail: pruneArr(eng.weekly_detail),
-      })),
-      milestones: (p.milestones || []).map(ms => ({
-        ...ms,
-        activity: validIds.has(ms.activity) ? ms.activity : "",
-      })),
-      comments: (p.comments || []).map(cm => ({
-        ...cm,
-        activity: validIds.has(cm.activity) ? cm.activity : "",
       })),
     });
   };
@@ -1966,6 +1878,37 @@ export default function EditView({
       task_status: updatedTs,
       manual_metrics: buildAutoMetrics(newActs, updatedTs),
     });
+  };
+
+  const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
+
+  const handleActivityModalSave = (updatedAct) => {
+    const newActs = activities.map(a => a.id === updatedAct.id ? updatedAct : a);
+    const updatedProject = { ...p, activities_identified: newActs };
+    const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
+    onUpdateProjectFull(editingIdx, updatedProject);
+    if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
+  };
+
+  // Elimina una actividad desde el modal de detalle: la quita de la lista,
+  // la saca de todos los depósitos del task_status y guarda inmediatamente.
+  const handleActivityModalDelete = (actId) => {
+    const newActs = activities.filter(a => a.id !== actId);
+    const ts = p.task_status || {};
+    const updatedTs = {
+      ...ts,
+      completed:      (ts.completed   || []).filter(id => id !== actId),
+      in_progress:    (ts.in_progress || []).filter(id => id !== actId),
+      not_started:    (ts.not_started || []).filter(id => id !== actId),
+      status_history: Object.fromEntries(
+        Object.entries(ts.status_history || {}).filter(([id]) => id !== actId)
+      ),
+    };
+    const updatedProject  = { ...p, activities_identified: newActs, task_status: updatedTs, manual_metrics: buildAutoMetrics(newActs, updatedTs) };
+    const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
+    onUpdateProjectFull(editingIdx, updatedProject);
+    if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
+    setModalActId(null);
   };
 
   return (
@@ -2139,6 +2082,7 @@ export default function EditView({
               <TaskStatusSelector
                 taskStatus={p.task_status}
                 activities={activities}
+                onOpenDetail={setModalActId}
                 onChange={val => onUpdateProjectFull(editingIdx, {
                   ...p,
                   task_status:    val,
@@ -2235,25 +2179,10 @@ export default function EditView({
           </div>
 
           {/* ══ 9. Estado actual del proyecto ══ */}
-          <div className="field field--optional">
-            <div className="field__header">
-              <label className="field__label">📋 Estado actual del proyecto</label>
-            </div>
-            <textarea
-              className="field__textarea status-notes__textarea"
-              rows={6}
-              placeholder="Redacta aquí el estado actual del proyecto: avances, decisiones tomadas, bloqueos, contexto importante, notas para la próxima revisión..."
-              value={p.status_notes || ""}
-              onChange={e => onUpdateProject(editingIdx, "status_notes", e.target.value)}
-            />
-            {p.status_notes && (
-              <div className="status-notes__preview">
-                {p.status_notes.split("\n").map((line, i) =>
-                  line.trim() ? <p key={i} className="status-notes__line">{line}</p> : <br key={i} />
-                )}
-              </div>
-            )}
-          </div>
+          <StatusNotesField
+            value={p.status_notes || ""}
+            onChange={val => onUpdateProject(editingIdx, "status_notes", val)}
+          />
 
           {/* ══ 10. Cierre semanal ══ */}
           <div className="field field--optional">
@@ -2298,20 +2227,6 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 9. Fechas clave ══ */}
-          <MilestoneList
-            milestones={p.milestones}
-            activities={activities}
-            onChange={val => onUpdateProject(editingIdx, "milestones", val)}
-          />
-
-          {/* ══ 11. Comentarios ══ */}
-          <CommentList
-            comments={p.comments}
-            activities={activities}
-            onChange={val => onUpdateProject(editingIdx, "comments", val)}
-          />
-
           <div className="edit-panel__footer">
             <button className="btn btn--accent"  onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>
             <button className="btn btn--export"  onClick={() => onExportReport(editingIdx)}>📋 Copiar reporte</button>
@@ -2332,6 +2247,19 @@ export default function EditView({
             ? "Selecciona un proyecto para editarlo"
             : 'Haz clic en "+ Nuevo" para agregar tu primer proyecto'}
         </div>
+      )}
+
+      {modalActivity && p && (
+        <ActivityDetailModal
+          activity={modalActivity}
+          projectName={p.project_name || "Proyecto"}
+          taskStatus={p.task_status}
+          engineerCatalog={engineerCatalog}
+          externalContacts={externalContacts}
+          onSave={handleActivityModalSave}
+          onDelete={handleActivityModalDelete}
+          onClose={() => setModalActId(null)}
+        />
       )}
     </div>
   );

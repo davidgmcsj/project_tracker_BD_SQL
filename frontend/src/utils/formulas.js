@@ -122,7 +122,19 @@ export function genActivityId() {
 }
 
 export function createActivity(text = "") {
-  return { id: genActivityId(), text, assigned_engineers: [], assigned_date: null };
+  return {
+    id: genActivityId(),
+    text,
+    assigned_engineers: [],
+    assigned_date: null,
+    priority: "media",
+    start_date: "",
+    due_date: "",
+    description: "",
+    checklist: [],
+    notes: [],
+    key_dates: [],
+  };
 }
 
 // Construye un índice id → { text, position } a partir de activities_identified.
@@ -148,6 +160,16 @@ export function activityLabel(index, id) {
 
 export const createDefaultMilestone  = () => ({ activity: "", date: "", note: "" });
 export const createDefaultComment    = () => ({ activity: "", date: "", text: "" });
+
+export function genChecklistItemId() {
+  return "chk_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+export const createChecklistItem = (text = "") => ({ id: genChecklistItemId(), text, done: false });
+
+export function genKeyDateId() {
+  return "kd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+export const createKeyDate = (date = "", label = "") => ({ id: genKeyDateId(), date, label });
 export const createDefaultEngineer   = () => ({
   engineer_id:   "",
   assigned:      0,

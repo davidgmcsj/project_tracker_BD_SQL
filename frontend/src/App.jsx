@@ -3,6 +3,7 @@ import Dashboard     from "./components/Dashboard";
 import EditView      from "./components/EditView";
 import ReportView    from "./components/ReportView";
 import EngineersView from "./components/EngineersView";
+import QuartersView  from "./components/QuartersView";
 import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
@@ -12,7 +13,7 @@ import {
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
   syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
-  syncExternalContactToSQL,
+  syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer,
 } from "./utils/storage";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import "./App.css";
@@ -75,9 +76,9 @@ export default function App() {
   // Patrón dual-write: localStorage (síncrono, fuente de verdad del cliente) +
   // servidor/SQL (async, fire-and-forget). Si el servidor falla, el dato no se
   // pierde — vive en localStorage hasta el siguiente save exitoso.
-  const persist = useCallback(async (data, engs) => {
+  const persist = useCallback(async (data, engs, changedProjectId) => {
     setProjects(data);
-    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers, externalContacts);
+    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers, externalContacts, changedProjectId);
     setHasUnsaved(false);
   }, [weekLabel, engineers, externalContacts]);
 
@@ -107,6 +108,54 @@ export default function App() {
     setWeekLabel(newLabel);
     storeWeekLabel(newLabel);
     await persist(next);
+  };
+
+  // ── Reinicio de trimestre ──────────────────────────────────────────────────
+  //
+  // Calcula el label y fecha de inicio del trimestre actual basándose en la
+  // fecha de reporte activa. El trimestre es el que SE CIERRA, no el nuevo.
+  // Ejemplo: si hoy es julio 2026, el trimestre que se cierra es Q2 2026 (abr-jun).
+  const getCurrentQuarterInfo = () => {
+    const date  = new Date(reportDate || getToday());
+    const month = date.getMonth() + 1; // 1-12
+    const year  = date.getFullYear();
+    const q     = Math.ceil(month / 3); // 1, 2, 3 o 4
+    const starts = [null, `${year}-01-01`, `${year}-04-01`, `${year}-07-01`, `${year}-10-01`];
+    return {
+      label:      `Q${q} ${year}`,
+      startDate:  starts[q],
+      nextLabel:  `Q${q === 4 ? 1 : q + 1} ${q === 4 ? year + 1 : year}`,
+    };
+  };
+
+  // Ejecuta el reset trimestral: archiva el estado actual y limpia el JSON.
+  // Esta función se llama SOLO después de que el usuario confirmó dos veces en el modal.
+  // Devuelve el resultado del backend para que el modal muestre el resumen.
+  // Lanza error si algo falla — el modal lo captura y muestra al usuario.
+  const applyQuarterReset = async () => {
+    const { label, startDate } = getCurrentQuarterInfo();
+
+    const result = await executeQuarterReset({
+      projects,
+      engineers,
+      externalContacts,
+      weekLabel,
+      quarterLabel: label,
+      quarterStart: startDate,
+    });
+
+    if (!result.ok) throw new Error(result.error || "Error desconocido en el reset");
+
+    // El backend ya sobreescribió data.json — recargar estado limpio desde el servidor
+    const freshData = await reloadProjectsFromServer();
+    setProjects(freshData.projects        || []);
+    setEngineers(freshData.engineers      || []);
+    setExternalContacts(freshData.externalContacts || []);
+    setHasUnsaved(false);
+    setEditingIdx(null);
+    setView("dashboard");
+
+    return result; // { activitiesArchived, activitiesTransferred, totalProyectos, quarterLabel }
   };
 
   // ── Cambio de fecha del reporte ────────────────────────────────────────────
@@ -423,13 +472,17 @@ export default function App() {
         </div>
 
         <div className="header__actions">
-          {["dashboard", "edit", "report", "engineers"].map(v => (
+          {["dashboard", "edit", "report", "engineers", "quarters"].map(v => (
             <button
               key={v}
               className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
               onClick={() => navigateTo(v)}
             >
-              {v === "dashboard" ? "Dashboard" : v === "edit" ? "Editar" : v === "report" ? "Reporte" : "Ingenieros"}
+              {v === "dashboard" ? "Dashboard"
+                : v === "edit"      ? "Editar"
+                : v === "report"    ? "Reporte"
+                : v === "engineers" ? "Ingenieros"
+                :                     "Trimestres"}
             </button>
           ))}
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
@@ -502,7 +555,12 @@ export default function App() {
             globalStatusOpen={globalStatusOpen}
             onToggleGlobalStatusOpen={() => setGlobalStatusOpen(o => !o)}
             onGenerateGlobalStatus={handleGenerateGlobalStatus}
+            quarterInfo={getCurrentQuarterInfo()}
+            onQuarterReset={applyQuarterReset}
           />
+        )}
+        {view === "quarters" && (
+          <QuartersView onBack={() => setView("dashboard")} />
         )}
         {view === "edit" && (
           <EditView
@@ -512,6 +570,7 @@ export default function App() {
             onUpdateProject={updateProject}
             onUpdateProjectFull={updateProjectFull}
             onSaveChanges={() => persist(projects)}
+            onSaveProjectsDirect={persist}
             onReorderProjects={reorderProjects}
             onAddProject={addProject}
             onRemoveProject={removeProject}

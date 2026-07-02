@@ -490,6 +490,112 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
   );
 }
 
+// ── Sync de detalle operacional de actividades (Fase 1) ───────────────────────
+// Estrategia bulk: DELETE por ProyectoAppID + INSERT de todas las filas en una
+// sola query por tabla. Total: 8 queries fijas sin importar el tamaño del proyecto.
+
+const toDateOrNull = (v) => (v && typeof v === "string" && v.trim() ? new Date(v) : null);
+
+const q = (v) => {
+  if (v === null || v === undefined) return "NULL";
+  if (v instanceof Date)             return `'${v.toISOString()}'`;
+  return `'${String(v).replace(/'/g, "''")}'`;
+};
+
+async function syncActividadesDetalle(project) {
+  const pool = await getPool();
+
+  const proyectoAppID = project.id || "";
+  const acts = Array.isArray(project.activities_identified) ? project.activities_identified : [];
+  const ts   = project.task_status || {};
+  const hist = ts.status_history   || {};
+
+  const statusOf = (actId) => {
+    if ((ts.completed   || []).includes(actId)) return "completed";
+    if ((ts.in_progress || []).includes(actId)) return "in_progress";
+    if ((ts.not_started || []).includes(actId)) return "not_started";
+    return "not_started";
+  };
+
+  // Construir filas para cada tabla
+  const detRows = [], chkRows = [], notaRows = [], kdRows = [];
+
+  for (const act of acts) {
+    if (!act?.id) continue;
+    const actHist = hist[act.id] || {};
+    const estado  = statusOf(act.id);
+
+    detRows.push(
+      `(${q(act.id)},${q(proyectoAppID)},${q(act.text||"")},${q(act.priority||"media")},` +
+      `${q(toDateOrNull(act.start_date))},${q(toDateOrNull(act.due_date))},${q(act.description||"")},${q(estado)},` +
+      `${q(toDateOrNull(actHist.added))},${q(toDateOrNull(actHist.in_progress))},${q(toDateOrNull(actHist.completed))},GETDATE())`
+    );
+
+    (act.checklist || []).forEach((item, i) => {
+      if (!item?.id) return;
+      chkRows.push(`(${q(act.id)},${q(item.id)},${q(item.text||"")},${item.done?1:0},${i})`);
+    });
+
+    (act.notes || []).forEach(nota => {
+      if (!nota?.id) return;
+      notaRows.push(`(${q(act.id)},${q(nota.id)},${q(toDateOrNull(nota.date))},${q(nota.text||"")})`);
+    });
+
+    (act.key_dates || []).forEach(kd => {
+      if (!kd?.id) return;
+      kdRows.push(`(${q(act.id)},${q(kd.id)},${q(toDateOrNull(kd.date))},${q(kd.label||"")})`);
+    });
+  }
+
+  try {
+    // Tabla Actividades_Detalle: DELETE por proyecto + INSERT bulk
+    await pool.request().input("proyId", sql.NVarChar(60), proyectoAppID)
+      .query(`DELETE FROM Actividades_Detalle WHERE ProyectoAppID = @proyId`);
+    if (detRows.length) {
+      await pool.request().query(
+        `INSERT INTO Actividades_Detalle
+           (AppActividadID,ProyectoAppID,TextoActividad,Prioridad,FechaInicio,FechaFin,
+            Descripcion,Estado,FechaInscripcion,FechaEnProceso,FechaCompletada,UltimaActualizacion)
+         VALUES ${detRows.join(",")}`
+      );
+    }
+
+    // Tabla Actividad_Checklist: DELETE por actividades del proyecto + INSERT bulk
+    const actIds = acts.filter(a => a?.id).map(a => q(a.id)).join(",");
+    if (actIds) {
+      await pool.request().query(`DELETE FROM Actividad_Checklist WHERE AppActividadID IN (${actIds})`);
+    }
+    if (chkRows.length) {
+      await pool.request().query(
+        `INSERT INTO Actividad_Checklist (AppActividadID,AppChecklistID,Texto,Hecho,Orden) VALUES ${chkRows.join(",")}`
+      );
+    }
+
+    // Tabla Actividad_Notas
+    if (actIds) {
+      await pool.request().query(`DELETE FROM Actividad_Notas WHERE AppActividadID IN (${actIds})`);
+    }
+    if (notaRows.length) {
+      await pool.request().query(
+        `INSERT INTO Actividad_Notas (AppActividadID,AppNotaID,Fecha,Texto) VALUES ${notaRows.join(",")}`
+      );
+    }
+
+    // Tabla Actividad_FechasClave
+    if (actIds) {
+      await pool.request().query(`DELETE FROM Actividad_FechasClave WHERE AppActividadID IN (${actIds})`);
+    }
+    if (kdRows.length) {
+      await pool.request().query(
+        `INSERT INTO Actividad_FechasClave (AppActividadID,AppFechaID,Fecha,Etiqueta) VALUES ${kdRows.join(",")}`
+      );
+    }
+  } catch (e) {
+    console.error(`[SQL] ✗ Error en bulk sync proyecto ${proyectoAppID}:`, e.message);
+    throw e;
+  }
+}
+
 // ── Exportar ──────────────────────────────────────────────────────────────────
 
-module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncExternalContactToSQL };
+module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncExternalContactToSQL, syncActividadesDetalle };

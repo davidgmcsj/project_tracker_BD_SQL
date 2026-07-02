@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { GlobalMetricsTable, ProjectMetricsTableCompact } from "./MetricsTable";
 import { generateAssignmentsByEngineer } from "../utils/formulas";
+import QuarterResetModal from "./QuarterResetModal";
 
 const STATUS = {
   "on-track":        { label: "En curso",        cssClass: "on-track",        icon: "🟡" },
@@ -10,8 +11,9 @@ const STATUS = {
   "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
-export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus }) {
-  const [toast, setToast] = useState("");
+export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset }) {
+  const [toast,            setToast]            = useState("");
+  const [showResetModal,   setShowResetModal]   = useState(false);
 
   const handleCopyAssign = (p, i, e) => {
     e.stopPropagation();
@@ -135,6 +137,23 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
 
       {toast && <div className="toast">{toast}</div>}
 
+      {/* Barra de acciones de trimestre */}
+      {quarterInfo && onQuarterReset && (
+        <div className="dashboard-quarter-bar">
+          <div className="dashboard-quarter-bar__info">
+            <span className="dashboard-quarter-bar__label">Trimestre actual:</span>
+            <span className="dashboard-quarter-bar__name">{quarterInfo.label}</span>
+          </div>
+          <button
+            className="btn btn--new-quarter"
+            onClick={() => setShowResetModal(true)}
+            title={`Cerrar ${quarterInfo.label} e iniciar ${quarterInfo.nextLabel}`}
+          >
+            🗂 Nuevo trimestre
+          </button>
+        </div>
+      )}
+
       <div className="dashboard-grid">
         {projects.map((p, i) => {
           const st = STATUS[p.status] || STATUS["on-track"];
@@ -198,6 +217,16 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
           <span className="add-card__text">Agregar proyecto</span>
         </div>
       </div>
+
+      {/* Modal de doble confirmación para reinicio de trimestre */}
+      {showResetModal && quarterInfo && (
+        <QuarterResetModal
+          quarterInfo={quarterInfo}
+          projects={projects}
+          onConfirm={onQuarterReset}
+          onClose={() => setShowResetModal(false)}
+        />
+      )}
     </div>
   );
 }

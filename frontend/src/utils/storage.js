@@ -62,7 +62,7 @@ export async function loadProjects() {
 
 // ── Persistencia base ─────────────────────────────────────────────────────────
 
-export async function saveProjects(projects, weekLabel, engineers, externalContacts) {
+export async function saveProjects(projects, weekLabel, engineers, externalContacts, changedProjectId) {
   // localStorage primero: garantiza que el usuario no pierde datos
   // aunque la llamada al servidor falle
   localStorage.setItem(LS_PROJECTS, JSON.stringify(projects));
@@ -71,7 +71,7 @@ export async function saveProjects(projects, weekLabel, engineers, externalConta
     await apiFetch("/api/projects", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ projects, weekLabel, engineers, externalContacts: externalContacts || [] }),
+      body:    JSON.stringify({ projects, weekLabel, engineers, externalContacts: externalContacts || [], changedProjectId: changedProjectId || null }),
     });
   } catch { /* guardado local completado */ }
 }
@@ -154,4 +154,32 @@ export async function deleteEngineerTaskFromSQL(taskId) {
       body:    JSON.stringify({ taskId }),
     });
   } catch { /* el cambio local ya quedó guardado */ }
+}
+
+// ── Operaciones de trimestre ──────────────────────────────────────────────────
+
+// Ejecuta el reset trimestral en el backend.
+// Devuelve { ok, quarterLabel, activitiesArchived, activitiesTransferred, totalProyectos }.
+// Lanza error si el backend falla — el llamador debe manejarlo.
+export async function executeQuarterReset(payload) {
+  return apiFetch("/api/quarter-reset", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(payload),
+  });
+}
+
+// Trae la lista de trimestres archivados (sin el JSON completo, solo metadatos).
+export async function loadQuartersList() {
+  return apiFetch("/api/quarters");
+}
+
+// Trae el JSON completo de un trimestre archivado por su ID.
+export async function loadQuarterById(id) {
+  return apiFetch(`/api/quarters/${id}`);
+}
+
+// Recarga el estado actual desde el servidor (usado después del reset para tener el estado limpio).
+export async function reloadProjectsFromServer() {
+  return apiFetch("/api/projects");
 }
