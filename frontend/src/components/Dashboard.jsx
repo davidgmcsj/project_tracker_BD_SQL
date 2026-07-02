@@ -11,9 +11,24 @@ const STATUS = {
   "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
-export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset }) {
+export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset, onCleanStats }) {
   const [toast,            setToast]            = useState("");
   const [showResetModal,   setShowResetModal]   = useState(false);
+  const [cleaningStats,    setCleaningStats]    = useState(false);
+
+  const handleCleanStats = async () => {
+    if (!window.confirm("¿Aplicar limpieza de trimestre a los proyectos actuales?\n\nSe reiniciará:\n• Estado del proyecto → En curso\n• Indicadores → en cero\n• Logros, plan, impedimentos, comentarios → vacíos\n• Actividades completadas → eliminadas\n• Historial de fechas de depósito → borrado\n• Estadísticas semanales de ingenieros → cero\n\nSe conservará:\n• Actividades en proceso y no iniciadas (con sus responsables y detalle)\n\n¿Continuar?")) return;
+    setCleaningStats(true);
+    try {
+      await onCleanStats();
+      setToast("✓ Estadísticas limpiadas correctamente");
+    } catch (e) {
+      setToast("Error al limpiar estadísticas");
+    } finally {
+      setCleaningStats(false);
+      setTimeout(() => setToast(""), 3000);
+    }
+  };
 
   const handleCopyAssign = (p, i, e) => {
     e.stopPropagation();
@@ -151,6 +166,16 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
           >
             🗂 Nuevo trimestre
           </button>
+          {onCleanStats && (
+            <button
+              className="btn btn--clean-stats"
+              onClick={handleCleanStats}
+              disabled={cleaningStats}
+              title="Limpiar estadísticas semanales e historial sin archivar"
+            >
+              {cleaningStats ? "⏳ Limpiando…" : "🧹 Limpiar estadísticas"}
+            </button>
+          )}
         </div>
       )}
 

@@ -127,7 +127,7 @@ function ChecklistSection({ items, onChange }) {
     <div className="adm-section">
       <div className="adm-section__header">
         <span className="adm-section__title">
-          Lista de comprobación
+          Subactividades
           {total > 0 && (
             <span className="adm-checklist-progress">
               {done}/{total}
@@ -388,6 +388,7 @@ function hasChanges(activity, local) {
   if ((activity.start_date  || "")      !== local.start_date)  return true;
   if ((activity.due_date    || "")      !== local.due_date)    return true;
   if ((activity.description || "")      !== local.description) return true;
+  if (JSON.stringify(activity.assigned_engineers || []) !== JSON.stringify(local.assigned_engineers)) return true;
   if (JSON.stringify(activity.checklist  || []) !== JSON.stringify(local.checklist))  return true;
   if (JSON.stringify(activity.notes      || []) !== JSON.stringify(local.notes))      return true;
   if (JSON.stringify(activity.key_dates  || []) !== JSON.stringify(local.key_dates))  return true;
@@ -437,14 +438,15 @@ export default function ActivityDetailModal({
   const history = taskStatus?.status_history?.[activity.id] || {};
 
   const [local, setLocal] = useState({
-    text:        activity.text        || "",
-    priority:    activity.priority    || "media",
-    start_date:  activity.start_date  || "",
-    due_date:    activity.due_date    || "",
-    description: activity.description || "",
-    checklist:   Array.isArray(activity.checklist) ? activity.checklist : [],
-    notes:       Array.isArray(activity.notes)     ? activity.notes     : [],
-    key_dates:   Array.isArray(activity.key_dates) ? activity.key_dates : [],
+    text:               activity.text               || "",
+    priority:           activity.priority           || "media",
+    start_date:         activity.start_date         || "",
+    due_date:           activity.due_date           || "",
+    description:        activity.description        || "",
+    assigned_engineers: Array.isArray(activity.assigned_engineers) ? activity.assigned_engineers : [],
+    checklist:          Array.isArray(activity.checklist) ? activity.checklist : [],
+    notes:              Array.isArray(activity.notes)     ? activity.notes     : [],
+    key_dates:          Array.isArray(activity.key_dates) ? activity.key_dates : [],
   });
 
   const [showConfirm,    setShowConfirm]    = useState(false);
@@ -518,8 +520,19 @@ export default function ActivityDetailModal({
           <textarea
             className="adm-header__title-input"
             value={local.text}
-            onChange={e => set("text", e.target.value)}
-            rows={2}
+            onChange={e => {
+              set("text", e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = e.target.scrollHeight + "px";
+            }}
+            onFocus={e => {
+              e.target.style.height = "auto";
+              e.target.style.height = e.target.scrollHeight + "px";
+            }}
+            ref={el => {
+              if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+            }}
+            rows={1}
             placeholder="Nombre de la actividad…"
           />
 
@@ -564,34 +577,60 @@ export default function ActivityDetailModal({
             </div>
           </div>
 
-          {/* ── Responsables (solo lectura: se gestionan desde la lista) ── */}
+          {/* ── Responsables (editable) ── */}
           <div className="adm-section">
             <div className="adm-section__header">
               <span className="adm-section__title">Responsables</span>
             </div>
-            {assigned.length === 0 ? (
-              <p className="adm-empty-hint">Sin responsables asignados.</p>
-            ) : (
-              <div className="adm-assignees">
-                {assigned.map(e => {
-                  const isExt   = e.id.startsWith("ext_");
-                  const extData = isExt ? (externalContacts || []).find(c => c.id === e.id) : null;
-                  return (
-                    <span
-                      key={e.id}
-                      className={`adm-assignee-chip${isExt ? " adm-assignee-chip--ext" : ""}`}
-                      title={isExt && extData?.company ? `${e.name} (${extData.company})` : e.name}
-                    >
-                      {isExt && <span className="adm-assignee-chip__ext">Ext</span>}
-                      {e.name}
-                    </span>
-                  );
-                })}
-                {activity.assigned_date && (
-                  <span className="adm-assignee-date">Asignado: {formatDate(activity.assigned_date)}</span>
-                )}
-              </div>
-            )}
+            {/* Chips de responsables asignados */}
+            <div className="adm-assignees">
+              {local.assigned_engineers.map(e => {
+                const isExt = e.id?.startsWith("ext_");
+                return (
+                  <span
+                    key={e.id}
+                    className={`adm-assignee-chip${isExt ? " adm-assignee-chip--ext" : ""}`}
+                  >
+                    {isExt && <span className="adm-assignee-chip__ext">Ext</span>}
+                    {e.name}
+                    <button
+                      type="button"
+                      className="adm-assignee-chip__remove"
+                      onClick={() => set("assigned_engineers", local.assigned_engineers.filter(x => x.id !== e.id))}
+                      title="Quitar"
+                    >✕</button>
+                  </span>
+                );
+              })}
+              {local.assigned_engineers.length === 0 && (
+                <p className="adm-empty-hint">Sin responsables asignados.</p>
+              )}
+            </div>
+            {/* Selector para agregar */}
+            {(() => {
+              const allOptions = [
+                ...(engineerCatalog || []).filter(e => e.active !== false).map(e => ({ id: e.id, name: e.name })),
+                ...(externalContacts || []).map(e => ({ id: e.id, name: e.name })),
+              ];
+              const assignedIds = new Set(local.assigned_engineers.map(e => e.id));
+              const available   = allOptions.filter(e => !assignedIds.has(e.id));
+              if (available.length === 0) return null;
+              return (
+                <select
+                  className="adm-select adm-select--assignee"
+                  value=""
+                  onChange={ev => {
+                    const opt = available.find(e => e.id === ev.target.value);
+                    if (opt) set("assigned_engineers", [...local.assigned_engineers, opt]);
+                  }}
+                >
+                  <option value="">+ Agregar responsable…</option>
+                  {available.map(e => (
+                    <option key={e.id} value={e.id}>{e.name}</option>
+                  ))}
+                </select>
+              );
+            })()}
           </div>
 
           {/* ── Descripción ── */}

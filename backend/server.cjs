@@ -699,9 +699,12 @@ app.post("/api/quarter-reset", async (req, res) => {
         shared_tasks_discount: 0,
       };
 
-      // Resetear ingenieros: limpiar totales y detalles semanales
+      // Resetear ingenieros: limpiar contadores históricos y estadísticas semanales
       const newEngineers = (p.engineers || []).map(e => ({
         ...e,
+        assigned:      0,
+        completed:     0,
+        in_progress:   0,
         weekly_total:  0,
         weekly_detail: [],
       }));
@@ -748,6 +751,80 @@ app.post("/api/quarter-reset", async (req, res) => {
   } catch (e) {
     console.error("[QUARTER] Error en reset:", e.message);
     res.status(500).json({ error: "Error ejecutando el reset trimestral", detail: e.message });
+  }
+});
+
+// ── API: Limpiar estadísticas del trimestre actual ────────────────────────────
+//
+// POST /api/clean-stats
+//   Borra weekly_total, weekly_detail, status_history, weekly_achievements,
+//   next_week_plan e impediments de todos los proyectos actuales.
+//   NO archiva nada. Úsalo cuando el reset ya se ejecutó pero quedaron datos sucios.
+
+app.post("/api/clean-stats", async (req, res) => {
+  try {
+    const currentData = await readJson(DATA_FILE, {});
+
+    const projects = (currentData.projects || []).map(p => {
+      const ts = p.task_status || {};
+
+      // Actividades que NO están completadas (se conservan intactas)
+      const keepIds = new Set([...(ts.in_progress || []), ...(ts.not_started || [])]);
+      const newActs = (p.activities_identified || []).filter(a => keepIds.has(a.id));
+
+      // Recalcular métricas basadas en las actividades que quedan
+      const newMetrics = {
+        total_tasks:           newActs.length,
+        completed_tasks:       0,
+        in_progress_tasks:     (ts.in_progress || []).length,
+        shared_tasks_discount: 0,
+      };
+
+      return {
+        ...p,
+        // Estado del proyecto → neutro
+        status:              "on-track",
+        status_notes:        "",
+        show_closing_fields: false,
+        // Métricas → recalculadas limpias
+        manual_metrics:      newMetrics,
+        // Indicadores → vaciados
+        indicators:          (p.indicators || []).map(ind => ({
+          ...ind,
+          total: 0, completed: 0, in_progress: 0,
+        })),
+        // Semana → limpia
+        weekly_achievements: [],
+        next_week_plan:      [],
+        impediments:         [],
+        comments:            [],
+        milestones:          (p.milestones || []).map(m => ({ ...m, completed: false })),
+        // Solo actividades no completadas, sin historial de fechas
+        activities_identified: newActs,
+        task_status: {
+          completed:      [],
+          in_progress:    ts.in_progress || [],
+          not_started:    ts.not_started || [],
+          status_history: {},
+        },
+        // Ingenieros por proyecto → limpiar estadísticas semanales e histórico de contadores
+        engineers: (p.engineers || []).map(e => ({
+          ...e,
+          assigned:      0,
+          completed:     0,
+          in_progress:   0,
+          weekly_total:  0,
+          weekly_detail: [],
+        })),
+      };
+    });
+
+    await writeJson(DATA_FILE, { ...currentData, projects });
+    console.log(`[CLEAN-STATS] ✓ Limpieza completa: ${projects.length} proyectos`);
+    res.json({ ok: true, projectsCleaned: projects.length });
+  } catch (e) {
+    console.error("[CLEAN-STATS] Error:", e.message);
+    res.status(500).json({ error: "Error limpiando estadísticas", detail: e.message });
   }
 });
 

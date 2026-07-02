@@ -183,3 +183,8 @@ export async function loadQuarterById(id) {
 export async function reloadProjectsFromServer() {
   return apiFetch("/api/projects");
 }
+
+// Limpia estadísticas semanales e historial del trimestre actual sin archivar nada.
+export async function cleanCurrentStats() {
+  return apiFetch("/api/clean-stats", { method: "POST" });
+}

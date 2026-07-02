@@ -13,7 +13,7 @@ import {
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
   syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
-  syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer,
+  syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
 } from "./utils/storage";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import "./App.css";
@@ -156,6 +156,16 @@ export default function App() {
     setView("dashboard");
 
     return result; // { activitiesArchived, activitiesTransferred, totalProyectos, quarterLabel }
+  };
+
+  // Limpia estadísticas del trimestre actual sin archivar (para corregir resets incompletos).
+  const applyCleanStats = async () => {
+    await cleanCurrentStats();
+    const freshData = await reloadProjectsFromServer();
+    setProjects(freshData.projects       || []);
+    setEngineers(freshData.engineers     || []);
+    setExternalContacts(freshData.externalContacts || []);
+    setHasUnsaved(false);
   };
 
   // ── Cambio de fecha del reporte ────────────────────────────────────────────
@@ -557,6 +567,7 @@ export default function App() {
             onGenerateGlobalStatus={handleGenerateGlobalStatus}
             quarterInfo={getCurrentQuarterInfo()}
             onQuarterReset={applyQuarterReset}
+            onCleanStats={applyCleanStats}
           />
         )}
         {view === "quarters" && (

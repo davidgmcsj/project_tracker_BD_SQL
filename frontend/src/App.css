@@ -2486,14 +2486,74 @@
 }
 .task-status-col__date-chip {
   font-size: 10px;
-  color: var(--text-2);
-  background: var(--bg-2, #f1f5f9);
+  color: #374151;
+  background: #e5e7eb;
   padding: 1px 5px;
   border-radius: 4px;
+  font-weight: 500;
 }
 .task-status-col__date-chip--end {
-  color: #7c3aed;
+  color: #4c1d95;
   background: #ede9fe;
+}
+.task-status-col__date-chip--nodate {
+  color: #9ca3af !important;
+  background: #f9fafb !important;
+  font-weight: 400 !important;
+  font-style: italic;
+}
+/* Borde rojo en tarjeta vencida */
+.task-status-col__item--overdue {
+  border: 2px solid #ef4444 !important;
+  background: #fff5f5;
+}
+/* Etiqueta de días restantes */
+.task-status-col__days-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  line-height: 1.6;
+}
+.task-status-col__days-badge--overdue {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.task-status-col__days-badge--today {
+  background: #fef3c7;
+  color: #92400e;
+}
+.task-status-col__days-badge--soon {
+  background: #ffedd5;
+  color: #9a3412;
+}
+.task-status-col__days-badge--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+.task-status-col__assignees {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: 2px;
+}
+.task-status-col__assignees-icon {
+  font-size: 10px;
+}
+.task-status-col__assignee-chip {
+  font-size: 10px;
+  font-weight: 500;
+  color: #1e40af;
+  background: #dbeafe;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.task-status-col__assignee-none {
+  font-size: 10px;
+  color: #9ca3af;
+  font-style: italic;
 }
 .task-status-col__item-actions {
   display: flex;
@@ -3573,9 +3633,11 @@
   border-radius: 6px;
   background: transparent;
   resize: none;
+  overflow: hidden;
   font-family: inherit;
   transition: border-color 0.15s, background 0.15s;
   box-sizing: border-box;
+  min-height: 32px;
 }
 .adm-header__title-input:hover {
   border-color: var(--borde);
@@ -3766,6 +3828,29 @@
   color: var(--text-3);
   margin-left: 4px;
 }
+.adm-assignee-chip__remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: #93c5fd;
+  padding: 0 0 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.adm-assignee-chip__remove:hover { color: #1e40af; }
+.adm-select--assignee {
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px dashed var(--borde, #cbd5e1);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--text-2);
+  cursor: pointer;
+  width: 100%;
+}
+.adm-select--assignee:focus { outline: none; border-color: var(--azul); }
 
 /* ── Botón agregar ── */
 .adm-add-btn {
@@ -4324,6 +4409,21 @@
   transition: opacity 0.15s;
 }
 .btn--new-quarter:hover { opacity: 0.85; }
+
+.btn--clean-stats {
+  padding: 8px 16px;
+  background: #fff;
+  color: #92400e;
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.btn--clean-stats:hover:not(:disabled) { background: #fef3c7; }
+.btn--clean-stats:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    QUARTERS VIEW (qv-*)

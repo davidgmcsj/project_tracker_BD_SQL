@@ -1002,40 +1002,56 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                       const [y, m, day] = d.split("-");
                       return `${day}/${m}/${y}`;
                     };
+                    // Calcular días restantes y estado de demora
+                    const isCompleted = col.key === "completed";
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    const dueDate = act?.due_date ? new Date(act.due_date) : null;
+                    const diffDays = dueDate ? Math.ceil((dueDate - today) / 86400000) : null;
+                    const isOverdue = !isCompleted && dueDate && diffDays < 0;
+                    let daysLabel = null;
+                    let daysClass = "task-status-col__days-badge";
+                    if (!isCompleted && diffDays !== null) {
+                      if (diffDays < 0) {
+                        daysLabel = `⚠ En demora (${Math.abs(diffDays)} días)`;
+                        daysClass += " task-status-col__days-badge--overdue";
+                      } else if (diffDays === 0) {
+                        daysLabel = "⏰ Vence hoy";
+                        daysClass += " task-status-col__days-badge--today";
+                      } else {
+                        daysLabel = `${diffDays} día${diffDays !== 1 ? "s" : ""} restante${diffDays !== 1 ? "s" : ""}`;
+                        daysClass += diffDays <= 3 ? " task-status-col__days-badge--soon" : " task-status-col__days-badge--ok";
+                      }
+                    }
                     return (
                       <li
-                        key={item} className="task-status-col__item"
+                        key={item}
+                        className={`task-status-col__item${isOverdue ? " task-status-col__item--overdue" : ""}`}
                         draggable
                         onDragStart={() => colDragStart(i)}
                         onDragOver={e => e.preventDefault()}
                         onDrop={() => colDrop(i)}
                         title="Arrastra para reordenar"
+                        onClick={onOpenDetail ? () => onOpenDetail(item) : undefined}
+                        style={onOpenDetail ? { cursor: "pointer" } : undefined}
                       >
                         <div className="task-status-col__item-main">
                           <span className="task-status-col__item__grip">⠿</span>
                           <span className="task-status-col__item-text">{activityLabel(actIndex, item)}</span>
                           <div className="task-status-col__item-actions">
-                            {onOpenDetail && (
-                              <button
-                                type="button"
-                                className="task-status-col__detail-btn"
-                                title="Ver detalles"
-                                onClick={() => onOpenDetail(item)}
-                              >⊞</button>
-                            )}
                             {otherCols.map(other => (
                               <button
                                 key={other.key} type="button"
                                 className="task-status-col__move-btn"
                                 title={`Mover a ${other.label}`}
-                                onClick={() => move(item, other.key)}
+                                onClick={e => { e.stopPropagation(); move(item, other.key); }}
                               >
                                 {other.icon}
                               </button>
                             ))}
                             <button
                               type="button" className="task-status-col__remove-btn"
-                              title="Quitar de la lista" onClick={() => remove(item)}
+                              title="Quitar de la lista"
+                              onClick={e => { e.stopPropagation(); remove(item); }}
                             >✕</button>
                           </div>
                         </div>
@@ -1043,18 +1059,31 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                           <span
                             className="task-status-col__prio-badge"
                             style={{ background: prioStyle.bg, color: prioStyle.color }}
-                          >{prioStyle.label}</span>
-                          {act?.start_date && (
-                            <span className="task-status-col__date-chip">
-                              Inicio: {fmtKanbanDate(act.start_date)}
-                            </span>
-                          )}
-                          {act?.due_date && (
-                            <span className="task-status-col__date-chip task-status-col__date-chip--end">
-                              Fin: {fmtKanbanDate(act.due_date)}
-                            </span>
+                          >Prioridad: {prioStyle.label}</span>
+                          <span className={`task-status-col__date-chip${act?.start_date ? "" : " task-status-col__date-chip--nodate"}`}>
+                            Inicio: {fmtKanbanDate(act?.start_date) || "Sin fecha"}
+                          </span>
+                          <span className={`task-status-col__date-chip task-status-col__date-chip--end${act?.due_date ? "" : " task-status-col__date-chip--nodate"}`}>
+                            Fin: {fmtKanbanDate(act?.due_date) || "Sin fecha"}
+                          </span>
+                          {daysLabel && (
+                            <span className={daysClass}>{daysLabel}</span>
                           )}
                         </div>
+                        {/* Responsables */}
+                        {act?.assigned_engineers?.length > 0 ? (
+                          <div className="task-status-col__assignees">
+                            <span className="task-status-col__assignees-icon">👤</span>
+                            {act.assigned_engineers.map(e => (
+                              <span key={e.id} className="task-status-col__assignee-chip">{e.name}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="task-status-col__assignees task-status-col__assignees--empty">
+                            <span className="task-status-col__assignees-icon">👤</span>
+                            <span className="task-status-col__assignee-none">Sin responsable</span>
+                          </div>
+                        )}
                       </li>
                     );
                   })}

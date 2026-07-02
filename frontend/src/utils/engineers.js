@@ -14,10 +14,12 @@ export function countActiveWeeklyTasks(engineerId, project) {
   return engEntry?.weekly_detail?.length || 0;
 }
 
-// Cantidad de actividades asignadas en total (assigned) al ingeniero en ese proyecto.
+// Cantidad de actividades actualmente asignadas al ingeniero en ese proyecto.
+// Se cuenta desde assigned_engineers de cada actividad (fuente de verdad), no del campo histórico.
 export function countTotalAssignedTasks(engineerId, project) {
-  const engEntry = (project.engineers || []).find(e => e.engineer_id === engineerId);
-  return engEntry?.assigned || 0;
+  return (project.activities_identified || []).filter(a =>
+    (a.assigned_engineers || []).some(e => e.engineer_id === engineerId || e.id === engineerId)
+  ).length;
 }
 
 
