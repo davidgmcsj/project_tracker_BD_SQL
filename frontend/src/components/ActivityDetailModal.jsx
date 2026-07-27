@@ -1,21 +1,25 @@
 import { useState, useRef, useEffect } from "react";
-import { createChecklistItem, createKeyDate } from "../utils/formulas";
+import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
+import { uploadAttachment, deleteAttachment, attachmentDownloadUrl } from "../utils/storage";
+import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-
-const PRIORITY_OPTIONS = [
-  { value: "alta",  label: "Alta",  color: "#CC0033" },
-  { value: "media", label: "Media", color: "#f59e0b" },
-  { value: "baja",  label: "Baja",  color: "#10b981" },
-];
-
-const PRIORITY_META = Object.fromEntries(PRIORITY_OPTIONS.map(o => [o.value, o]));
 
 const STATUS_OPTIONS = [
   { value: "not_started", label: "No iniciada" },
   { value: "in_progress", label: "En proceso"  },
   { value: "completed",   label: "Completada"  },
 ];
+
+// Lista de horas planeadas: 0 (sin definir), 0.5, y luego de 1 en 1 hasta 40.
+const HOURS_OPTIONS = [0, 0.5, ...Array.from({ length: 40 }, (_, i) => i + 1)];
+
+// Redondea un número de horas a la opción más cercana disponible en HOURS_OPTIONS.
+function closestHoursOption(hours) {
+  return HOURS_OPTIONS.reduce((best, opt) =>
+    Math.abs(opt - hours) < Math.abs(best - hours) ? opt : best
+  , HOURS_OPTIONS[0]);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -27,354 +31,118 @@ function getActivityStatus(taskStatus, actId) {
   return "not_started";
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return "—";
-  const [y, m, d] = dateStr.split("-");
-  return `${d}/${m}/${y}`;
+// ── Adjuntos ──────────────────────────────────────────────────────────────────
+
+function formatBytes(n) {
+  if (!n) return "0 B";
+  const k = 1024, units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(n) / Math.log(k));
+  return `${(n / Math.pow(k, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
-// ── Sub-componentes del modal ─────────────────────────────────────────────────
-
-function PriorityDot({ value }) {
-  const meta = PRIORITY_META[value] || PRIORITY_META.media;
-  return (
-    <span
-      className="adm-priority-dot"
-      style={{ background: meta.color }}
-      title={`Prioridad ${meta.label}`}
-    />
-  );
+function fileIcon(mime = "", name = "") {
+  const m = (mime || "").toLowerCase();
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  if (m.startsWith("image/")) return "🖼️";
+  if (m === "application/pdf" || ext === "pdf") return "📕";
+  if (m.includes("word") || ["doc", "docx"].includes(ext)) return "📘";
+  if (m.includes("sheet") || m.includes("excel") || ["xls", "xlsx", "csv"].includes(ext)) return "📗";
+  if (m.includes("zip") || ["zip", "rar", "7z"].includes(ext)) return "🗜️";
+  return "📎";
 }
 
-function DateBadgesSection({ status, history }) {
-  // history = taskStatus.status_history[actId] || {}
-  // Lógica de qué fechas mostrar según el depósito:
-  //   no_started  → Inscripción
-  //   in_progress → Inscripción + En proceso
-  //   completed   → Solo Completada
-
-  if (status === "completed") {
-    return (
-      <div className="adm-dates-row">
-        <span className="adm-date-badge adm-date-badge--completed">
-          <span className="adm-date-badge__icon">✅</span>
-          <span className="adm-date-badge__label">Completada</span>
-          <span className="adm-date-badge__value">{formatDate(history?.completed)}</span>
-        </span>
-      </div>
-    );
-  }
-
-  if (status === "in_progress") {
-    return (
-      <div className="adm-dates-row">
-        <span className="adm-date-badge adm-date-badge--added">
-          <span className="adm-date-badge__icon">📌</span>
-          <span className="adm-date-badge__label">Inscrita</span>
-          <span className="adm-date-badge__value">{formatDate(history?.added)}</span>
-        </span>
-        <span className="adm-date-badge adm-date-badge--inprogress">
-          <span className="adm-date-badge__icon">🔄</span>
-          <span className="adm-date-badge__label">En proceso</span>
-          <span className="adm-date-badge__value">{formatDate(history?.in_progress)}</span>
-        </span>
-      </div>
-    );
-  }
-
-  // not_started
-  return (
-    <div className="adm-dates-row">
-      {history?.added && (
-        <span className="adm-date-badge adm-date-badge--added">
-          <span className="adm-date-badge__icon">📌</span>
-          <span className="adm-date-badge__label">Inscrita</span>
-          <span className="adm-date-badge__value">{formatDate(history.added)}</span>
-        </span>
-      )}
-    </div>
-  );
-}
-
-function ChecklistSection({ items, onChange }) {
-  const [draft, setDraft] = useState("");
-  const [adding, setAdding] = useState(false);
+function AttachmentsSection({ items, activityId, projectId, onChange }) {
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState("");
   const inputRef = useRef(null);
 
-  useEffect(() => {
-    if (adding) inputRef.current?.focus();
-  }, [adding]);
+  const MAX_BYTES = 10 * 1024 * 1024;
 
-  const toggle = (id) =>
-    onChange(items.map(it => it.id === id ? { ...it, done: !it.done } : it));
+  const handleFiles = async (fileList) => {
+    setError("");
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
 
-  const updateText = (id, text) =>
-    onChange(items.map(it => it.id === id ? { ...it, text } : it));
-
-  const remove = (id) => onChange(items.filter(it => it.id !== id));
-
-  const confirm = () => {
-    const t = draft.trim();
-    if (t) onChange([...items, createChecklistItem(t)]);
-    setDraft("");
-    setAdding(false);
+    for (const file of files) {
+      if (file.size > MAX_BYTES) {
+        setError(`"${file.name}" supera el límite de 10 MB.`);
+        continue;
+      }
+      setBusy(true);
+      try {
+        const meta = await uploadAttachment(file, {
+          appActividadID: activityId,
+          proyectoAppID:  projectId,
+        });
+        onChange([...items, meta]);
+      } catch (e) {
+        setError(`No se pudo subir "${file.name}". ${e.message || ""}`);
+      } finally {
+        setBusy(false);
+      }
+    }
+    if (inputRef.current) inputRef.current.value = "";
   };
 
-  const done  = items.filter(it => it.done).length;
-  const total = items.length;
-
-  return (
-    <div className="adm-section">
-      <div className="adm-section__header">
-        <span className="adm-section__title">
-          Subactividades
-          {total > 0 && (
-            <span className="adm-checklist-progress">
-              {done}/{total}
-              <span className="adm-checklist-bar">
-                <span
-                  className="adm-checklist-bar__fill"
-                  style={{ width: `${total ? (done / total) * 100 : 0}%` }}
-                />
-              </span>
-            </span>
-          )}
-        </span>
-        {!adding && (
-          <button
-            type="button"
-            className="adm-add-btn"
-            onClick={() => setAdding(true)}
-          >
-            + Agregar
-          </button>
-        )}
-      </div>
-
-      {items.length > 0 && (
-        <ul className="adm-checklist">
-          {items.map(it => (
-            <li key={it.id} className={`adm-checklist__item${it.done ? " adm-checklist__item--done" : ""}`}>
-              <input
-                type="checkbox"
-                className="adm-checklist__chk"
-                checked={it.done}
-                onChange={() => toggle(it.id)}
-              />
-              <input
-                type="text"
-                className="adm-checklist__text-input"
-                value={it.text}
-                onChange={e => updateText(it.id, e.target.value)}
-              />
-              <button
-                type="button"
-                className="adm-checklist__remove"
-                onClick={() => remove(it.id)}
-                title="Eliminar"
-              >✕</button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {adding && (
-        <div className="adm-inline-draft">
-          <input
-            ref={inputRef}
-            type="text"
-            className="adm-inline-draft__input"
-            placeholder="Descripción del paso…"
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter") { e.preventDefault(); confirm(); }
-              if (e.key === "Escape") { setDraft(""); setAdding(false); }
-            }}
-          />
-          <button type="button" className="adm-inline-draft__ok"     onClick={confirm}>✓</button>
-          <button type="button" className="adm-inline-draft__cancel" onClick={() => { setDraft(""); setAdding(false); }}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function KeyDatesSection({ items, onChange }) {
-  const confirm = (date, label) => {
-    if (date || label) onChange([...items, createKeyDate(date, label)]);
-  };
-
-  const [draftDate,  setDraftDate]  = useState("");
-  const [draftLabel, setDraftLabel] = useState("");
-  const [adding, setAdding] = useState(false);
-
-  const update = (id, field, val) =>
-    onChange(items.map(it => it.id === id ? { ...it, [field]: val } : it));
-
-  const remove = (id) => onChange(items.filter(it => it.id !== id));
-
-  const handleConfirm = () => {
-    confirm(draftDate, draftLabel.trim());
-    setDraftDate(""); setDraftLabel(""); setAdding(false);
+  const handleRemove = async (att) => {
+    setError("");
+    try {
+      await deleteAttachment(att.id);
+    } catch {
+      // aunque falle el borrado en SQL, lo quitamos de la lista local
+    }
+    onChange(items.filter(a => a.id !== att.id));
   };
 
   return (
     <div className="adm-section">
       <div className="adm-section__header">
-        <span className="adm-section__title">Fechas clave</span>
-        {!adding && (
-          <button
-            type="button"
-            className="adm-add-btn"
-            onClick={() => setAdding(true)}
-          >
-            + Agregar
-          </button>
-        )}
+        <span className="adm-section__title">Adjuntos</span>
+        <button
+          type="button"
+          className="adm-add-btn"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+        >
+          {busy ? "Subiendo…" : "+ Subir archivo"}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          style={{ display: "none" }}
+          onChange={e => handleFiles(e.target.files)}
+        />
       </div>
 
-      {items.length > 0 && (
-        <ul className="adm-keydate-list">
-          {items.map(it => (
-            <li key={it.id} className="adm-keydate-item">
-              <span className="adm-keydate-item__icon">📅</span>
-              <input
-                type="date"
-                className="adm-keydate-item__date"
-                value={it.date || ""}
-                onChange={e => update(it.id, "date", e.target.value)}
-              />
-              <input
-                type="text"
-                className="adm-keydate-item__label"
-                value={it.label || ""}
-                placeholder="Descripción…"
-                onChange={e => update(it.id, "label", e.target.value)}
-              />
+      {error && <p className="adm-attach-error">{error}</p>}
+
+      {items.length > 0 ? (
+        <ul className="adm-attach-list">
+          {items.map(att => (
+            <li key={att.id} className="adm-attach-item">
+              <span className="adm-attach-item__icon">{fileIcon(att.mime, att.filename)}</span>
+              <a
+                className="adm-attach-item__name"
+                href={attachmentDownloadUrl(att.id)}
+                target="_blank"
+                rel="noreferrer"
+                title="Descargar"
+              >
+                {att.filename}
+              </a>
+              <span className="adm-attach-item__size">{formatBytes(att.size)}</span>
               <button
                 type="button"
-                className="adm-keydate-item__remove"
-                onClick={() => remove(it.id)}
-                title="Eliminar"
+                className="adm-attach-item__remove"
+                onClick={() => handleRemove(att)}
+                title="Eliminar adjunto"
               >✕</button>
             </li>
           ))}
         </ul>
-      )}
-
-      {adding && (
-        <div className="adm-inline-draft adm-inline-draft--keydate">
-          <input
-            type="date"
-            className="adm-inline-draft__date"
-            value={draftDate}
-            onChange={e => setDraftDate(e.target.value)}
-            autoFocus
-          />
-          <input
-            type="text"
-            className="adm-inline-draft__input"
-            placeholder="Descripción del hito…"
-            value={draftLabel}
-            onChange={e => setDraftLabel(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter") { e.preventDefault(); handleConfirm(); }
-              if (e.key === "Escape") { setDraftDate(""); setDraftLabel(""); setAdding(false); }
-            }}
-          />
-          <button type="button" className="adm-inline-draft__ok"     onClick={handleConfirm}>✓</button>
-          <button type="button" className="adm-inline-draft__cancel" onClick={() => { setDraftDate(""); setDraftLabel(""); setAdding(false); }}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NotesSection({ items, onChange }) {
-  const [draftDate, setDraftDate]   = useState("");
-  const [draftText, setDraftText]   = useState("");
-  const [adding, setAdding] = useState(false);
-
-  const genId = () => "note_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-
-  const update = (id, field, val) =>
-    onChange(items.map(it => it.id === id ? { ...it, [field]: val } : it));
-
-  const remove = (id) => onChange(items.filter(it => it.id !== id));
-
-  const handleConfirm = () => {
-    const t = draftText.trim();
-    if (t) onChange([...items, { id: genId(), date: draftDate, text: t }]);
-    setDraftDate(""); setDraftText(""); setAdding(false);
-  };
-
-  return (
-    <div className="adm-section">
-      <div className="adm-section__header">
-        <span className="adm-section__title">Notas</span>
-        {!adding && (
-          <button
-            type="button"
-            className="adm-add-btn"
-            onClick={() => setAdding(true)}
-          >
-            + Agregar
-          </button>
-        )}
-      </div>
-
-      {items.length > 0 && (
-        <ul className="adm-notes-list">
-          {items.map(it => (
-            <li key={it.id} className="adm-note-item">
-              <input
-                type="date"
-                className="adm-note-item__date"
-                value={it.date || ""}
-                onChange={e => update(it.id, "date", e.target.value)}
-              />
-              <input
-                type="text"
-                className="adm-note-item__text"
-                value={it.text || ""}
-                placeholder="Nota…"
-                onChange={e => update(it.id, "text", e.target.value)}
-              />
-              <button
-                type="button"
-                className="adm-note-item__remove"
-                onClick={() => remove(it.id)}
-                title="Eliminar"
-              >✕</button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {adding && (
-        <div className="adm-inline-draft adm-inline-draft--keydate">
-          <input
-            type="date"
-            className="adm-inline-draft__date"
-            value={draftDate}
-            onChange={e => setDraftDate(e.target.value)}
-            autoFocus
-          />
-          <input
-            type="text"
-            className="adm-inline-draft__input"
-            placeholder="Escribe la nota…"
-            value={draftText}
-            onChange={e => setDraftText(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter") { e.preventDefault(); handleConfirm(); }
-              if (e.key === "Escape") { setDraftDate(""); setDraftText(""); setAdding(false); }
-            }}
-          />
-          <button type="button" className="adm-inline-draft__ok"     onClick={handleConfirm}>✓</button>
-          <button type="button" className="adm-inline-draft__cancel" onClick={() => { setDraftDate(""); setDraftText(""); setAdding(false); }}>✕</button>
-        </div>
+      ) : (
+        !busy && <p className="adm-empty-hint">Sin archivos adjuntos. Máx. 10 MB por archivo.</p>
       )}
     </div>
   );
@@ -384,10 +152,13 @@ function NotesSection({ items, onChange }) {
 
 function hasChanges(activity, local) {
   if ((activity.text        || "")      !== local.text)        return true;
-  if ((activity.priority    || "media") !== local.priority)    return true;
   if ((activity.start_date  || "")      !== local.start_date)  return true;
   if ((activity.due_date    || "")      !== local.due_date)    return true;
   if ((activity.description || "")      !== local.description) return true;
+  if ((activity.objectives  || "")      !== local.objectives)  return true;
+  if ((activity.solution    || "")      !== local.solution)    return true;
+  if ((Number(activity.progress)      || 0) !== local.progress)      return true;
+  if ((Number(activity.planned_hours) || 0) !== local.planned_hours) return true;
   if (JSON.stringify(activity.assigned_engineers || []) !== JSON.stringify(local.assigned_engineers)) return true;
   if (JSON.stringify(activity.checklist  || []) !== JSON.stringify(local.checklist))  return true;
   if (JSON.stringify(activity.notes      || []) !== JSON.stringify(local.notes))      return true;
@@ -425,6 +196,7 @@ function DiscardConfirmDialog({ onSaveAndClose, onDiscard, onCancel }) {
 export default function ActivityDetailModal({
   activity,
   projectName,
+  projectId,
   taskStatus,
   engineerCatalog,
   externalContacts,
@@ -439,20 +211,33 @@ export default function ActivityDetailModal({
 
   const [local, setLocal] = useState({
     text:               activity.text               || "",
-    priority:           activity.priority           || "media",
     start_date:         activity.start_date         || "",
     due_date:           activity.due_date           || "",
     description:        activity.description        || "",
+    objectives:         activity.objectives         || "",
+    solution:           activity.solution           || "",
+    progress:           Number(activity.progress)      || 0,
+    planned_hours:      closestHoursOption(Number(activity.planned_hours) || 0),
     assigned_engineers: Array.isArray(activity.assigned_engineers) ? activity.assigned_engineers : [],
     checklist:          Array.isArray(activity.checklist) ? activity.checklist : [],
     notes:              Array.isArray(activity.notes)     ? activity.notes     : [],
     key_dates:          Array.isArray(activity.key_dates) ? activity.key_dates : [],
+    attachments:        Array.isArray(activity.attachments) ? activity.attachments : [],
   });
 
   const [showConfirm,    setShowConfirm]    = useState(false);
   const [showDelConfirm, setShowDelConfirm] = useState(false);
 
   const set = (field, val) => setLocal(prev => ({ ...prev, [field]: val }));
+
+  // Los adjuntos se guardan/eliminan en SQL al instante. Para que su metadata
+  // no se pierda si el usuario descarta otros cambios, la persistimos de inmediato
+  // combinando la actividad ORIGINAL con la nueva lista de adjuntos (sin arrastrar
+  // otros edits sin confirmar del formulario).
+  const handleAttachmentsChange = (nextAttachments) => {
+    setLocal(prev => ({ ...prev, attachments: nextAttachments }));
+    onSave({ ...activity, attachments: nextAttachments });
+  };
 
   const dirty = hasChanges(activity, local);
 
@@ -483,7 +268,13 @@ export default function ActivityDetailModal({
   };
 
   const assigned = activity.assigned_engineers || [];
-  const priorityMeta = PRIORITY_META[local.priority] || PRIORITY_META.media;
+
+  // Sugerencias automáticas
+  const checklistTotal = local.checklist.length;
+  const checklistDone  = local.checklist.filter(it => it.done).length;
+  const suggestedProgress = checklistTotal > 0 ? Math.round((checklistDone / checklistTotal) * 100) : null;
+  const bizDays  = businessDaysBetween(local.start_date, local.due_date);
+  const suggHours = suggestedWorkHours(local.start_date, local.due_date);
   const statusLabel  = STATUS_OPTIONS.find(o => o.value === status)?.label || "—";
   const statusClass =
     status === "completed"   ? "adm-status-pill--completed" :
@@ -505,7 +296,6 @@ export default function ActivityDetailModal({
         {/* ── Cabecera ── */}
         <div className="adm-header">
           <div className="adm-header__top">
-            <PriorityDot value={local.priority} />
             <span className="adm-header__project">{projectName}</span>
             <span className={`adm-status-pill ${statusClass}`}>{statusLabel}</span>
             {dirty && <span className="adm-dirty-badge">Sin guardar</span>}
@@ -542,21 +332,8 @@ export default function ActivityDetailModal({
 
         <div className="adm-body">
 
-          {/* ── Fila: Prioridad / Fecha inicio / Fecha fin ── */}
-          <div className="adm-row-3">
-            <div className="adm-field">
-              <label className="adm-label">Prioridad</label>
-              <select
-                className="adm-select"
-                value={local.priority}
-                onChange={e => set("priority", e.target.value)}
-                style={{ borderColor: priorityMeta.color }}
-              >
-                {PRIORITY_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
+          {/* ── Fila: Fecha inicio / Fecha fin ── */}
+          <div className="adm-row-2">
             <div className="adm-field">
               <label className="adm-label">Fecha inicio</label>
               <input
@@ -574,6 +351,74 @@ export default function ActivityDetailModal({
                 value={local.due_date}
                 onChange={e => set("due_date", e.target.value)}
               />
+            </div>
+          </div>
+
+          {/* ── Fila: % Cumplimiento / Horas planeadas ── */}
+          <div className="adm-row-2">
+            <div className="adm-field">
+              <label className="adm-label">
+                % Cumplimiento
+                {suggestedProgress !== null && suggestedProgress !== local.progress && (
+                  <button
+                    type="button"
+                    className="adm-suggest-link"
+                    onClick={() => set("progress", suggestedProgress)}
+                    title="Usar el % según subactividades marcadas"
+                  >
+                    usar {suggestedProgress}% (checklist)
+                  </button>
+                )}
+              </label>
+              <div className="adm-progress-field">
+                <input
+                  type="range"
+                  className="adm-range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={local.progress}
+                  onChange={e => set("progress", Number(e.target.value))}
+                />
+                <input
+                  type="number"
+                  className="adm-input adm-input--pct"
+                  min={0}
+                  max={100}
+                  value={local.progress}
+                  onChange={e => {
+                    const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                    set("progress", v);
+                  }}
+                />
+                <span className="adm-pct-sign">%</span>
+              </div>
+            </div>
+            <div className="adm-field">
+              <label className="adm-label">
+                Horas planeadas
+                {suggHours > 0 && closestHoursOption(suggHours) !== local.planned_hours && (
+                  <button
+                    type="button"
+                    className="adm-suggest-link"
+                    onClick={() => set("planned_hours", closestHoursOption(suggHours))}
+                    title={`${bizDays} día(s) hábil(es) × 8h, sin fines de semana ni festivos`}
+                  >
+                    usar {closestHoursOption(suggHours)}h ({bizDays} días háb.)
+                  </button>
+                )}
+              </label>
+              <div className="adm-progress-field">
+                <select
+                  className="adm-select"
+                  value={local.planned_hours}
+                  onChange={e => set("planned_hours", Number(e.target.value))}
+                >
+                  {HOURS_OPTIONS.map(h => (
+                    <option key={h} value={h}>{h} h</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -633,6 +478,20 @@ export default function ActivityDetailModal({
             })()}
           </div>
 
+          {/* ── Objetivos ── */}
+          <div className="adm-section">
+            <div className="adm-section__header">
+              <span className="adm-section__title">Objetivos</span>
+            </div>
+            <textarea
+              className="adm-textarea"
+              rows={3}
+              placeholder="¿Qué se busca cumplir con esta actividad?"
+              value={local.objectives}
+              onChange={e => set("objectives", e.target.value)}
+            />
+          </div>
+
           {/* ── Descripción ── */}
           <div className="adm-section">
             <div className="adm-section__header">
@@ -644,6 +503,20 @@ export default function ActivityDetailModal({
               placeholder="Agrega una descripción detallada de la actividad…"
               value={local.description}
               onChange={e => set("description", e.target.value)}
+            />
+          </div>
+
+          {/* ── Solución ── */}
+          <div className="adm-section">
+            <div className="adm-section__header">
+              <span className="adm-section__title">Solución</span>
+            </div>
+            <textarea
+              className="adm-textarea"
+              rows={3}
+              placeholder="Describe la solución aplicada o propuesta…"
+              value={local.solution}
+              onChange={e => set("solution", e.target.value)}
             />
           </div>
 
@@ -663,6 +536,14 @@ export default function ActivityDetailModal({
           <NotesSection
             items={local.notes}
             onChange={val => set("notes", val)}
+          />
+
+          {/* ── Adjuntos ── */}
+          <AttachmentsSection
+            items={local.attachments}
+            activityId={activity.id}
+            projectId={projectId}
+            onChange={handleAttachmentsChange}
           />
 
         </div>

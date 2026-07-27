@@ -6,6 +6,7 @@ import {
 } from "../utils/formulas";
 import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
+import GanttChart from "./GanttChart";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -990,13 +991,6 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                     const otherCols = TASK_STATUS_COLS.filter(c => c.key !== col.key);
                     const hist    = ts.status_history?.[item] || {};
                     const act     = actByIdMap.get(item);
-                    const prio    = act?.priority || "media";
-                    const PRIO_STYLE = {
-                      alta:  { bg: "#fee2e2", color: "#991b1b", label: "Alta"  },
-                      media: { bg: "#fef3c7", color: "#92400e", label: "Media" },
-                      baja:  { bg: "#dbeafe", color: "#1e40af", label: "Baja"  },
-                    };
-                    const prioStyle = PRIO_STYLE[prio] || PRIO_STYLE.media;
                     const fmtKanbanDate = (d) => {
                       if (!d) return null;
                       const [y, m, day] = d.split("-");
@@ -1056,10 +1050,6 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                           </div>
                         </div>
                         <div className="task-status-col__dates">
-                          <span
-                            className="task-status-col__prio-badge"
-                            style={{ background: prioStyle.bg, color: prioStyle.color }}
-                          >Prioridad: {prioStyle.label}</span>
                           <span className={`task-status-col__date-chip${act?.start_date ? "" : " task-status-col__date-chip--nodate"}`}>
                             Inicio: {fmtKanbanDate(act?.start_date) || "Sin fecha"}
                           </span>
@@ -2121,6 +2111,23 @@ export default function EditView({
             </div>
           )}
 
+          {/* ══ 4b. Línea de tiempo (Gantt) ══ */}
+          {activities.length > 0 && (
+            <div className="field field--optional">
+              <label className="field__label" style={{ marginBottom: 10 }}>
+                Línea de tiempo
+                <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
+                  Diagrama de Gantt de las actividades con fechas
+                </span>
+              </label>
+              <GanttChart
+                activities={activities}
+                taskStatus={p.task_status}
+                onOpenActivity={setModalActId}
+              />
+            </div>
+          )}
+
           {/* ══ 5. Indicadores ══ */}
           <div className="field field--optional">
             <div className="field__header">
@@ -2282,6 +2289,7 @@ export default function EditView({
         <ActivityDetailModal
           activity={modalActivity}
           projectName={p.project_name || "Proyecto"}
+          projectId={p.id}
           taskStatus={p.task_status}
           engineerCatalog={engineerCatalog}
           externalContacts={externalContacts}

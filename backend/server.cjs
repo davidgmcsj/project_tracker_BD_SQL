@@ -30,14 +30,16 @@ const path    = require("path");
 require("dotenv/config");
 const { toArray } = require("./utils.cjs");
 
-const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle } = (() => {
+const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
+        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB } = (() => {
   try {
     const mod = require("./db-operations.cjs");
     console.log("[DB] db-operations.cjs cargado correctamente");
     return mod;
   } catch (e) {
     console.error("[DB] Error cargando db-operations.cjs:", e.message);
-    return { saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null };
+    return { saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null,
+             saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null };
   }
 })();
 
@@ -393,6 +395,68 @@ app.post("/api/engineers/tasks/delete-one", async (req, res) => {
   } catch (e) {
     console.error("[SQL] Error borrando tarea suelta:", e.message);
     res.status(500).json({ error: "Error borrando tarea suelta", detail: e.message });
+  }
+});
+
+// ── API: Adjuntos de actividades ──────────────────────────────────────────────
+// Los archivos se guardan como bytes en SQL (tabla Actividad_Adjuntos).
+// El frontend envía el contenido en base64. Límite ~10 MB por archivo.
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
+app.post("/api/attachments/upload", async (req, res) => {
+  if (!saveAttachmentToDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { appAdjuntoID, appActividadID, proyectoAppID, nombre, mime, dataBase64 } = req.body || {};
+    if (!appAdjuntoID || !appActividadID || !nombre || !dataBase64) {
+      return res.status(400).json({ error: "Faltan campos del adjunto" });
+    }
+    const buffer = Buffer.from(dataBase64, "base64");
+    if (buffer.length > MAX_ATTACHMENT_BYTES) {
+      return res.status(413).json({ error: `El archivo supera el límite de ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB` });
+    }
+    await saveAttachmentToDB({
+      appAdjuntoID, appActividadID, proyectoAppID,
+      nombre, mime, size: buffer.length, buffer,
+    });
+    res.json({ ok: true, size: buffer.length });
+  } catch (e) {
+    console.error("[SQL] Error guardando adjunto:", e.message);
+    res.status(500).json({ error: "Error guardando adjunto", detail: e.message });
+  }
+});
+
+app.get("/api/attachments/:id", async (req, res) => {
+  if (!getAttachmentFromDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const att = await getAttachmentFromDB(req.params.id);
+    if (!att || !att.buffer) return res.status(404).json({ error: "Adjunto no encontrado" });
+    res.setHeader("Content-Type", att.mime || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(att.nombre)}"`);
+    res.setHeader("Content-Length", att.buffer.length);
+    res.send(att.buffer);
+  } catch (e) {
+    console.error("[SQL] Error descargando adjunto:", e.message);
+    res.status(500).json({ error: "Error descargando adjunto", detail: e.message });
+  }
+});
+
+app.post("/api/attachments/delete", async (req, res) => {
+  if (!deleteAttachmentFromDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { appAdjuntoID } = req.body || {};
+    if (!appAdjuntoID) return res.status(400).json({ error: "Falta el id del adjunto" });
+    await deleteAttachmentFromDB(appAdjuntoID);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[SQL] Error borrando adjunto:", e.message);
+    res.status(500).json({ error: "Error borrando adjunto", detail: e.message });
   }
 });
 

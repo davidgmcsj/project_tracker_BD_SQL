@@ -15,6 +15,7 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
   const [toast,            setToast]            = useState("");
   const [showResetModal,   setShowResetModal]   = useState(false);
   const [cleaningStats,    setCleaningStats]    = useState(false);
+  const [search,           setSearch]           = useState("");
 
   const handleCleanStats = async () => {
     if (!window.confirm("¿Aplicar limpieza de trimestre a los proyectos actuales?\n\nSe reiniciará:\n• Estado del proyecto → En curso\n• Indicadores → en cero\n• Logros, plan, impedimentos, comentarios → vacíos\n• Actividades completadas → eliminadas\n• Historial de fechas de depósito → borrado\n• Estadísticas semanales de ingenieros → cero\n\nSe conservará:\n• Actividades en proceso y no iniciadas (con sus responsables y detalle)\n\n¿Continuar?")) return;
@@ -179,8 +180,26 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
         </div>
       )}
 
+      {/* Buscador de proyectos */}
+      <div className="dashboard-search-bar">
+        <input
+          className="dashboard-search-input"
+          type="text"
+          placeholder="Buscar proyecto…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {search && (
+          <button className="dashboard-search-clear" onClick={() => setSearch("")} title="Limpiar">✕</button>
+        )}
+      </div>
+
       <div className="dashboard-grid">
-        {projects.map((p, i) => {
+        {projects.filter(p => {
+          if (!search.trim()) return true;
+          const term = search.toLowerCase();
+          return (p.project_name || "").toLowerCase().includes(term);
+        }).map((p, i) => {
           const st = STATUS[p.status] || STATUS["on-track"];
           const isGeneratingThis = generatingInforme && generatingName === (p.project_name || `Proyecto ${i + 1}`);
 

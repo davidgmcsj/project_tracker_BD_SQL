@@ -20,6 +20,13 @@ export function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Formatea "YYYY-MM-DD" a "DD/MM/YYYY". Vacío → "—".
+export function formatDateDMY(dateStr) {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 export function getMondayOf(dateStr) {
   const d    = new Date(dateStr + "T12:00:00");
   const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
@@ -127,14 +134,90 @@ export function createActivity(text = "") {
     text,
     assigned_engineers: [],
     assigned_date: null,
-    priority: "media",
     start_date: "",
     due_date: "",
     description: "",
+    objectives: "",
+    solution: "",
+    progress: 0,          // % de cumplimiento manual (0-100)
+    planned_hours: 0,     // horas planeadas (manual)
     checklist: [],
     notes: [],
     key_dates: [],
+    attachments: [],      // metadata de adjuntos (bytes en SQL)
   };
+}
+
+// ── Cálculo de horas hábiles ──────────────────────────────────────────────────
+// Cuenta días hábiles (lun-vie, excluyendo festivos de Colombia) entre dos fechas
+// inclusive y multiplica por la jornada. Sirve para SUGERIR horas planeadas.
+
+const HOURS_PER_DAY = 8;
+
+// Festivos de Colombia. Formato "MM-DD" para los fijos + fechas completas para
+// los que dependen del año (Semana Santa, etc.). Actualizar por año según cambien.
+// Para simplicidad usamos un set de fechas completas "YYYY-MM-DD" que cubre los
+// años en uso; los fijos se generan por año on-the-fly.
+const FIXED_HOLIDAYS_MMDD = [
+  "01-01", // Año nuevo
+  "05-01", // Día del trabajo
+  "07-20", // Independencia
+  "08-07", // Batalla de Boyacá
+  "12-08", // Inmaculada Concepción
+  "12-25", // Navidad
+];
+
+// Festivos móviles / trasladables por año (Ley Emiliani y Semana Santa).
+// Se pueden ampliar por año. Vacío por defecto = solo se usan los fijos.
+const MOVABLE_HOLIDAYS = {
+  2026: [
+    "01-12","03-23","03-30","04-02","04-03","05-18","06-08","06-15",
+    "06-29","08-17","10-12","11-02","11-16",
+  ],
+};
+
+function isColombianHoliday(date) {
+  const mmdd = `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  if (FIXED_HOLIDAYS_MMDD.includes(mmdd)) return true;
+  const year = date.getFullYear();
+  return (MOVABLE_HOLIDAYS[year] || []).includes(mmdd);
+}
+
+// Devuelve el número de días hábiles entre start y due (ambos inclusive).
+export function businessDaysBetween(startStr, dueStr) {
+  if (!startStr || !dueStr) return 0;
+  const start = new Date(startStr + "T12:00:00");
+  const end   = new Date(dueStr   + "T12:00:00");
+  if (isNaN(start) || isNaN(end) || end < start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6 && !isColombianHoliday(cur)) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+// Horas hábiles sugeridas = días hábiles × jornada.
+export function suggestedWorkHours(startStr, dueStr, hoursPerDay = HOURS_PER_DAY) {
+  return businessDaysBetween(startStr, dueStr) * hoursPerDay;
+}
+
+// Suma de horas planeadas de todas las actividades del proyecto.
+export function totalPlannedHours(activities) {
+  return (Array.isArray(activities) ? activities : [])
+    .reduce((s, a) => s + (Number(a.planned_hours) || 0), 0);
+}
+
+// Promedio de % de cumplimiento sobre las actividades que tienen fechas o progreso.
+// Devuelve null si no hay ninguna actividad con progreso definido.
+export function avgActivityProgress(activities) {
+  const acts = (Array.isArray(activities) ? activities : [])
+    .filter(a => a.start_date || a.due_date || Number(a.progress) > 0);
+  if (!acts.length) return null;
+  const sum = acts.reduce((s, a) => s + (Number(a.progress) || 0), 0);
+  return Math.round(sum / acts.length);
 }
 
 // Construye un índice id → { text, position } a partir de activities_identified.
@@ -221,7 +304,65 @@ export function genEngineerTaskId() {
 }
 
 export function createEngineerTask(description = "") {
-  return { id: genEngineerTaskId(), description, status: "not_started", date: "" };
+  // Modelo rico, análogo a una actividad de proyecto pero con estado + fechas
+  // dentro de la propia tarea (no en un task_status externo).
+  // history: fechas de las 3 transiciones de estado (added = inscrita).
+  // Se auto-registran al cambiar de estado. `date` se conserva por
+  // compatibilidad con tareas creadas antes de que existiera el historial.
+  return {
+    id: genEngineerTaskId(),
+    description,
+    status: "not_started",
+    date: "",
+    history: { added: getToday(), in_progress: "", completed: "" },
+    detail:        "",
+    objectives:    "",
+    solution:      "",
+    start_date:    "",
+    due_date:      "",
+    progress:      0,
+    planned_hours: 0,
+    checklist:     [],
+    notes:         [],
+    key_dates:     [],
+  };
+}
+
+// Normaliza una tarea (posiblemente antigua) al modelo rico completo, sin perder
+// datos existentes. Úsalo al abrir el modal para garantizar todos los campos.
+export function normalizeEngineerTask(task) {
+  const t = task || {};
+  return {
+    id:            t.id || genEngineerTaskId(),
+    description:   t.description || "",
+    status:        t.status || "not_started",
+    date:          t.date || "",
+    history:       { added: t.date || "", in_progress: "", completed: "", ...(t.history || {}) },
+    detail:        t.detail || "",
+    objectives:    t.objectives || "",
+    solution:      t.solution || "",
+    start_date:    t.start_date || "",
+    due_date:      t.due_date || "",
+    progress:      Number(t.progress) || 0,
+    planned_hours: Number(t.planned_hours) || 0,
+    checklist:     Array.isArray(t.checklist) ? t.checklist : [],
+    notes:         Array.isArray(t.notes)     ? t.notes     : [],
+    key_dates:     Array.isArray(t.key_dates) ? t.key_dates : [],
+  };
+}
+
+// Aplica un cambio de estado a una tarea suelta, auto-registrando la fecha de la
+// transición si es la primera vez que se alcanza ese estado. Devuelve la tarea nueva.
+// Normaliza tareas antiguas que aún no tienen `history`.
+export function applyEngineerTaskStatus(task, newStatus) {
+  const history = { added: "", in_progress: "", completed: "", ...(task.history || {}) };
+  if (!history.added) history.added = task.date || getToday();
+  if (newStatus === "in_progress" && !history.in_progress) history.in_progress = getToday();
+  if (newStatus === "completed") {
+    if (!history.in_progress) history.in_progress = getToday();
+    if (!history.completed)   history.completed   = getToday();
+  }
+  return { ...task, status: newStatus, history };
 }
 
 // ── Reporte ASCII ─────────────────────────────────────────────────────────────
@@ -250,6 +391,21 @@ function resolveIds(index, ids) {
   return (Array.isArray(ids) ? ids : []).filter(Boolean).map(id => activityText(index, id));
 }
 
+// Igual que resolveIds pero anexa " — 60% · 8h" cuando la actividad tiene esos datos.
+// Recibe el array de actividades (objetos) para leer progress/planned_hours.
+function resolveIdsWithMeta(index, ids, acts) {
+  const byId = new Map((Array.isArray(acts) ? acts : []).map(a => [a.id, a]));
+  return (Array.isArray(ids) ? ids : []).filter(Boolean).map(id => {
+    const text = activityText(index, id);
+    const a    = byId.get(id);
+    if (!a) return text;
+    const bits = [];
+    if (Number(a.progress) > 0)      bits.push(`${Math.round(Number(a.progress))}%`);
+    if (Number(a.planned_hours) > 0) bits.push(`${Number(a.planned_hours)}h`);
+    return bits.length ? `${text} — ${bits.join(" · ")}` : text;
+  });
+}
+
 function projectBlock(p, i, engineerIndex) {
   const m        = p.manual_metrics || {};
   const total    = m.total_tasks       || 0;
@@ -273,6 +429,11 @@ function projectBlock(p, i, engineerIndex) {
   txt += `${col("Avance",22)}${col(pct+"%",18)}${done} completadas · ${wip} en proceso.\n`;
   txt += `${col("Estado de Tareas",22)}${col(`${done} de ${total}`,18)}${pending} no iniciado${pending !== 1 ? "s" : ""}${pending === 0 ? " — todo completado." : "."}\n`;
   txt += `${col("Bloqueantes",22)}${col(blockers.length,18)}${blockers.length === 0 ? "Sin bloqueantes." : blockers[0].description.split("\n")[0]}\n`;
+  const plannedHrs = totalPlannedHours(acts);
+  if (plannedHrs > 0) {
+    const nWithHrs = acts.filter(a => Number(a.planned_hours) > 0).length;
+    txt += `${col("Horas planeadas",22)}${col(plannedHrs+" h",18)}${nWithHrs} actividad${nWithHrs !== 1 ? "es" : ""} con horas estimadas.\n`;
+  }
   txt += `${"─".repeat(72)}\n\n`;
 
   if (p.indicators?.length) {
@@ -319,9 +480,9 @@ function projectBlock(p, i, engineerIndex) {
   if (acts.length) txt += `• Actividades Identificadas:\n${arrToNumbered(actTexts)}\n\n`;
 
   const ts = p.task_status || {};
-  const tsDone = resolveIds(actIndex, ts.completed);
-  const tsWip  = resolveIds(actIndex, ts.in_progress);
-  const tsNot  = resolveIds(actIndex, ts.not_started);
+  const tsDone = resolveIdsWithMeta(actIndex, ts.completed,    acts);
+  const tsWip  = resolveIdsWithMeta(actIndex, ts.in_progress,  acts);
+  const tsNot  = resolveIdsWithMeta(actIndex, ts.not_started,  acts);
   if (tsDone.length || tsWip.length || tsNot.length) {
     txt += `ESTADO DE ACTIVIDADES\n${"─".repeat(60)}\n`;
     if (tsDone.length) { txt += `✅ Completadas (${tsDone.length}):\n${arrToBullets(tsDone)}\n\n`; }

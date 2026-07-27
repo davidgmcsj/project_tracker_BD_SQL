@@ -1,6 +1,7 @@
 import {
   projectProgress, globalProgress, buildActivityIndex, activityText,
   buildEngineerIndex, engineerName as resolveEngineerName,
+  totalPlannedHours,
 } from "../utils/formulas";
 
 function pctStyle(pct) {
@@ -94,6 +95,9 @@ export function ProjectMetricsTableCompact({ project }) {
   const pct      = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const pending  = Math.max(0, (m.total_tasks || 0) - (m.completed_tasks || 0) - (m.in_progress_tasks || 0));
   const blockers = (project.impediments || []).filter(im => im.category === "blocker");
+  const acts     = project.activities_identified || [];
+  const hours    = totalPlannedHours(acts);
+  const actsWithHours = acts.filter(a => Number(a.planned_hours) > 0).length;
 
   return (
     <div className="metrics-container">
@@ -115,6 +119,13 @@ export function ProjectMetricsTableCompact({ project }) {
             <td><strong>{blockers.length}</strong></td>
             <td>{blockers.length === 0 ? "Sin bloqueantes." : blockers[0].description.split("\n")[0]}</td>
           </tr>
+          {hours > 0 && (
+            <tr>
+              <td>Horas planeadas</td>
+              <td><strong>{hours} h</strong></td>
+              <td>{actsWithHours} actividad{actsWithHours !== 1 ? "es" : ""} con horas estimadas.</td>
+            </tr>
+          )}
           <IndicatorRows indicators={project.indicators || []} />
         </tbody>
       </table>
@@ -135,6 +146,9 @@ export function ProjectMetricsTable({ project, engineers: engineerCatalog }) {
   const shared     = m.shared_tasks_discount || 0;
   const activitiesIndex = buildActivityIndex(project.activities_identified);
   const engineerIndex   = buildEngineerIndex(engineerCatalog);
+  const acts       = project.activities_identified || [];
+  const hours      = totalPlannedHours(acts);
+  const actsWithHours = acts.filter(a => Number(a.planned_hours) > 0).length;
 
   return (
     <div className="metrics-container">
@@ -156,6 +170,13 @@ export function ProjectMetricsTable({ project, engineers: engineerCatalog }) {
             <td><strong>{blockers.length}</strong></td>
             <td>{blockers.length === 0 ? "Sin bloqueantes." : blockers[0].description.split("\n")[0]}</td>
           </tr>
+          {hours > 0 && (
+            <tr>
+              <td>Horas planeadas</td>
+              <td><strong>{hours} h</strong></td>
+              <td>{actsWithHours} actividad{actsWithHours !== 1 ? "es" : ""} con horas estimadas.</td>
+            </tr>
+          )}
 
           <IndicatorRows indicators={indicators} />
 

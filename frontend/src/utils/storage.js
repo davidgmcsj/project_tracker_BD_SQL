@@ -156,6 +156,54 @@ export async function deleteEngineerTaskFromSQL(taskId) {
   } catch { /* el cambio local ya quedó guardado */ }
 }
 
+// ── Adjuntos de actividades ───────────────────────────────────────────────────
+// Los bytes se guardan SOLO en SQL. En la actividad (data.json) queda la metadata.
+
+// Convierte un File a base64 (sin el prefijo data:...;base64,).
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Sube un archivo asociado a una actividad. Devuelve la metadata del adjunto
+// (para guardar en activity.attachments) o lanza error si falla.
+export async function uploadAttachment(file, { appActividadID, proyectoAppID }) {
+  const appAdjuntoID = "att_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const dataBase64   = await fileToBase64(file);
+  await apiFetch("/api/attachments/upload", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({
+      appAdjuntoID, appActividadID, proyectoAppID,
+      nombre: file.name, mime: file.type, dataBase64,
+    }),
+  });
+  return {
+    id:          appAdjuntoID,
+    filename:    file.name,
+    mime:        file.type,
+    size:        file.size,
+    uploaded_at: new Date().toISOString(),
+  };
+}
+
+// Devuelve la URL de descarga de un adjunto (se abre directo en el navegador).
+export function attachmentDownloadUrl(appAdjuntoID) {
+  return `${API_BASE}/api/attachments/${appAdjuntoID}`;
+}
+
+export async function deleteAttachment(appAdjuntoID) {
+  await apiFetch("/api/attachments/delete", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ appAdjuntoID }),
+  });
+}
+
 // ── Operaciones de trimestre ──────────────────────────────────────────────────
 
 // Ejecuta el reset trimestral en el backend.

@@ -3,6 +3,7 @@ import Dashboard     from "./components/Dashboard";
 import EditView      from "./components/EditView";
 import ReportView    from "./components/ReportView";
 import EngineersView from "./components/EngineersView";
+import EngineerReportView from "./components/EngineerReportView";
 import QuartersView  from "./components/QuartersView";
 import ProgressRing  from "./components/ProgressRing";
 import {
@@ -482,17 +483,18 @@ export default function App() {
         </div>
 
         <div className="header__actions">
-          {["dashboard", "edit", "report", "engineers", "quarters"].map(v => (
+          {["dashboard", "edit", "report", "engineers", "engineer-report", "quarters"].map(v => (
             <button
               key={v}
               className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
               onClick={() => navigateTo(v)}
             >
               {v === "dashboard" ? "Dashboard"
-                : v === "edit"      ? "Editar"
-                : v === "report"    ? "Reporte"
-                : v === "engineers" ? "Ingenieros"
-                :                     "Trimestres"}
+                : v === "edit"            ? "Editar"
+                : v === "report"          ? "Reporte"
+                : v === "engineers"       ? "Ingenieros"
+                : v === "engineer-report" ? "Rep. Ingenieros"
+                :                           "Trimestres"}
             </button>
           ))}
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
@@ -544,6 +546,9 @@ export default function App() {
             onToggleActive={toggleEngineerActive}
             onUpdateTasks={updateEngineerTasks}
           />
+        )}
+        {view === "engineer-report" && (
+          <EngineerReportView engineers={engineers} projects={projects} />
         )}
         {view === "dashboard" && (
           <Dashboard

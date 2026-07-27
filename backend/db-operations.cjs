@@ -150,15 +150,58 @@ async function syncExternalContactToSQL(contact) {
 // consultar en SQL qué tenía un ingeniero en una fecha/rango, en proyectos
 // (Estadisticas_Ingeniero_Semana) Y en tareas sueltas (esta tabla), por separado.
 
+// Extrae las 3 fechas de estado desde el historial de la tarea, con respaldo al
+// campo legacy `date` para la fecha de inscripción de tareas antiguas.
+function taskDates(task) {
+  const h = task.history || {};
+  return {
+    inscrita:   h.added       || task.date || null,
+    inicio:     h.in_progress || null,
+    completada: h.completed   || null,
+  };
+}
+
+// Registra en un request los inputs de los campos ricos (detalle, objetivos,
+// solución, fechas de plan, progreso, horas y el JSON de checklist/notas/fechas
+// clave). Compartido por INSERT y UPDATE para no duplicar.
+function bindTaskRichInputs(request, task) {
+  const extra = JSON.stringify({
+    checklist: Array.isArray(task.checklist) ? task.checklist : [],
+    notes:     Array.isArray(task.notes)     ? task.notes     : [],
+    key_dates: Array.isArray(task.key_dates) ? task.key_dates : [],
+  });
+  return request
+    .input("detalle",   sql.NVarChar,       task.detail     || "")
+    .input("objetivos", sql.NVarChar,       task.objectives || "")
+    .input("solucion",  sql.NVarChar,       task.solution   || "")
+    .input("fInicioP",  sql.Date,           task.start_date || null)
+    .input("fFinP",     sql.Date,           task.due_date   || null)
+    .input("progreso",  sql.Int,            Math.max(0, Math.min(100, Number(task.progress) || 0)))
+    .input("horas",     sql.Decimal(8, 2),  Math.max(0, Number(task.planned_hours) || 0))
+    .input("extra",     sql.NVarChar,       extra);
+}
+
+const RICH_SET_CLAUSE =
+  "Detalle=@detalle, Objetivos=@objetivos, Solucion=@solucion, " +
+  "FechaInicioPlan=@fInicioP, FechaFinPlan=@fFinP, Progreso=@progreso, " +
+  "HorasPlaneadas=@horas, DatosExtra=@extra";
+
 async function updateEngineerTaskByAppId(task) {
   const pool = await getPool();
-  const upd = await pool.request()
-    .input("appId", sql.NVarChar(50), task.id)
-    .input("desc",  sql.NVarChar,     task.description || "")
-    .input("estado",sql.NVarChar(50), task.status || "not_started")
-    .input("fecha", sql.Date,         task.date || null)
-    .query(`UPDATE Tareas_Sueltas_Ingeniero
-            SET Descripcion=@desc, Estado=@estado, Fecha=@fecha, UltimaActualizacion=GETDATE()
+  const d = taskDates(task);
+  const req = bindTaskRichInputs(pool.request(), task)
+    .input("appId",   sql.NVarChar(50), task.id)
+    .input("desc",    sql.NVarChar,     task.description || "")
+    .input("estado",  sql.NVarChar(50), task.status || "not_started")
+    .input("fecha",   sql.Date,         d.inscrita)
+    .input("finsc",   sql.Date,         d.inscrita)
+    .input("finicio", sql.Date,         d.inicio)
+    .input("fcomp",   sql.Date,         d.completada);
+  const upd = await req.query(`UPDATE Tareas_Sueltas_Ingeniero
+            SET Descripcion=@desc, Estado=@estado, Fecha=@fecha,
+                FechaInscrita=@finsc, FechaInicio=@finicio, FechaCompletada=@fcomp,
+                ${RICH_SET_CLAUSE},
+                UltimaActualizacion=GETDATE()
             OUTPUT INSERTED.TareaID
             WHERE AppTaskID=@appId`);
   return upd.recordset[0]?.TareaID ?? null;
@@ -179,15 +222,22 @@ async function syncEngineerTaskToSQL(engineerSqlId, task) {
   }
 
   try {
-    const ins = await pool.request()
-      .input("ingId", sql.Int,          engineerSqlId)
-      .input("appId", sql.NVarChar(50), task.id)
-      .input("desc",  sql.NVarChar,     task.description || "")
-      .input("estado",sql.NVarChar(50), task.status || "not_started")
-      .input("fecha", sql.Date,         task.date || null)
-      .query(`INSERT INTO Tareas_Sueltas_Ingeniero (IngenieroID, AppTaskID, Descripcion, Estado, Fecha)
+    const d = taskDates(task);
+    const req = bindTaskRichInputs(pool.request(), task)
+      .input("ingId",   sql.Int,          engineerSqlId)
+      .input("appId",   sql.NVarChar(50), task.id)
+      .input("desc",    sql.NVarChar,     task.description || "")
+      .input("estado",  sql.NVarChar(50), task.status || "not_started")
+      .input("fecha",   sql.Date,         d.inscrita)
+      .input("finsc",   sql.Date,         d.inscrita)
+      .input("finicio", sql.Date,         d.inicio)
+      .input("fcomp",   sql.Date,         d.completada);
+    const ins = await req.query(`INSERT INTO Tareas_Sueltas_Ingeniero
+                (IngenieroID, AppTaskID, Descripcion, Estado, Fecha, FechaInscrita, FechaInicio, FechaCompletada,
+                 Detalle, Objetivos, Solucion, FechaInicioPlan, FechaFinPlan, Progreso, HorasPlaneadas, DatosExtra)
               OUTPUT INSERTED.TareaID
-              VALUES (@ingId, @appId, @desc, @estado, @fecha)`);
+              VALUES (@ingId, @appId, @desc, @estado, @fecha, @finsc, @finicio, @fcomp,
+                 @detalle, @objetivos, @solucion, @fInicioP, @fFinP, @progreso, @horas, @extra)`);
     return ins.recordset[0].TareaID;
   } catch (e) {
     if (e.number === 2627 || e.number === 2601) return updateEngineerTaskByAppId(task);
@@ -525,10 +575,14 @@ async function syncActividadesDetalle(project) {
     const actHist = hist[act.id] || {};
     const estado  = statusOf(act.id);
 
+    const progreso = Math.max(0, Math.min(100, Math.round(Number(act.progress) || 0)));
+    const horas    = Math.max(0, Number(act.planned_hours) || 0);
+
     detRows.push(
-      `(${q(act.id)},${q(proyectoAppID)},${q(act.text||"")},${q(act.priority||"media")},` +
-      `${q(toDateOrNull(act.start_date))},${q(toDateOrNull(act.due_date))},${q(act.description||"")},${q(estado)},` +
-      `${q(toDateOrNull(actHist.added))},${q(toDateOrNull(actHist.in_progress))},${q(toDateOrNull(actHist.completed))},GETDATE())`
+      `(${q(act.id)},${q(proyectoAppID)},${q(act.text||"")},` +
+      `${q(toDateOrNull(act.start_date))},${q(toDateOrNull(act.due_date))},${q(act.description||"")},${q(act.objectives||"")},${q(act.solution||"")},${q(estado)},` +
+      `${q(toDateOrNull(actHist.added))},${q(toDateOrNull(actHist.in_progress))},${q(toDateOrNull(actHist.completed))},GETDATE(),` +
+      `${progreso},${horas})`
     );
 
     (act.checklist || []).forEach((item, i) => {
@@ -554,8 +608,9 @@ async function syncActividadesDetalle(project) {
     if (detRows.length) {
       await pool.request().query(
         `INSERT INTO Actividades_Detalle
-           (AppActividadID,ProyectoAppID,TextoActividad,Prioridad,FechaInicio,FechaFin,
-            Descripcion,Estado,FechaInscripcion,FechaEnProceso,FechaCompletada,UltimaActualizacion)
+           (AppActividadID,ProyectoAppID,TextoActividad,FechaInicio,FechaFin,
+            Descripcion,Objetivos,Solucion,Estado,FechaInscripcion,FechaEnProceso,FechaCompletada,UltimaActualizacion,
+            Progreso,HorasPlaneadas)
          VALUES ${detRows.join(",")}`
       );
     }
@@ -596,6 +651,55 @@ async function syncActividadesDetalle(project) {
   }
 }
 
+// ── Adjuntos de actividades ─────────────────────────────────────────────────
+// Los bytes viven SOLO en SQL (tabla Actividad_Adjuntos). En data.json/la
+// actividad se guarda únicamente la metadata (id, nombre, tipo, tamaño).
+
+async function saveAttachmentToDB({ appAdjuntoID, appActividadID, proyectoAppID, nombre, mime, size, buffer }) {
+  const pool = await getPool();
+  await pool.request()
+    .input("appId",   sql.NVarChar(60),  appAdjuntoID)
+    .input("actId",   sql.NVarChar(60),  appActividadID)
+    .input("proyId",  sql.NVarChar(60),  proyectoAppID || null)
+    .input("nombre",  sql.NVarChar(400), nombre)
+    .input("mime",    sql.NVarChar(200), mime || null)
+    .input("size",    sql.BigInt,        size || 0)
+    .input("contenido", sql.VarBinary(sql.MAX), buffer)
+    .query(`
+      MERGE dbo.Actividad_Adjuntos AS t
+      USING (SELECT @appId AS AppAdjuntoID) AS s
+      ON t.AppAdjuntoID = s.AppAdjuntoID
+      WHEN MATCHED THEN UPDATE SET
+        NombreArchivo=@nombre, TipoMime=@mime, Tamano=@size,
+        Contenido=@contenido, AppActividadID=@actId, ProyectoAppID=@proyId
+      WHEN NOT MATCHED THEN INSERT
+        (AppAdjuntoID, AppActividadID, ProyectoAppID, NombreArchivo, TipoMime, Tamano, Contenido)
+        VALUES (@appId, @actId, @proyId, @nombre, @mime, @size, @contenido);
+    `);
+}
+
+async function getAttachmentFromDB(appAdjuntoID) {
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("appId", sql.NVarChar(60), appAdjuntoID)
+    .query(`SELECT NombreArchivo, TipoMime, Tamano, Contenido
+            FROM dbo.Actividad_Adjuntos WHERE AppAdjuntoID = @appId`);
+  const row = r.recordset[0];
+  if (!row) return null;
+  return { nombre: row.NombreArchivo, mime: row.TipoMime, size: row.Tamano, buffer: row.Contenido };
+}
+
+async function deleteAttachmentFromDB(appAdjuntoID) {
+  const pool = await getPool();
+  await pool.request()
+    .input("appId", sql.NVarChar(60), appAdjuntoID)
+    .query(`DELETE FROM dbo.Actividad_Adjuntos WHERE AppAdjuntoID = @appId`);
+}
+
 // ── Exportar ──────────────────────────────────────────────────────────────────
 
-module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncExternalContactToSQL, syncActividadesDetalle };
+module.exports = {
+  saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
+  syncExternalContactToSQL, syncActividadesDetalle,
+  saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
+};

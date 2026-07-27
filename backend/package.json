@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.cjs",
     "server": "node server.cjs",
-    "kill-port": "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :3001 ^| findstr LISTENING') do taskkill /PID %a /F",
+    "kill-port": "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :3002 ^| findstr LISTENING') do taskkill /PID %a /F",
     "fresh": "npm run kill-port & npm run server"
   },
   "dependencies": {

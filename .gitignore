@@ -27,6 +27,7 @@ pnpm-debug.log*
 
 # ── Editor y herramientas locales ────────────────────────────────────────────
 .claude/
+markit/
 .vscode/*
 !.vscode/extensions.json
 .idea

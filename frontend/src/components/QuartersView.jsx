@@ -79,11 +79,6 @@ export default function QuartersView({ onBack }) {
     return                                              { label: "No iniciada", cls: "qv-pill--pending" };
   };
 
-  const priorityDot = (p) => {
-    const map = { alta: "qv-dot--high", media: "qv-dot--mid", baja: "qv-dot--low" };
-    return map[p] || "qv-dot--mid";
-  };
-
   // ── Vista: lista de trimestres ──────────────────────────────────────────────
   if (innerView === "list") {
     return (
@@ -202,7 +197,6 @@ export default function QuartersView({ onBack }) {
                       return (
                         <div key={act.id} className="qv-act">
                           <div className="qv-act__top">
-                            <span className={`qv-dot ${priorityDot(act.priority)}`} title={`Prioridad: ${act.priority || "media"}`} />
                             <span className="qv-act__text">{act.text}</span>
                             <span className={`qv-pill ${stCls}`}>{stLabel}</span>
                           </div>
