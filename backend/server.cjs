@@ -27,6 +27,7 @@ const express = require("express");
 const http    = require("http");
 const fs      = require("fs").promises;
 const path    = require("path");
+const crypto  = require("crypto");
 require("dotenv/config");
 const { toArray } = require("./utils.cjs");
 
@@ -74,6 +75,16 @@ async function readJson(file, fallback) {
 
 async function writeJson(file, data) {
   await fs.writeFile(file, JSON.stringify(data, null, 2));
+}
+
+// Construye el cuerpo de una respuesta de error: el mensaje de error interno
+// (e.message) solo se incluye fuera de producción, para no filtrar detalles
+// de SQL/filesystem a clientes no confiables. El detalle completo siempre
+// queda en el log del servidor vía console.error, sin importar el ambiente.
+function errorBody(publicMessage, e) {
+  return process.env.NODE_ENV === "production"
+    ? { error: publicMessage }
+    : { error: publicMessage, detail: e.message };
 }
 
 // toArray viene de utils.cjs
@@ -238,20 +249,112 @@ async function init() {
 // ── Express ───────────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(express.json({ limit: "50mb" }));
+const helmet = require("helmet");
+app.use(helmet());
+// El body parser NO se registra a nivel global: la ruta de adjuntos necesita
+// un límite mucho mayor (base64 de hasta 10MB de archivo) que el resto de
+// rutas, que solo mueven JSON de proyectos/reportes (data.json actual: ~80KB).
+// Cada grupo de rutas monta su propio express.json() con el límite adecuado.
+const jsonParser           = express.json({ limit: "2mb" });
+const attachmentJsonParser = express.json({ limit: "14mb" }); // 10MB archivo + overhead base64/JSON
 
 // CORS activo siempre: el frontend vive en un repo y servidor separado,
 // por lo que el navegador necesita permiso explícito para llamar a esta API.
-// FRONTEND_URL en .env limita el acceso a un origen específico en producción.
-// Si no está definido, permite cualquier origen (útil en desarrollo local).
+// FRONTEND_URL en .env limita el acceso a un origen específico.
+// En producción es obligatorio (el servidor no arranca sin él); en desarrollo
+// local, si no está definido, cae a localhost:5173 (puerto por defecto de Vite).
 const cors = require("cors");
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction && !process.env.FRONTEND_URL) {
+  console.error("[FATAL] FRONTEND_URL debe estar definido en producción (NODE_ENV=production).");
+  process.exit(1);
+}
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
 }));
 
+// ── Autenticación: API key compartida ─────────────────────────────────────────
+// Herramienta interna: todos los clientes autorizados comparten la misma clave,
+// enviada en el header X-API-Key. No distingue usuarios individuales — para eso
+// se necesitaría un sistema de login completo, fuera del alcance actual.
+//
+// API_KEY debe estar definida en .env. Sin ella, el servidor no arranca en
+// producción (falla cerrado). En desarrollo, si falta, se loguea una advertencia
+// y la API queda abierta — solo para no bloquear el flujo local de un dev nuevo.
+const API_KEY = process.env.API_KEY || "";
+
+if (!API_KEY) {
+  if (isProduction) {
+    console.error("[FATAL] API_KEY debe estar definida en producción (NODE_ENV=production).");
+    process.exit(1);
+  }
+  console.warn("[WARN] API_KEY no definida — la API queda sin autenticación (solo aceptable en desarrollo local).");
+}
+
+function requireApiKey(req, res, next) {
+  if (!API_KEY) return next(); // solo en desarrollo, ver advertencia arriba
+  const provided = req.headers["x-api-key"] || "";
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(API_KEY);
+  const valid = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!valid) return res.status(401).json({ error: "No autorizado" });
+  next();
+}
+
+app.use("/api", requireApiKey);
+
+// Body parser: límite pequeño para toda la API excepto /api/attachments/upload,
+// que monta su propio parser con límite ampliado (ver esa ruta más abajo) antes
+// de que el body llegue aquí. Express ejecuta los parsers en orden de registro,
+// así que basta con excluir esa ruta del parser genérico para que no choquen.
+app.use((req, res, next) => {
+  if (req.path === "/api/attachments/upload") return next();
+  jsonParser(req, res, next);
+});
+
+// ── Rate limiting ──────────────────────────────────────────────────────────
+// Las rutas que llaman a proveedores de IA de pago (Gemini/Groq/OpenRouter) y
+// las operaciones destructivas de trimestre reciben límites propios y más
+// estrictos que el resto de la API, ya que cada llamada tiene costo real
+// (dinero en el caso de IA, pérdida de datos en el caso de quarter-reset).
+const rateLimit = require("express-rate-limit");
+
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiadas solicitudes de generación con IA, intenta de nuevo más tarde" },
+});
+
+const destructiveLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hora
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiadas operaciones destructivas, intenta de nuevo más tarde" },
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api", generalLimiter);
+app.use(["/api/generate-report", "/api/project-status", "/api/generate-global-status"], aiLimiter);
+app.use(["/api/quarter-reset", "/api/clean-stats"], destructiveLimiter);
+
 // ── API: Diagnóstico de conexión BD (solo desarrollo) ────────────────────────
+// Deshabilitada en producción: expone nombre de servidor/BD y detalle de error.
 
 app.get("/api/db-ping", async (req, res) => {
+  if (isProduction) {
+    return res.status(404).json({ error: "No encontrado" });
+  }
   if (!saveWeekReportToDB) {
     return res.json({ ok: false, error: "db-operations.cjs no cargó (módulo no encontrado)" });
   }
@@ -264,7 +367,7 @@ app.get("/api/db-ping", async (req, res) => {
       server:   process.env.DB_SERVER || "localhost",
       port:     1433,
       database: process.env.DB_NAME,
-      options:  { encrypt: true, trustServerCertificate: true },
+      options:  { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
       connectionTimeout: 5000,
     };
     console.log("[DB-PING] Intentando conectar con:", { server: cfg.server, database: cfg.database, user: cfg.user });
@@ -336,7 +439,7 @@ app.post("/api/external-contacts/sync-one", async (req, res) => {
     res.json({ ok: true, sql_id: sqlId });
   } catch (e) {
     console.error("[SQL] Error sincronizando colaborador externo:", e.message);
-    res.status(500).json({ error: "Error sincronizando colaborador externo", detail: e.message });
+    res.status(500).json(errorBody("Error sincronizando colaborador externo", e));
   }
 });
 
@@ -356,7 +459,7 @@ app.post("/api/engineers/sync-one", async (req, res) => {
     res.json({ ok: true, sql_id: sqlId });
   } catch (e) {
     console.error("[SQL] Error sincronizando ingeniero:", e.message);
-    res.status(500).json({ error: "Error sincronizando ingeniero", detail: e.message });
+    res.status(500).json(errorBody("Error sincronizando ingeniero", e));
   }
 });
 
@@ -379,7 +482,7 @@ app.post("/api/engineers/tasks/sync-one", async (req, res) => {
     res.json({ ok: true, sql_id: engineerSqlId });
   } catch (e) {
     console.error("[SQL] Error sincronizando tarea suelta:", e.message);
-    res.status(500).json({ error: "Error sincronizando tarea suelta", detail: e.message });
+    res.status(500).json(errorBody("Error sincronizando tarea suelta", e));
   }
 });
 
@@ -394,7 +497,7 @@ app.post("/api/engineers/tasks/delete-one", async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[SQL] Error borrando tarea suelta:", e.message);
-    res.status(500).json({ error: "Error borrando tarea suelta", detail: e.message });
+    res.status(500).json(errorBody("Error borrando tarea suelta", e));
   }
 });
 
@@ -404,7 +507,7 @@ app.post("/api/engineers/tasks/delete-one", async (req, res) => {
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
-app.post("/api/attachments/upload", async (req, res) => {
+app.post("/api/attachments/upload", attachmentJsonParser, async (req, res) => {
   if (!saveAttachmentToDB) {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
   }
@@ -424,7 +527,7 @@ app.post("/api/attachments/upload", async (req, res) => {
     res.json({ ok: true, size: buffer.length });
   } catch (e) {
     console.error("[SQL] Error guardando adjunto:", e.message);
-    res.status(500).json({ error: "Error guardando adjunto", detail: e.message });
+    res.status(500).json(errorBody("Error guardando adjunto", e));
   }
 });
 
@@ -441,7 +544,7 @@ app.get("/api/attachments/:id", async (req, res) => {
     res.send(att.buffer);
   } catch (e) {
     console.error("[SQL] Error descargando adjunto:", e.message);
-    res.status(500).json({ error: "Error descargando adjunto", detail: e.message });
+    res.status(500).json(errorBody("Error descargando adjunto", e));
   }
 });
 
@@ -456,7 +559,7 @@ app.post("/api/attachments/delete", async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[SQL] Error borrando adjunto:", e.message);
-    res.status(500).json({ error: "Error borrando adjunto", detail: e.message });
+    res.status(500).json(errorBody("Error borrando adjunto", e));
   }
 });
 
@@ -512,7 +615,7 @@ app.post("/api/report", async (req, res) => {
     }
   } catch (e) {
     console.error("[API] Error en POST /api/report:", e.message, e.stack);
-    res.status(500).json({ error: "Error guardando reporte", detail: e.message });
+    res.status(500).json(errorBody("Error guardando reporte", e));
   }
 });
 
@@ -558,7 +661,7 @@ app.post("/api/generate-report", async (req, res) => {
     res.json({ ok: true, analysis });
   } catch (e) {
     console.error("[AI] Error generando informe:", e.message);
-    res.status(500).json({ error: "Error generando informe con IA", detail: e.message });
+    res.status(500).json(errorBody("Error generando informe con IA", e));
   }
 });
 
@@ -577,7 +680,7 @@ app.post("/api/project-status", async (req, res) => {
     res.json({ ok: true, status });
   } catch (e) {
     console.error("[AI-STATUS] Error:", e.message);
-    res.status(500).json({ error: "Error generando status", detail: e.message });
+    res.status(500).json(errorBody("Error generando status", e));
   }
 });
 
@@ -596,7 +699,7 @@ app.post("/api/generate-global-status", async (req, res) => {
     res.json({ ok: true, analysis });
   } catch (e) {
     console.error("[AI-GLOBAL] Error:", e.message);
-    res.status(500).json({ error: "Error generando status global", detail: e.message });
+    res.status(500).json(errorBody("Error generando status global", e));
   }
 });
 
@@ -616,7 +719,7 @@ app.post("/api/restore-from-db", async (req, res) => {
       database:          process.env.DB_NAME,
       connectionTimeout: 60000,
       requestTimeout:    60000,
-      options:           { encrypt: true, trustServerCertificate: true },
+      options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
     };
     const pool = await connect(config);
 
@@ -650,7 +753,7 @@ app.post("/api/restore-from-db", async (req, res) => {
     res.json({ ok: true, restored: projects.length });
   } catch (e) {
     console.error("[RESTORE] Error:", e.message);
-    res.status(500).json({ error: "Error restaurando desde BD", detail: e.message });
+    res.status(500).json(errorBody("Error restaurando desde BD", e));
   }
 });
 
@@ -718,7 +821,7 @@ app.post("/api/quarter-reset", async (req, res) => {
         database:          process.env.DB_NAME,
         connectionTimeout: 30000,
         requestTimeout:    30000,
-        options:           { encrypt: true, trustServerCertificate: true },
+        options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
       };
       const pool = await mssql.connect(config);
       await pool.request()
@@ -814,7 +917,7 @@ app.post("/api/quarter-reset", async (req, res) => {
 
   } catch (e) {
     console.error("[QUARTER] Error en reset:", e.message);
-    res.status(500).json({ error: "Error ejecutando el reset trimestral", detail: e.message });
+    res.status(500).json(errorBody("Error ejecutando el reset trimestral", e));
   }
 });
 
@@ -888,7 +991,7 @@ app.post("/api/clean-stats", async (req, res) => {
     res.json({ ok: true, projectsCleaned: projects.length });
   } catch (e) {
     console.error("[CLEAN-STATS] Error:", e.message);
-    res.status(500).json({ error: "Error limpiando estadísticas", detail: e.message });
+    res.status(500).json(errorBody("Error limpiando estadísticas", e));
   }
 });
 
@@ -911,7 +1014,7 @@ app.get("/api/quarters", async (req, res) => {
       database:          process.env.DB_NAME,
       connectionTimeout: 15000,
       requestTimeout:    15000,
-      options:           { encrypt: true, trustServerCertificate: true },
+      options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
     };
     const pool   = await mssql.connect(config);
     const result = await pool.request().query(`
@@ -949,7 +1052,7 @@ app.get("/api/quarters", async (req, res) => {
 
     return res.json({ ok: true, source: "files", quarters });
   } catch (e) {
-    res.status(500).json({ error: "Error leyendo trimestres archivados", detail: e.message });
+    res.status(500).json(errorBody("Error leyendo trimestres archivados", e));
   }
 });
 
@@ -974,7 +1077,7 @@ app.get("/api/quarters/:id", async (req, res) => {
         database:          process.env.DB_NAME,
         connectionTimeout: 15000,
         requestTimeout:    30000,
-        options:           { encrypt: true, trustServerCertificate: true },
+        options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
       };
       const pool   = await mssql.connect(config);
       const result = await pool.request()
@@ -996,16 +1099,26 @@ app.get("/api/quarters/:id", async (req, res) => {
   try {
     const fs         = require("fs");
     const archiveDir = path.join(__dirname, "archive");
-    // El id puede ser el nombre del archivo (quarter_Q2_2026.json) o el quarterLabel
+    // El id puede ser el nombre del archivo (quarter_Q2_2026.json) o el quarterLabel.
+    // Se valida contra un charset seguro antes de tocar el filesystem para evitar
+    // path traversal vía "../" — path.join() por sí solo NO bloquea esto.
+    if (!/^[\w.\-]+$/.test(id)) {
+      return res.status(400).json({ error: "ID de trimestre inválido" });
+    }
     const fileName   = id.endsWith(".json") ? id : `${id}.json`;
     const filePath   = path.join(archiveDir, fileName);
+
+    // Cinturón y tirantes: confirma que la ruta resuelta sigue dentro de archiveDir.
+    if (!filePath.startsWith(archiveDir + path.sep)) {
+      return res.status(400).json({ error: "Ruta de trimestre inválida" });
+    }
 
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Archivo de trimestre no encontrado" });
 
     const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
     return res.json({ ok: true, source: "file", ...data });
   } catch (e) {
-    res.status(500).json({ error: "Error leyendo trimestre", detail: e.message });
+    res.status(500).json(errorBody("Error leyendo trimestre", e));
   }
 });
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
-import { uploadAttachment, deleteAttachment, attachmentDownloadUrl } from "../utils/storage";
+import { uploadAttachment, deleteAttachment, downloadAttachment } from "../utils/storage";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -94,6 +94,15 @@ function AttachmentsSection({ items, activityId, projectId, onChange }) {
     onChange(items.filter(a => a.id !== att.id));
   };
 
+  const handleDownload = async (att) => {
+    setError("");
+    try {
+      await downloadAttachment(att.id, att.filename);
+    } catch {
+      setError(`No se pudo descargar "${att.filename}".`);
+    }
+  };
+
   return (
     <div className="adm-section">
       <div className="adm-section__header">
@@ -122,15 +131,14 @@ function AttachmentsSection({ items, activityId, projectId, onChange }) {
           {items.map(att => (
             <li key={att.id} className="adm-attach-item">
               <span className="adm-attach-item__icon">{fileIcon(att.mime, att.filename)}</span>
-              <a
-                className="adm-attach-item__name"
-                href={attachmentDownloadUrl(att.id)}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                className="adm-attach-item__name adm-attach-item__name--link"
+                onClick={() => handleDownload(att)}
                 title="Descargar"
               >
                 {att.filename}
-              </a>
+              </button>
               <span className="adm-attach-item__size">{formatBytes(att.size)}</span>
               <button
                 type="button"

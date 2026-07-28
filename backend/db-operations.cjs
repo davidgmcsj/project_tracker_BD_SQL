@@ -14,7 +14,7 @@ const config = {
   database:          process.env.DB_NAME,
   connectionTimeout: 60000,
   requestTimeout:    60000,
-  options:           { encrypt: true, trustServerCertificate: true },
+  options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
   pool:              { max: 20, min: 0, idleTimeoutMillis: 60000 },
 };
 
@@ -47,12 +47,19 @@ function getWeekNumber(dateStr) {
 // ── Pre-carga global en una sola query ────────────────────────────────────────
 
 async function preloadCaches(pool, projects) {
-  const appIds = projects.map(p => `'${(p.id || "").replace(/'/g, "''")}'`).join(",");
+  const appIds = projects.map(p => p.id || "").filter(Boolean);
 
   const [engsRes, proysRes] = await Promise.all([
     pool.request().query("SELECT IngenieroID, Nombre FROM Ingenieros WHERE Estado = 1"),
     appIds.length
-      ? pool.request().query(`SELECT ProyectoID, AppID, NombreProyecto, URLPlanner FROM Proyectos WHERE AppID IN (${appIds})`)
+      ? (() => {
+          const req = pool.request();
+          const placeholders = appIds.map((id, i) => {
+            req.input(`appId${i}`, sql.NVarChar, id);
+            return `@appId${i}`;
+          });
+          return req.query(`SELECT ProyectoID, AppID, NombreProyecto, URLPlanner FROM Proyectos WHERE AppID IN (${placeholders.join(",")})`);
+        })()
       : Promise.resolve({ recordset: [] }),
   ]);
 
@@ -546,12 +553,6 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
 
 const toDateOrNull = (v) => (v && typeof v === "string" && v.trim() ? new Date(v) : null);
 
-const q = (v) => {
-  if (v === null || v === undefined) return "NULL";
-  if (v instanceof Date)             return `'${v.toISOString()}'`;
-  return `'${String(v).replace(/'/g, "''")}'`;
-};
-
 async function syncActividadesDetalle(project) {
   const pool = await getPool();
 
@@ -567,8 +568,17 @@ async function syncActividadesDetalle(project) {
     return "not_started";
   };
 
-  // Construir filas para cada tabla
-  const detRows = [], chkRows = [], notaRows = [], kdRows = [];
+  // Construir filas para cada tabla como placeholders parametrizados —
+  // cada valor se liga vía .input(), nunca se interpola directo en el SQL.
+  const detReq = pool.request();
+  const detRows = [];
+  const chkReq = pool.request();
+  const chkRows = [];
+  const notaReq = pool.request();
+  const notaRows = [];
+  const kdReq = pool.request();
+  const kdRows = [];
+  let di = 0, ci = 0, ni = 0, ki = 0;
 
   for (const act of acts) {
     if (!act?.id) continue;
@@ -578,35 +588,77 @@ async function syncActividadesDetalle(project) {
     const progreso = Math.max(0, Math.min(100, Math.round(Number(act.progress) || 0)));
     const horas    = Math.max(0, Number(act.planned_hours) || 0);
 
+    detReq.input(`dActId${di}`,     sql.NVarChar(60),  act.id);
+    detReq.input(`dProyId${di}`,    sql.NVarChar(60),  proyectoAppID);
+    detReq.input(`dTexto${di}`,     sql.NVarChar,      act.text || "");
+    detReq.input(`dFInicio${di}`,   sql.Date,          toDateOrNull(act.start_date));
+    detReq.input(`dFFin${di}`,      sql.Date,          toDateOrNull(act.due_date));
+    detReq.input(`dDesc${di}`,      sql.NVarChar,      act.description || "");
+    detReq.input(`dObj${di}`,       sql.NVarChar,      act.objectives || "");
+    detReq.input(`dSol${di}`,       sql.NVarChar,      act.solution || "");
+    detReq.input(`dEstado${di}`,    sql.NVarChar(50),  estado);
+    detReq.input(`dFInsc${di}`,     sql.Date,          toDateOrNull(actHist.added));
+    detReq.input(`dFEnProc${di}`,   sql.Date,          toDateOrNull(actHist.in_progress));
+    detReq.input(`dFComp${di}`,     sql.Date,          toDateOrNull(actHist.completed));
+    detReq.input(`dProgreso${di}`,  sql.Int,           progreso);
+    detReq.input(`dHoras${di}`,     sql.Decimal(8, 2), horas);
     detRows.push(
-      `(${q(act.id)},${q(proyectoAppID)},${q(act.text||"")},` +
-      `${q(toDateOrNull(act.start_date))},${q(toDateOrNull(act.due_date))},${q(act.description||"")},${q(act.objectives||"")},${q(act.solution||"")},${q(estado)},` +
-      `${q(toDateOrNull(actHist.added))},${q(toDateOrNull(actHist.in_progress))},${q(toDateOrNull(actHist.completed))},GETDATE(),` +
-      `${progreso},${horas})`
+      `(@dActId${di},@dProyId${di},@dTexto${di},@dFInicio${di},@dFFin${di},` +
+      `@dDesc${di},@dObj${di},@dSol${di},@dEstado${di},` +
+      `@dFInsc${di},@dFEnProc${di},@dFComp${di},GETDATE(),@dProgreso${di},@dHoras${di})`
     );
+    di++;
 
-    (act.checklist || []).forEach((item, i) => {
+    (act.checklist || []).forEach((item, idx) => {
       if (!item?.id) return;
-      chkRows.push(`(${q(act.id)},${q(item.id)},${q(item.text||"")},${item.done?1:0},${i})`);
+      chkReq.input(`cActId${ci}`, sql.NVarChar(60), act.id);
+      chkReq.input(`cItemId${ci}`, sql.NVarChar(60), item.id);
+      chkReq.input(`cTexto${ci}`, sql.NVarChar, item.text || "");
+      chkReq.input(`cHecho${ci}`, sql.Bit, item.done ? 1 : 0);
+      chkReq.input(`cOrden${ci}`, sql.Int, idx);
+      chkRows.push(`(@cActId${ci},@cItemId${ci},@cTexto${ci},@cHecho${ci},@cOrden${ci})`);
+      ci++;
     });
 
     (act.notes || []).forEach(nota => {
       if (!nota?.id) return;
-      notaRows.push(`(${q(act.id)},${q(nota.id)},${q(toDateOrNull(nota.date))},${q(nota.text||"")})`);
+      notaReq.input(`nActId${ni}`, sql.NVarChar(60), act.id);
+      notaReq.input(`nNotaId${ni}`, sql.NVarChar(60), nota.id);
+      notaReq.input(`nFecha${ni}`, sql.Date, toDateOrNull(nota.date));
+      notaReq.input(`nTexto${ni}`, sql.NVarChar, nota.text || "");
+      notaRows.push(`(@nActId${ni},@nNotaId${ni},@nFecha${ni},@nTexto${ni})`);
+      ni++;
     });
 
     (act.key_dates || []).forEach(kd => {
       if (!kd?.id) return;
-      kdRows.push(`(${q(act.id)},${q(kd.id)},${q(toDateOrNull(kd.date))},${q(kd.label||"")})`);
+      kdReq.input(`kActId${ki}`, sql.NVarChar(60), act.id);
+      kdReq.input(`kFechaId${ki}`, sql.NVarChar(60), kd.id);
+      kdReq.input(`kFecha${ki}`, sql.Date, toDateOrNull(kd.date));
+      kdReq.input(`kEtiqueta${ki}`, sql.NVarChar, kd.label || "");
+      kdRows.push(`(@kActId${ki},@kFechaId${ki},@kFecha${ki},@kEtiqueta${ki})`);
+      ki++;
     });
   }
 
+  // actIds parametrizados, para los 3 DELETE ... WHERE AppActividadID IN (...).
+  // Cada mssql.Request solo se puede ejecutar una vez, así que se genera una
+  // request nueva por cada DELETE reutilizando la misma lista de placeholders.
+  const actIdList = acts.filter(a => a?.id).map(a => a.id);
+  const idPlaceholders = actIdList.map((_, i) => `@aid${i}`);
+  const deleteByActIds = (table) => {
+    if (!idPlaceholders.length) return Promise.resolve();
+    const req = pool.request();
+    actIdList.forEach((id, i) => req.input(`aid${i}`, sql.NVarChar(60), id));
+    return req.query(`DELETE FROM ${table} WHERE AppActividadID IN (${idPlaceholders.join(",")})`);
+  };
+
   try {
-    // Tabla Actividades_Detalle: DELETE por proyecto + INSERT bulk
+    // Tabla Actividades_Detalle: DELETE por proyecto + INSERT bulk parametrizado
     await pool.request().input("proyId", sql.NVarChar(60), proyectoAppID)
       .query(`DELETE FROM Actividades_Detalle WHERE ProyectoAppID = @proyId`);
     if (detRows.length) {
-      await pool.request().query(
+      await detReq.query(
         `INSERT INTO Actividades_Detalle
            (AppActividadID,ProyectoAppID,TextoActividad,FechaInicio,FechaFin,
             Descripcion,Objetivos,Solucion,Estado,FechaInscripcion,FechaEnProceso,FechaCompletada,UltimaActualizacion,
@@ -616,32 +668,25 @@ async function syncActividadesDetalle(project) {
     }
 
     // Tabla Actividad_Checklist: DELETE por actividades del proyecto + INSERT bulk
-    const actIds = acts.filter(a => a?.id).map(a => q(a.id)).join(",");
-    if (actIds) {
-      await pool.request().query(`DELETE FROM Actividad_Checklist WHERE AppActividadID IN (${actIds})`);
-    }
+    await deleteByActIds("Actividad_Checklist");
     if (chkRows.length) {
-      await pool.request().query(
+      await chkReq.query(
         `INSERT INTO Actividad_Checklist (AppActividadID,AppChecklistID,Texto,Hecho,Orden) VALUES ${chkRows.join(",")}`
       );
     }
 
     // Tabla Actividad_Notas
-    if (actIds) {
-      await pool.request().query(`DELETE FROM Actividad_Notas WHERE AppActividadID IN (${actIds})`);
-    }
+    await deleteByActIds("Actividad_Notas");
     if (notaRows.length) {
-      await pool.request().query(
+      await notaReq.query(
         `INSERT INTO Actividad_Notas (AppActividadID,AppNotaID,Fecha,Texto) VALUES ${notaRows.join(",")}`
       );
     }
 
     // Tabla Actividad_FechasClave
-    if (actIds) {
-      await pool.request().query(`DELETE FROM Actividad_FechasClave WHERE AppActividadID IN (${actIds})`);
-    }
+    await deleteByActIds("Actividad_FechasClave");
     if (kdRows.length) {
-      await pool.request().query(
+      await kdReq.query(
         `INSERT INTO Actividad_FechasClave (AppActividadID,AppFechaID,Fecha,Etiqueta) VALUES ${kdRows.join(",")}`
       );
     }

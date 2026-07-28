@@ -19,8 +19,13 @@ const LS_HISTORY  = "wt-history";
 // Si no está definida, las llamadas usan rutas relativas (funciona cuando front y back están en el mismo host).
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-async function apiFetch(path, options) {
-  const res = await fetch(`${API_BASE}${path}`, options);
+// VITE_API_KEY debe coincidir con API_KEY del backend — se envía en el header
+// X-API-Key de cada request. El backend la exige a partir de esta versión.
+const API_KEY = import.meta.env.VITE_API_KEY || "";
+
+async function apiFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}), ...(API_KEY ? { "X-API-Key": API_KEY } : {}) };
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json();
 }
@@ -191,9 +196,27 @@ export async function uploadAttachment(file, { appActividadID, proyectoAppID }) 
   };
 }
 
-// Devuelve la URL de descarga de un adjunto (se abre directo en el navegador).
-export function attachmentDownloadUrl(appAdjuntoID) {
-  return `${API_BASE}/api/attachments/${appAdjuntoID}`;
+// Descarga un adjunto y dispara el guardado en el navegador. Reemplaza al
+// antiguo enlace <a href> directo: un <a> no puede enviar el header
+// X-API-Key, así que la descarga ahora pasa por fetch (vía apiFetchBlob)
+// y se guarda con un <a> temporal apuntando a un blob: URL local.
+async function apiFetchBlob(path) {
+  const headers = API_KEY ? { "X-API-Key": API_KEY } : {};
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
+  return res.blob();
+}
+
+export async function downloadAttachment(appAdjuntoID, filename) {
+  const blob = await apiFetchBlob(`/api/attachments/${appAdjuntoID}`);
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = filename || "adjunto";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function deleteAttachment(appAdjuntoID) {
