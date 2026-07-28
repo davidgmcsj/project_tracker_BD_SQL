@@ -3888,6 +3888,47 @@
 .adm-date-badge--inprogress { background: var(--amber-bg); color: #b45309; }
 .adm-date-badge--completed  { background: var(--green-bg); color: #065f46; }
 
+/* Fechas de transición EDITABLES (útil al importar de Planner sin ese dato) */
+.adm-dates-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+.adm-date-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 130px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.adm-date-edit__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.adm-date-edit--added      .adm-date-edit__head { color: #1d4ed8; }
+.adm-date-edit--inprogress .adm-date-edit__head { color: #b45309; }
+.adm-date-edit--completed  .adm-date-edit__head { color: var(--green); }
+.adm-date-edit__input {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: var(--t-sm);
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+.adm-date-edit__input:focus { border-color: var(--azul-claro); box-shadow: var(--ring); }
+
 /* ── Cuerpo ── */
 .adm-body {
   padding: 20px 24px;

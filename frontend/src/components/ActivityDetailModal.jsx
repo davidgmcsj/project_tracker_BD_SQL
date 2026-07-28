@@ -158,7 +158,7 @@ function AttachmentsSection({ items, activityId, projectId, onChange }) {
 
 // ── Detección de cambios ──────────────────────────────────────────────────────
 
-function hasChanges(activity, local) {
+function hasChanges(activity, local, originalHistory) {
   if ((activity.text        || "")      !== local.text)        return true;
   if ((activity.start_date  || "")      !== local.start_date)  return true;
   if ((activity.due_date    || "")      !== local.due_date)    return true;
@@ -171,6 +171,10 @@ function hasChanges(activity, local) {
   if (JSON.stringify(activity.checklist  || []) !== JSON.stringify(local.checklist))  return true;
   if (JSON.stringify(activity.notes      || []) !== JSON.stringify(local.notes))      return true;
   if (JSON.stringify(activity.key_dates  || []) !== JSON.stringify(local.key_dates))  return true;
+  const oh = originalHistory || {};
+  if ((oh.added || "") !== local.history.added)             return true;
+  if ((oh.in_progress || "") !== local.history.in_progress) return true;
+  if ((oh.completed || "") !== local.history.completed)     return true;
   return false;
 }
 
@@ -231,6 +235,9 @@ export default function ActivityDetailModal({
     notes:              Array.isArray(activity.notes)     ? activity.notes     : [],
     key_dates:          Array.isArray(activity.key_dates) ? activity.key_dates : [],
     attachments:        Array.isArray(activity.attachments) ? activity.attachments : [],
+    // Fechas de transición (Inscrita/En proceso/Completada). Viven en
+    // task_status.status_history, no en la actividad — se propagan por _history al guardar.
+    history:            { added: history.added || "", in_progress: history.in_progress || "", completed: history.completed || "" },
   });
 
   const [showConfirm,    setShowConfirm]    = useState(false);
@@ -247,7 +254,14 @@ export default function ActivityDetailModal({
     onSave({ ...activity, attachments: nextAttachments });
   };
 
-  const dirty = hasChanges(activity, local);
+  const dirty = hasChanges(activity, local, history);
+
+  // Separa el history (va a task_status) del resto de campos de la actividad.
+  // EditView lee _history y lo escribe en task_status.status_history.
+  const buildSaved = () => {
+    const { history: hist, ...actFields } = local;
+    return { ...activity, ...actFields, _history: hist };
+  };
 
   const requestClose = () => {
     if (dirty) { setShowConfirm(true); return; }
@@ -255,7 +269,7 @@ export default function ActivityDetailModal({
   };
 
   const handleSaveAndClose = () => {
-    onSave({ ...activity, ...local });
+    onSave(buildSaved());
     onClose();
   };
 
@@ -334,8 +348,8 @@ export default function ActivityDetailModal({
             placeholder="Nombre de la actividad…"
           />
 
-          {/* Fechas de depósito según estado */}
-          <DateBadgesSection status={status} history={history} />
+          {/* Fechas de transición (editables — útil al importar de Planner) */}
+          <DateBadgesSection status={status} history={local.history} onChange={val => set("history", val)} />
         </div>
 
         <div className="adm-body">

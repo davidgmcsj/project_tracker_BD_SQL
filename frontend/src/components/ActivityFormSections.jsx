@@ -5,50 +5,60 @@
 import { useState, useRef, useEffect } from "react";
 import { createChecklistItem, createKeyDate, formatDateDMY } from "../utils/formulas";
 
-// Fechas de depósito según estado:
-//   not_started → Inscripción (si existe)
-//   in_progress → Inscripción + En proceso
-//   completed   → Solo Completada
-export function DateBadgesSection({ status, history }) {
-  if (status === "completed") {
+// Fechas de transición de estado: Inscrita (added) / En proceso (in_progress) /
+// Completada (completed). Se auto-registran al cambiar de estado en la app, PERO
+// al importar de Planner no se conocen. Por eso son editables aquí: el PMO puede
+// registrar la fecha real de cada hito cuando el Excel no la trae.
+//
+// Modo solo lectura (onChange ausente): muestra badges. Editable: date pickers.
+const DATE_FIELDS = [
+  { key: "added",       label: "Inscrita",    icon: "📌", cls: "added"      },
+  { key: "in_progress", label: "En proceso",  icon: "🔄", cls: "inprogress" },
+  { key: "completed",   label: "Completada",  icon: "✅", cls: "completed"   },
+];
+
+export function DateBadgesSection({ status, history, onChange }) {
+  const h = history || {};
+
+  // Solo lectura: comportamiento original por estado.
+  if (!onChange) {
+    const shown = status === "completed" ? ["completed"]
+      : status === "in_progress" ? ["added", "in_progress"]
+      : h.added ? ["added"] : [];
+    if (!shown.length) return null;
     return (
       <div className="adm-dates-row">
-        <span className="adm-date-badge adm-date-badge--completed">
-          <span className="adm-date-badge__icon">✅</span>
-          <span className="adm-date-badge__label">Completada</span>
-          <span className="adm-date-badge__value">{formatDateDMY(history?.completed)}</span>
-        </span>
+        {shown.map(k => {
+          const f = DATE_FIELDS.find(d => d.key === k);
+          return (
+            <span key={k} className={`adm-date-badge adm-date-badge--${f.cls}`}>
+              <span className="adm-date-badge__icon">{f.icon}</span>
+              <span className="adm-date-badge__label">{f.label}</span>
+              <span className="adm-date-badge__value">{formatDateDMY(h[k])}</span>
+            </span>
+          );
+        })}
       </div>
     );
   }
 
-  if (status === "in_progress") {
-    return (
-      <div className="adm-dates-row">
-        <span className="adm-date-badge adm-date-badge--added">
-          <span className="adm-date-badge__icon">📌</span>
-          <span className="adm-date-badge__label">Inscrita</span>
-          <span className="adm-date-badge__value">{formatDateDMY(history?.added)}</span>
-        </span>
-        <span className="adm-date-badge adm-date-badge--inprogress">
-          <span className="adm-date-badge__icon">🔄</span>
-          <span className="adm-date-badge__label">En proceso</span>
-          <span className="adm-date-badge__value">{formatDateDMY(history?.in_progress)}</span>
-        </span>
-      </div>
-    );
-  }
-
-  // not_started
+  // Editable: los tres campos como date pickers.
   return (
-    <div className="adm-dates-row">
-      {history?.added && (
-        <span className="adm-date-badge adm-date-badge--added">
-          <span className="adm-date-badge__icon">📌</span>
-          <span className="adm-date-badge__label">Inscrita</span>
-          <span className="adm-date-badge__value">{formatDateDMY(history.added)}</span>
-        </span>
-      )}
+    <div className="adm-dates-edit">
+      {DATE_FIELDS.map(f => (
+        <label key={f.key} className={`adm-date-edit adm-date-edit--${f.cls}`}>
+          <span className="adm-date-edit__head">
+            <span className="adm-date-edit__icon">{f.icon}</span>
+            {f.label}
+          </span>
+          <input
+            type="date"
+            className="adm-date-edit__input"
+            value={h[f.key] || ""}
+            onChange={e => onChange({ ...h, [f.key]: e.target.value })}
+          />
+        </label>
+      ))}
     </div>
   );
 }

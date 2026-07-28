@@ -1718,8 +1718,25 @@ export default function EditView({
   const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
 
   const handleActivityModalSave = (updatedAct) => {
-    const newActs = activities.map(a => a.id === updatedAct.id ? updatedAct : a);
-    const updatedProject = { ...p, activities_identified: newActs };
+    // _history (fechas de transición Inscrita/En proceso/Completada) viene del modal
+    // pero NO vive en la actividad: se escribe en task_status.status_history[actId].
+    const { _history, ...actClean } = updatedAct;
+    const newActs = activities.map(a => a.id === actClean.id ? actClean : a);
+    let updatedProject = { ...p, activities_identified: newActs };
+    if (_history) {
+      const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+      const cleanHist = {};
+      if (_history.added)       cleanHist.added       = _history.added;
+      if (_history.in_progress) cleanHist.in_progress = _history.in_progress;
+      if (_history.completed)   cleanHist.completed   = _history.completed;
+      updatedProject = {
+        ...updatedProject,
+        task_status: {
+          ...ts,
+          status_history: { ...(ts.status_history || {}), [actClean.id]: cleanHist },
+        },
+      };
+    }
     const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
     onUpdateProjectFull(editingIdx, updatedProject);
     if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);

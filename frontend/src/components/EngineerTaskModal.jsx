@@ -130,7 +130,7 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
             placeholder="Nombre de la tarea…"
           />
 
-          <DateBadgesSection status={local.status} history={local.history} />
+          <DateBadgesSection status={local.status} history={local.history} onChange={val => set("history", val)} />
         </div>
 
         <div className="adm-body">
