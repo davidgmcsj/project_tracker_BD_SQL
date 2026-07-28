@@ -10,6 +10,40 @@ import {
   generateEngineerReportText,
 } from "../utils/engineers";
 
+// Iniciales para el avatar (máx 2 letras).
+function initials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+// Color estable del avatar derivado del nombre (paleta institucional).
+const AVATAR_COLORS = ["#003399", "#1a49a8", "#0e7490", "#7c3aed", "#be185d", "#0f766e", "#b45309"];
+function avatarColor(name) {
+  let h = 0;
+  for (let i = 0; i < String(name).length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+// Cuenta la carga del ingeniero (actividades por estado) sumando todos sus proyectos.
+function engineerWorkload(engineerId, projects, tasks) {
+  let done = 0, wip = 0, pending = 0;
+  getProjectsForEngineer(engineerId, projects).forEach(p => {
+    getAllAssignedActivitiesInProject(engineerId, p).forEach(a => {
+      if (a.status === "completed") done++;
+      else if (a.status === "in_progress") wip++;
+      else pending++;
+    });
+  });
+  (tasks || []).forEach(t => {
+    if (t.status === "completed") done++;
+    else if (t.status === "in_progress") wip++;
+    else pending++;
+  });
+  const total = done + wip + pending;
+  return { done, wip, pending, total, pct: total ? Math.round((done / total) * 100) : 0 };
+}
+
 const STATUS_META = {
   completed:   { label: "Completada", cls: "eng-badge--done"    },
   in_progress: { label: "En proceso", cls: "eng-badge--wip"     },
@@ -158,15 +192,38 @@ export default function EngineerReportView({ engineers, projects }) {
         <div className="edit-empty">Selecciona un ingeniero.</div>
       ) : (
         <>
-          <div className="project-card" style={{ marginBottom: 20 }}>
-            <div className="project-card__header">
-              <h3 className="project-card__name">{eng.name}</h3>
-              <span className={`status-pill ${eng.active ? "status-pill--on-track" : "status-pill--blocked"}`}>
-                {eng.active ? "Activo" : "Inactivo"}
-              </span>
-            </div>
-            {eng.role && <p style={{ color: "var(--text-2)", fontSize: "13px", margin: "4px 0 0" }}>{eng.role}</p>}
-          </div>
+          {(() => {
+            const w = engineerWorkload(eng.id, projects, eng.tasks);
+            return (
+              <div className="eng-hero">
+                <div className="eng-hero__avatar" style={{ background: avatarColor(eng.name) }}>
+                  {initials(eng.name)}
+                </div>
+                <div className="eng-hero__body">
+                  <div className="eng-hero__top">
+                    <div>
+                      <h3 className="eng-hero__name">{eng.name}</h3>
+                      {eng.role && <p className="eng-hero__role">{eng.role}</p>}
+                    </div>
+                    <span className={`status-pill ${eng.active ? "status-pill--on-track" : "status-pill--blocked"}`}>
+                      {eng.active ? "Activo" : "Inactivo"}
+                    </span>
+                  </div>
+                  <div className="eng-hero__load">
+                    <div className="eng-hero__bar" title={`${w.done} de ${w.total} completadas`}>
+                      <div className="eng-hero__bar-fill" style={{ width: `${w.pct}%` }} />
+                    </div>
+                    <span className="eng-hero__pct tabular">{w.done}/{w.total}</span>
+                  </div>
+                  <div className="eng-hero__badges">
+                    <span className="eng-badge eng-badge--done">{w.done} ✓ completadas</span>
+                    <span className="eng-badge eng-badge--wip">{w.wip} ↻ en curso</span>
+                    <span className="eng-badge eng-badge--pending">{w.pending} ○ pendientes</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <h3 className="report-section-title" style={{ marginBottom: 12 }}>
             Actividades por proyecto ({projs.length})

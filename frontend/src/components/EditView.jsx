@@ -1287,358 +1287,103 @@ function BulkAssignPanel({ activities, engineerCatalog, externalContacts, taskSt
   );
 }
 
-// ── Asignación fija de actividades a ingenieros ───────────────────────────────
-// Persiste hasta que la actividad se marque como completada.
-// No se reinicia con "Nueva semana".
+// ── Panel "Pulso del proyecto" ────────────────────────────────────────────────
+// Reemplaza el textarea plano de "Estado actual". Muestra el semáforo del
+// proyecto, chips de datos VIVOS calculados de las actividades (avance, blo-
+// queantes, próxima fecha clave) y la nota de contexto en una tarjeta cuidada.
 
-const ROW_HEIGHT_PX = 44; // altura aproximada de cada fila
-const MAX_VISIBLE   = 7;
+const PULSE_STATUS = {
+  "on-track":        { label: "En curso",        cls: "ok",   icon: "🟡" },
+  "at-risk":         { label: "En riesgo",       cls: "warn", icon: "🟠" },
+  blocked:           { label: "Bloqueado",       cls: "crit", icon: "🔴" },
+  completed:         { label: "Completado",      cls: "ok",   icon: "🟢" },
+  "mejora-continua": { label: "Mejora Continua", cls: "info", icon: "🔵" },
+};
 
-function ActivityAssignmentRow({ activity, position, engineerCatalog, externalContacts, completedBy, onToggleEngineer, onCreateExternal }) {
-  const isCompleted = !!completedBy;
-  const assignedIds = new Set((activity.assigned_engineers || []).map(e => e.id));
-  const assignables = buildAssignables(engineerCatalog, externalContacts);
-
-  // Incluir también asignados que ya no estén activos en el catálogo (para no perder el chip)
-  const allAssigned = activity.assigned_engineers || [];
-
-  if (isCompleted) {
-    const names = Array.isArray(completedBy)
-      ? completedBy.map(e => e.engineer_name).filter(Boolean).join(", ")
-      : (completedBy.engineer_name || "—");
-    return (
-      <div className="act-assign-row act-assign-row--completed">
-        <span className="act-assign-row__num">{position}.</span>
-        <span className="act-assign-row__text act-assign-row__text--done">{activity.text}</span>
-        <span className="act-assign-row__badge-done">✓ {names}</span>
-      </div>
-    );
-  }
-
-  const hasUnassigned = assignables.some(a => !assignedIds.has(a.id));
-
-  return (
-    <div className="act-assign-row act-assign-row--multi">
-      <div className="act-assign-row__top">
-        <span className="act-assign-row__num">{position}.</span>
-        <span className="act-assign-row__text">{activity.text}</span>
-      </div>
-      <div className="act-assign-row__chips">
-        {allAssigned.map(e => {
-          const isExternal = e.id.startsWith("ext_");
-          const extEntry   = isExternal ? (externalContacts || []).find(c => c.id === e.id) : null;
-          const chipLabel  = isExternal
-            ? `${e.name.split(' ')[0]}${extEntry?.company ? ` · ${extEntry.company}` : ""}`
-            : e.name;
-          return (
-            <span key={e.id} className={`act-assign-chip${isExternal ? " act-assign-chip--external" : ""}`} title={isExternal ? `${e.name}${extEntry?.company ? ` (${extEntry.company})` : ""}` : e.name}>
-              {isExternal && <span className="act-assign-chip__ext-tag">Ext</span>}
-              {chipLabel}
-              <button
-                type="button"
-                className="act-assign-chip__remove"
-                onClick={() => onToggleEngineer(activity.id, e.id, false)}
-                title={`Quitar a ${e.name}`}
-              >✕</button>
-            </span>
-          );
-        })}
-        {hasUnassigned && (
-          <AssigneeDropdown
-            assignables={assignables}
-            assignedIds={assignedIds}
-            placeholder={assignedIds.size === 0 ? "Asignar…" : "+ Otro…"}
-            onSelect={id => onToggleEngineer(activity.id, id, true)}
-            onCreateExternal={(name, company) => onCreateExternal(activity.id, name, company)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Campo "Estado actual del proyecto" con modo lectura / edición ─────────────
-// En modo lectura muestra una tarjeta con el texto formateado y un botón "Editar".
-// En modo edición muestra el textarea y botones "Guardar" / "Cancelar".
-// Nunca muestra los dos al mismo tiempo.
-function StatusNotesField({ value, onChange }) {
-  const [editing,  setEditing]  = useState(false);
-  const [draft,    setDraft]    = useState(value);
-
-  // Si el valor externo cambia (ej: carga de proyecto) sincronizamos el draft
-  // solo cuando NO estamos editando, para no pisar lo que el usuario está escribiendo.
+function ProjectPulseField({ project, value, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState(value);
   const prevValue = useRef(value);
   useEffect(() => {
-    if (!editing && value !== prevValue.current) {
-      setDraft(value);
-      prevValue.current = value;
-    }
+    if (!editing && value !== prevValue.current) { setDraft(value); prevValue.current = value; }
   }, [value, editing]);
 
-  const handleEdit = () => { setDraft(value); setEditing(true); };
+  const handleEdit   = () => { setDraft(value); setEditing(true); };
+  const handleSave   = () => { onChange(draft); setEditing(false); prevValue.current = draft; };
+  const handleCancel = () => { setDraft(value); setEditing(false); };
 
-  const handleSave = () => {
-    onChange(draft);
-    setEditing(false);
-    prevValue.current = draft;
+  // ── Datos vivos (derivados, no capturados) ──
+  const acts = visibleActivities(project.activities_identified);
+  const m    = project.manual_metrics || {};
+  const pct  = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
+  const blockers = (project.impediments || []).filter(im => im.category === "blocker");
+  const risks    = (project.impediments || []).filter(im => im.category === "risk");
+  // Próxima fecha clave = due_date más cercana en el futuro entre las actividades.
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = acts
+    .map(a => a.due_date).filter(d => d && d >= today).sort();
+  const nextDate = upcoming[0] || null;
+  const fmtShort = (d) => {
+    if (!d) return null;
+    const [, mo, da] = d.split("-");
+    const MM = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    return `${da} ${MM[Number(mo) - 1]}`;
   };
-
-  const handleCancel = () => {
-    setDraft(value);
-    setEditing(false);
-  };
+  const st = PULSE_STATUS[project.status] || PULSE_STATUS["on-track"];
 
   return (
-    <div className="field field--optional">
-      <div className="field__header" style={{ marginBottom: 8 }}>
-        <label className="field__label">📋 Estado actual del proyecto</label>
+    <div className={`pulse pulse--${st.cls}`}>
+      <div className="pulse__head">
+        <div className="pulse__status">
+          <span className="pulse__icon">{st.icon}</span>
+          <div>
+            <div className="pulse__status-label">{st.label}</div>
+            <div className="pulse__eyebrow">Estado actual del proyecto</div>
+          </div>
+        </div>
         {!editing && (
-          <button type="button" className="sn-edit-btn" onClick={handleEdit}>
-            {value ? "✎ Editar" : "+ Agregar"}
+          <button type="button" className="pulse__edit" onClick={handleEdit}>
+            {value ? "✎ Editar nota" : "+ Agregar nota"}
           </button>
         )}
       </div>
 
+      {/* Chips de datos vivos */}
+      <div className="pulse__chips">
+        <span className="pulse-chip"><strong className="tabular">{pct}%</strong> avance</span>
+        <span className={`pulse-chip ${blockers.length ? "pulse-chip--crit" : ""}`}>
+          <strong className="tabular">{blockers.length}</strong> bloqueante{blockers.length !== 1 ? "s" : ""}
+        </span>
+        {risks.length > 0 && (
+          <span className="pulse-chip pulse-chip--warn"><strong className="tabular">{risks.length}</strong> riesgo{risks.length !== 1 ? "s" : ""}</span>
+        )}
+        {nextDate && <span className="pulse-chip">📅 Próx. hito: <strong>{fmtShort(nextDate)}</strong></span>}
+        <span className="pulse-chip">{acts.length} actividad{acts.length !== 1 ? "es" : ""}</span>
+      </div>
+
+      {/* Nota de contexto */}
       {editing ? (
-        // ── Modo edición ──────────────────────────────────────────────────────
-        <div className="sn-edit-wrap">
+        <div className="pulse__edit-wrap">
           <textarea
-            className="field__textarea status-notes__textarea"
-            rows={6}
-            autoFocus
-            placeholder="Redacta aquí el estado actual del proyecto: avances, decisiones tomadas, bloqueos, contexto importante..."
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
+            className="field__textarea pulse__textarea" rows={5} autoFocus
+            placeholder="Contexto de la semana: avances, decisiones, bloqueos, qué necesitas para destrabar…"
+            value={draft} onChange={e => setDraft(e.target.value)}
           />
-          <div className="sn-edit-actions">
+          <div className="pulse__edit-actions">
             <button type="button" className="btn btn--secondary" onClick={handleCancel}>Cancelar</button>
-            <button type="button" className="btn btn--primary"   onClick={handleSave}>Guardar</button>
+            <button type="button" className="btn btn--brand-solid" onClick={handleSave}>Guardar nota</button>
           </div>
         </div>
       ) : value ? (
-        // ── Modo lectura: tarjeta con el texto ───────────────────────────────
-        <div className="sn-card" onClick={handleEdit} title="Clic para editar">
-          {value.split("\n").map((line, i) =>
-            line.trim() ? <p key={i} className="sn-card__line">{line}</p> : <br key={i} />
-          )}
+        <div className="pulse__note" onClick={handleEdit} title="Clic para editar">
+          {value.split("\n").map((line, i) => line.trim()
+            ? <p key={i} className="pulse__note-line">{line}</p>
+            : <br key={i} />)}
         </div>
       ) : (
-        // ── Sin contenido aún ────────────────────────────────────────────────
-        <p className="sn-empty" onClick={handleEdit}>
-          Sin estado registrado. Haz clic aquí o en "+ Agregar" para redactar.
+        <p className="pulse__empty" onClick={handleEdit}>
+          Sin nota de contexto. Los datos de arriba se calculan solos; agrega aquí la narrativa que no se ve en los números.
         </p>
-      )}
-    </div>
-  );
-}
-
-function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, externalContacts, onActivitiesChange, onCreateExternal }) {
-  const [query,         setQuery]         = useState("");
-  const [filterEngId,   setFilterEngId]   = useState("");  // "" = todos
-
-  const completedSet = new Set(safeArr((taskStatus || {}).completed));
-  const completedBy  = (taskStatus || {}).completed_by || {};
-
-  const allActs     = safeActs(activities);
-  const positionMap = new Map(allActs.map((a, i) => [a.id, i + 1]));
-
-  const assignableActs = allActs.filter(a => !completedSet.has(a.id));
-  const completedActs  = allActs.filter(a => completedSet.has(a.id) && completedBy[a.id]);
-
-  // Ingenieros que tienen al menos una actividad asignada (para el filtro dropdown)
-  const assignedEngineers = (() => {
-    const seen = new Map();
-    allActs.forEach(a => {
-      (a.assigned_engineers || []).forEach(e => {
-        if (!seen.has(e.id)) seen.set(e.id, e.name);
-      });
-    });
-    return [...seen.entries()].map(([id, name]) => ({ id, name }));
-  })();
-
-  const applyFilters = (arr) => {
-    let result = arr;
-    // Filtro por ingeniero
-    if (filterEngId) {
-      result = result.filter(a => (a.assigned_engineers || []).some(e => e.id === filterEngId));
-    }
-    // Búsqueda por texto / número
-    if (query.trim()) {
-      const words = query.trim().toLowerCase().split(/\s+/);
-      result = result.filter(a => {
-        const haystack = `${positionMap.get(a.id)} ${a.text}`.toLowerCase();
-        return words.every(w => haystack.includes(w));
-      });
-    }
-    return result;
-  };
-
-  const visibleAssignable = applyFilters(assignableActs);
-  const visibleCompleted  = applyFilters(completedActs);
-  const allVisible        = [...visibleAssignable, ...visibleCompleted];
-  const totalRows         = allVisible.length;
-  const needsScroll       = totalRows > MAX_VISIBLE;
-  const listMaxHeight     = needsScroll ? `${MAX_VISIBLE * ROW_HEIGHT_PX}px` : undefined;
-
-  const handleToggleEngineer = (actId, personId, add) => {
-    // Busca primero en el catálogo de ingenieros, luego en externos
-    const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
-    const entry       = allContacts.find(e => e.id === personId);
-    const today       = new Date().toISOString().slice(0, 10);
-    const newActs     = allActs.map(a => {
-      if (a.id !== actId) return a;
-      const current = a.assigned_engineers || [];
-      const updated = add
-        ? (current.some(e => e.id === personId) ? current : [...current, { id: personId, name: entry?.name || "" }])
-        : current.filter(e => e.id !== personId);
-      return {
-        ...a,
-        assigned_engineers: updated,
-        assigned_date: updated.length > 0 ? (a.assigned_date || today) : null,
-      };
-    });
-    if (!add && filterEngId === personId) {
-      const stillHas = newActs.some(a => (a.assigned_engineers || []).some(e => e.id === personId));
-      if (!stillHas) setFilterEngId("");
-    }
-    onActivitiesChange(newActs);
-  };
-
-  // Crea un externo nuevo y lo asigna inmediatamente a la actividad
-  const handleCreateExternal = (actId, name, company) => {
-    const newId = onCreateExternal(name, company); // devuelve el ext_xxx nuevo
-    // onCreateExternal actualiza el catálogo; lo asignamos usando el id que acaba de retornar
-    // pero como es async (persistencia), forzamos aquí la asignación directa con los datos conocidos
-    const today   = new Date().toISOString().slice(0, 10);
-    const newActs = allActs.map(a => {
-      if (a.id !== actId) return a;
-      const current = a.assigned_engineers || [];
-      if (current.some(e => e.id === newId)) return a;
-      return {
-        ...a,
-        assigned_engineers: [...current, { id: newId, name }],
-        assigned_date: a.assigned_date || today,
-      };
-    });
-    onActivitiesChange(newActs);
-  };
-
-  if (!allActs.length) {
-    return (
-      <div className="field field--optional">
-        <div className="field__header">
-          <label className="field__label">👤 Asignación de Responsables</label>
-        </div>
-        <p className="act-list__empty">Agrega actividades identificadas para poder asignarlas.</p>
-      </div>
-    );
-  }
-
-  const assignedCount   = assignableActs.filter(a => (a.assigned_engineers || []).length > 0).length;
-  const activeFilters   = !!query.trim() || !!filterEngId;
-
-  return (
-    <div className="field field--optional">
-      <div className="field__header">
-        <label className="field__label">👤 Asignación de Responsables</label>
-        <span className="field__header-hint">
-          {assignedCount} de {assignableActs.length} asignadas
-        </span>
-      </div>
-
-      {/* Barra de filtros */}
-      <div className="act-assign-filters">
-        {/* Búsqueda por texto */}
-        <div className="act-assign-search">
-          <input
-            className="act-assign-search__input"
-            type="text"
-            placeholder="Buscar por número o texto…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-          {query && (
-            <button type="button" className="act-assign-search__clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
-          )}
-        </div>
-
-        {/* Filtro por responsable — solo muestra los que tienen actividades asignadas */}
-        <select
-          className="field__input act-assign-filter-eng"
-          value={filterEngId}
-          onChange={e => setFilterEngId(e.target.value)}
-        >
-          <option value="">Todos los responsables</option>
-          {assignedEngineers.filter(e => !e.id.startsWith("ext_")).map(e => (
-            <option key={e.id} value={e.id}>{e.name}</option>
-          ))}
-          {assignedEngineers.some(e => e.id.startsWith("ext_")) && (
-            <>
-              <option disabled>── Externos ──</option>
-              {assignedEngineers.filter(e => e.id.startsWith("ext_")).map(e => (
-                <option key={e.id} value={e.id}>{e.name} (ext.)</option>
-              ))}
-            </>
-          )}
-        </select>
-
-        {/* Contador de resultados + limpiar filtros */}
-        {activeFilters && (
-          <div className="act-assign-filters__right">
-            <span className="act-assign-search__count">{totalRows} resultado{totalRows !== 1 ? "s" : ""}</span>
-            <button
-              type="button"
-              className="act-assign-filters__clear-all"
-              onClick={() => { setQuery(""); setFilterEngId(""); }}
-            >Limpiar filtros</button>
-          </div>
-        )}
-      </div>
-
-      <div
-        className={`act-assign-list${needsScroll ? " act-assign-list--scroll" : ""}`}
-        style={needsScroll ? { maxHeight: listMaxHeight } : undefined}
-      >
-        {allVisible.length === 0 ? (
-          <p className="act-assign-empty">
-            {activeFilters ? "Sin coincidencias para los filtros aplicados." : "Sin actividades."}
-          </p>
-        ) : (
-          <>
-            {visibleAssignable.map(a => (
-              <ActivityAssignmentRow
-                key={a.id}
-                activity={a}
-                position={positionMap.get(a.id)}
-                engineerCatalog={engineerCatalog}
-                externalContacts={externalContacts}
-                completedBy={null}
-                onToggleEngineer={handleToggleEngineer}
-                onCreateExternal={handleCreateExternal}
-              />
-            ))}
-            {visibleCompleted.length > 0 && (
-              <>
-                <div className="act-assign-divider">Completadas</div>
-                {visibleCompleted.map(a => (
-                  <ActivityAssignmentRow
-                    key={a.id}
-                    activity={a}
-                    position={positionMap.get(a.id)}
-                    engineerCatalog={engineerCatalog}
-                    externalContacts={externalContacts}
-                    completedBy={completedBy[a.id]}
-                    onToggleEngineer={handleToggleEngineer}
-                    onCreateExternal={handleCreateExternal}
-                  />
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </div>
-      {needsScroll && (
-        <p className="act-assign-scroll-hint">↕ Desliza para ver las {totalRows} actividades</p>
       )}
     </div>
   );
@@ -2239,21 +1984,8 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 7. Asignación de Responsables ══ */}
-          {activities.length > 0 && (
-            <ActivityAssignmentSection
-              activities={activities}
-              taskStatus={p.task_status}
-              engineerCatalog={engineerCatalog}
-              externalContacts={externalContacts}
-              onActivitiesChange={newActs => onUpdateProjectFull(editingIdx, {
-                ...p,
-                activities_identified: newActs,
-                manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
-              })}
-              onCreateExternal={onAddExternalContact}
-            />
-          )}
+          {/* ══ 7. (Removido) Asignación de Responsables — ahora se hace arriba,
+                 en cada actividad de "Actividades identificadas". ══ */}
 
           {/* ══ 8. Ingenieros ══ */}
           <div className="field field--optional">
@@ -2286,8 +2018,9 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 9. Estado actual del proyecto ══ */}
-          <StatusNotesField
+          {/* ══ 9. Estado actual del proyecto — Panel "Pulso del proyecto" ══ */}
+          <ProjectPulseField
+            project={p}
             value={p.status_notes || ""}
             onChange={val => onUpdateProject(editingIdx, "status_notes", val)}
           />
