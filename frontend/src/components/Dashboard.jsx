@@ -11,6 +11,9 @@ const STATUS = {
   "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
+// Orden de urgencia en el dashboard: lo que necesita atención primero.
+const STATUS_ORDER = { blocked: 0, "at-risk": 1, "on-track": 2, "mejora-continua": 3, completed: 4 };
+
 export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset, onCleanStats }) {
   const [toast,            setToast]            = useState("");
   const [showResetModal,   setShowResetModal]   = useState(false);
@@ -23,7 +26,7 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
     try {
       await onCleanStats();
       setToast("✓ Estadísticas limpiadas correctamente");
-    } catch (e) {
+    } catch {
       setToast("Error al limpiar estadísticas");
     } finally {
       setCleaningStats(false);
@@ -195,16 +198,20 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
       </div>
 
       <div className="dashboard-grid">
-        {projects.filter(p => {
-          if (!search.trim()) return true;
-          const term = search.toLowerCase();
-          return (p.project_name || "").toLowerCase().includes(term);
-        }).map((p, i) => {
+        {projects
+          .map((p, i) => ({ p, i }))           // conserva el índice real para onEdit/onViewReport
+          .filter(({ p }) => {
+            if (!search.trim()) return true;
+            const term = search.toLowerCase();
+            return (p.project_name || "").toLowerCase().includes(term);
+          })
+          .sort((a, b) => (STATUS_ORDER[a.p.status] ?? 9) - (STATUS_ORDER[b.p.status] ?? 9))  // urgencia primero
+          .map(({ p, i }) => {
           const st = STATUS[p.status] || STATUS["on-track"];
           const isGeneratingThis = generatingInforme && generatingName === (p.project_name || `Proyecto ${i + 1}`);
 
           return (
-            <div key={p.id} className="project-card" onClick={() => onEdit(i)}>
+            <div key={p.id} className={`project-card project-card--${st.cssClass}`} onClick={() => onEdit(i)}>
               <div className="project-card__header">
                 <h3 className="project-card__name">
                   <span style={{ marginRight: 6 }}>{st.icon}</span>

@@ -35,6 +35,18 @@ function getStatValue(dot, stats, projects) {
   }
 }
 
+// Cuenta proyectos por estado del semáforo para la fila de KPIs ejecutivos.
+function countByStatus(projects) {
+  const c = { onTrack: 0, atRisk: 0, blocked: 0, other: 0 };
+  projects.forEach(p => {
+    if (p.status === "on-track") c.onTrack++;
+    else if (p.status === "at-risk") c.atRisk++;
+    else if (p.status === "blocked") c.blocked++;
+    else c.other++;
+  });
+  return c;
+}
+
 export default function App() {
   const [projects,          setProjects]          = useState([]);
   const [engineers,         setEngineers]         = useState([]);
@@ -53,7 +65,16 @@ export default function App() {
   const [globalStatusMode,      setGlobalStatusMode]      = useState(null);
   const [generatingGlobalStatus,setGeneratingGlobalStatus]= useState(false);
   const [globalStatusOpen,      setGlobalStatusOpen]      = useState(false);
+  const [theme,                 setTheme]                 = useState(() => localStorage.getItem("wt-theme") || "light");
   const abortCtrlRef = useRef(null);
+
+  // Aplica el tema al documento y lo persiste. data-theme en <html> activa los
+  // tokens del tema oscuro definidos en App.css.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("wt-theme", theme);
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => (t === "dark" ? "light" : "dark"));
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -455,6 +476,7 @@ export default function App() {
 
   const filteredForAvg = includedInAvg ? projects.filter(p => includedInAvg.has(p.id)) : projects;
   const stats = globalStats(filteredForAvg);
+  const statusCounts = countByStatus(projects);
 
   return (
     <div className="app">
@@ -483,20 +505,25 @@ export default function App() {
         </div>
 
         <div className="header__actions">
-          {["dashboard", "edit", "report", "engineers", "engineer-report", "quarters"].map(v => (
-            <button
-              key={v}
-              className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
-              onClick={() => navigateTo(v)}
-            >
-              {v === "dashboard" ? "Dashboard"
-                : v === "edit"            ? "Editar"
-                : v === "report"          ? "Reporte"
-                : v === "engineers"       ? "Ingenieros"
-                : v === "engineer-report" ? "Rep. Ingenieros"
-                :                           "Trimestres"}
-            </button>
-          ))}
+          <nav className="header__nav">
+            {["dashboard", "edit", "report", "engineers", "engineer-report", "quarters"].map(v => (
+              <button
+                key={v}
+                className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
+                onClick={() => navigateTo(v)}
+              >
+                {v === "dashboard" ? "Dashboard"
+                  : v === "edit"            ? "Editar"
+                  : v === "report"          ? "Reporte"
+                  : v === "engineers"       ? "Ingenieros"
+                  : v === "engineer-report" ? "Rep. Ingenieros"
+                  :                           "Trimestres"}
+              </button>
+            ))}
+          </nav>
+          <button className="btn btn--theme" onClick={toggleTheme} title="Alternar modo claro / oscuro">
+            {theme === "dark" ? "☀" : "🌙"}
+          </button>
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
           <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
         </div>
@@ -510,19 +537,41 @@ export default function App() {
               <div>
                 <div className="summary__label">Avance Promedio</div>
                 <div className="summary__value">{Math.round(stats.percent)}%</div>
+                <div className="summary__hint">{projects.length} proyecto{projects.length !== 1 ? "s" : ""} en seguimiento</div>
               </div>
             </div>
-            <div className="summary__stats">
-              {STAT_CARDS.map(({ dot, label }) => (
-                <div key={dot} className="stat-card">
-                  <span className={`stat-card__dot stat-card__dot--${dot}`} />
-                  <div>
-                    <div className="stat-card__num">{getStatValue(dot, stats, projects)}</div>
-                    <div className="stat-card__label">{label}</div>
-                  </div>
+            {view === "dashboard" ? (
+              <div className="summary__stats">
+                <div className="kpi-card kpi-card--ok">
+                  <div className="kpi-card__num">{statusCounts.onTrack}</div>
+                  <div className="kpi-card__label">En curso</div>
                 </div>
-              ))}
-            </div>
+                <div className="kpi-card kpi-card--warn">
+                  <div className="kpi-card__num">{statusCounts.atRisk}</div>
+                  <div className="kpi-card__label">En riesgo</div>
+                </div>
+                <div className="kpi-card kpi-card--crit">
+                  <div className="kpi-card__num">{statusCounts.blocked}</div>
+                  <div className="kpi-card__label">Bloqueados</div>
+                </div>
+                <div className="kpi-card kpi-card--info">
+                  <div className="kpi-card__num">{statusCounts.other}</div>
+                  <div className="kpi-card__label">Otros estados</div>
+                </div>
+              </div>
+            ) : (
+              <div className="summary__stats">
+                {STAT_CARDS.map(({ dot, label }) => (
+                  <div key={dot} className="stat-card">
+                    <span className={`stat-card__dot stat-card__dot--${dot}`} />
+                    <div>
+                      <div className="stat-card__num">{getStatValue(dot, stats, projects)}</div>
+                      <div className="stat-card__label">{label}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
