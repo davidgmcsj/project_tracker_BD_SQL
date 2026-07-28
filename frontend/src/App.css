@@ -5307,3 +5307,65 @@
 .metrics-table--project th {
   position: sticky; top: 0; z-index: 1;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ESTRELLA DE PRIORIDAD (⭐) + realce de tarjeta prioritaria
+   ═══════════════════════════════════════════════════════════════════ */
+.priority-star {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  font-size: 1.15rem; line-height: 1; color: var(--text-3);
+  transition: transform .12s, color .12s;
+}
+.priority-star:hover { transform: scale(1.2); color: var(--dorado); }
+.priority-star--active { color: var(--dorado); }
+.priority-star--lg { font-size: 1.6rem; }
+
+.project-card__header-right { display: flex; align-items: center; gap: 6px; }
+
+/* Tarjeta prioritaria: filo dorado sutil arriba del stripe de estado */
+.project-card--priority {
+  box-shadow: var(--shadow), inset 0 3px 0 var(--dorado-claro);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   BARRA DE FILTROS DEL REPORTE
+   ═══════════════════════════════════════════════════════════════════ */
+.report-filters {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: var(--s3) var(--s4);
+  margin-bottom: var(--s5); box-shadow: var(--shadow);
+}
+.report-filters__search {
+  flex: 1 1 200px; min-width: 160px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 12px;
+  font-size: var(--t-sm); color: var(--text); outline: none;
+}
+.report-filters__search:focus { border-color: var(--azul-claro); box-shadow: var(--ring); }
+.report-filters__select {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+  font-size: var(--t-sm); color: var(--text); cursor: pointer; outline: none;
+}
+.report-filters__select:focus { border-color: var(--azul-claro); }
+.report-filters__priority {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-pill); padding: 7px 14px;
+  font-size: var(--t-sm); font-weight: 600; color: var(--text-2); cursor: pointer; transition: .15s;
+}
+.report-filters__priority:hover { border-color: var(--dorado); color: var(--dorado); }
+.report-filters__priority--on {
+  background: var(--accent-bg); border-color: var(--dorado); color: var(--dorado);
+}
+.report-filters__count {
+  font-size: var(--t-cap); font-weight: 700; color: var(--text-3);
+  margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.report-filters__clear {
+  background: none; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill); padding: 6px 12px;
+  font-size: var(--t-cap); font-weight: 600; color: var(--text-2); cursor: pointer; transition: .15s;
+}
+.report-filters__clear:hover { border-color: var(--red); color: var(--red); }

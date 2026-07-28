@@ -14,7 +14,7 @@ const STATUS = {
 // Orden de urgencia en el dashboard: lo que necesita atención primero.
 const STATUS_ORDER = { blocked: 0, "at-risk": 1, "on-track": 2, "mejora-continua": 3, completed: 4 };
 
-export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset, onCleanStats }) {
+export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, onTogglePriority, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset, onCleanStats }) {
   const [toast,            setToast]            = useState("");
   const [showResetModal,   setShowResetModal]   = useState(false);
   const [cleaningStats,    setCleaningStats]    = useState(false);
@@ -211,13 +211,26 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
           const isGeneratingThis = generatingInforme && generatingName === (p.project_name || `Proyecto ${i + 1}`);
 
           return (
-            <div key={p.id} className={`project-card project-card--${st.cssClass}`} onClick={() => onEdit(i)}>
+            <div key={p.id} className={`project-card project-card--${st.cssClass}${p.priority ? " project-card--priority" : ""}`} onClick={() => onEdit(i)}>
               <div className="project-card__header">
                 <h3 className="project-card__name">
                   <span style={{ marginRight: 6 }}>{st.icon}</span>
                   {p.project_name || `Proyecto ${i + 1}`}
                 </h3>
-                <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
+                <div className="project-card__header-right" onClick={e => e.stopPropagation()}>
+                  {onTogglePriority && (
+                    <button
+                      type="button"
+                      className={`priority-star${p.priority ? " priority-star--active" : ""}`}
+                      onClick={() => onTogglePriority(p.id)}
+                      title={p.priority ? "Quitar de prioritarios" : "Marcar como prioritario"}
+                      aria-pressed={!!p.priority}
+                    >
+                      {p.priority ? "★" : "☆"}
+                    </button>
+                  )}
+                  <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
+                </div>
               </div>
               <label className="project-card__avg-toggle" onClick={e => e.stopPropagation()}>
                 <input

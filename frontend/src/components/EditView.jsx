@@ -1770,7 +1770,18 @@ export default function EditView({
         <div className="edit-panel">
           {/* Cabecera */}
           <div className="edit-panel__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "18px", color: "var(--azul-oscuro)" }}>Editando: {p.project_name || "Nuevo Proyecto"}</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                className={`priority-star priority-star--lg${p.priority ? " priority-star--active" : ""}`}
+                onClick={() => onUpdateProject(editingIdx, "priority", !p.priority)}
+                title={p.priority ? "Quitar de prioritarios" : "Marcar como prioritario"}
+                aria-pressed={!!p.priority}
+              >
+                {p.priority ? "★" : "☆"}
+              </button>
+              <h2 style={{ fontSize: "18px", color: "var(--azul-oscuro)" }}>Editando: {p.project_name || "Nuevo Proyecto"}</h2>
+            </div>
             <button
               className={`btn ${hasUnsavedChanges ? "btn--accent" : ""}`}
               onClick={onSaveChanges} style={{ padding: "10px 24px", fontSize: "14px" }}

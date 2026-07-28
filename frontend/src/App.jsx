@@ -289,6 +289,13 @@ export default function App() {
     setEditingIdx(toIdx);
   };
 
+  // Alterna la marca de prioritario de un proyecto y persiste de inmediato.
+  const togglePriority = (id) => {
+    const next = projects.map(p => p.id === id ? { ...p, priority: !p.priority } : p);
+    setProjects(next);
+    saveProjects(next, weekLabel, engineers, externalContacts, id);
+  };
+
   const viewProjectReport = (idx) => { setReportProjectIdx(idx); setView("report"); };
 
   const exportProjectReport = (idx) => {
@@ -613,6 +620,7 @@ export default function App() {
             onCancelInforme={cancelInforme}
             includedInAvg={includedInAvg}
             onToggleIncludeInAvg={toggleIncludeInAvg}
+            onTogglePriority={togglePriority}
             globalStatus={globalStatus}
             globalStatusMode={globalStatusMode}
             generatingGlobalStatus={generatingGlobalStatus}
