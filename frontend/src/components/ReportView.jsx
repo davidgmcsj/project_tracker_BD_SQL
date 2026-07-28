@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
-import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText, generateAssignmentsByEngineer } from "../utils/formulas";
+import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText, generateAssignmentsByEngineer, visibleActivities } from "../utils/formulas";
 import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
 import { useClickOutside } from "../hooks/useClickOutside";
 
@@ -359,7 +359,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
   const m   = p.manual_metrics || {};
   const pct = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
   const st  = STATUS[p.status] || STATUS["on-track"];
-  const activitiesIndex = buildActivityIndex(p.activities_identified);
+  const activitiesIndex = buildActivityIndex(visibleActivities(p.activities_identified));
   const engineerIndex   = buildEngineerIndex(engineerCatalog);
   const engWithWeek = (p.engineers || []).filter(e =>
     e.weekly_total > 0 || (Array.isArray(e.weekly_detail) ? e.weekly_detail.length : (e.weekly_detail || "").trim())
@@ -492,7 +492,7 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
       <TaskStatusSection taskStatus={p.task_status} activitiesIndex={activitiesIndex} />
 
       <div className="rpt-sections-grid">
-        <BulletSection fieldKey="activities_identified" value={(p.activities_identified || []).map(a => a.text)} />
+        <BulletSection fieldKey="activities_identified" value={visibleActivities(p.activities_identified).map(a => a.text)} />
         <ImpedimentSection impediments={p.impediments} />
         {p.show_closing_fields && (
           <>

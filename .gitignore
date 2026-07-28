@@ -17,6 +17,9 @@ backend/data.json
 backend/data.json.bak
 backend/history.json
 
+# ── Exports de Planner — datos internos, nunca subir al repositorio ───────────
+planners/
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 logs
 *.log

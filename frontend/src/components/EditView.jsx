@@ -3,10 +3,13 @@ import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator, createDefaultImpediment,
   createActivity, buildActivityIndex, activityText, activityLabel,
+  visibleActivities,
 } from "../utils/formulas";
+import { mergePlannerImport, normalizeName } from "../utils/plannerImport";
 import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
 import GanttChart from "./GanttChart";
+import PlannerImportModal from "./PlannerImportModal";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -197,6 +200,7 @@ function ActivitiesList({
   onUpdateActivityMeta,
   onAddActivity,
   onCreateExternal,
+  onImportPlanner,
 }) {
   const [draft,   setDraft]   = useState("");
   const [adding,  setAdding]  = useState(false);
@@ -271,9 +275,16 @@ function ActivitiesList({
           {acts.length > 0 && <span className="act-count">{acts.length}</span>}
         </label>
         {!adding && (
-          <button type="button" className="btn-add-item" onClick={() => setAdding(true)}>
-            + Agregar actividad
-          </button>
+          <div className="field__header-actions">
+            {onImportPlanner && (
+              <button type="button" className="btn-import-planner" onClick={onImportPlanner} title="Cargar el Excel exportado de Planner">
+                📥 Importar de Planner
+              </button>
+            )}
+            <button type="button" className="btn-add-item" onClick={() => setAdding(true)}>
+              + Agregar actividad
+            </button>
+          </div>
         )}
       </div>
 
@@ -1645,6 +1656,7 @@ export default function EditView({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
   const [modalActId,      setModalActId]      = useState(null);
+  const [showPlannerModal, setShowPlannerModal] = useState(false);
   const dragSrcIdx = useRef(null);
 
   const handleDragStart = (e, i) => { dragSrcIdx.current = i; e.dataTransfer.effectAllowed = "move"; };
@@ -1657,7 +1669,10 @@ export default function EditView({
   const engineers   = p?.engineers   || [];
   const indicators  = p?.indicators  || [];
   const impediments = p?.impediments || [];
-  const activities  = safeActs(p?.activities_identified);
+  // allActivities = crudo (incluye archivadas) para almacenamiento y merge de importación.
+  // activities    = solo visibles (no archivadas) para toda la UI y las métricas.
+  const allActivities = safeActs(p?.activities_identified);
+  const activities    = visibleActivities(allActivities);
 
   // Métricas calculadas automáticamente desde actividades y estado de actividades
   const ts              = p?.task_status || {};
@@ -1669,10 +1684,11 @@ export default function EditView({
   const updateMetric = (field, val) =>
     onUpdateProject(editingIdx, "manual_metrics", { ...m, [field]: val === "" ? "" : Number(val) });
 
-  // Recalcula total/completadas/en_proceso desde actividades y task_status
+  // Recalcula total/completadas/en_proceso desde actividades y task_status.
+  // Cuenta solo actividades visibles (las archivadas por Planner no inflan el total).
   const buildAutoMetrics = (newActs, newTs) => ({
     ...m,
-    total_tasks:       newActs.length,
+    total_tasks:       visibleActivities(newActs).length,
     completed_tasks:   safeArr(newTs.completed).length,
     in_progress_tasks: safeArr(newTs.in_progress).length,
   });
@@ -1708,6 +1724,12 @@ export default function EditView({
   // solo hay que podar las referencias colgantes (la actividad que se borró)
   // de todos los campos que la referencian por id.
   const handleActivitiesChange = (newActs) => {
+    // newActs viene de la lista visible (sin archivadas). Reincorporamos las
+    // actividades archivadas para no perderlas al guardar (siguen ocultas y
+    // recuperables). Los ids archivados no entran en validIds, así que sus
+    // referencias en task_status ya estaban podadas de antemano.
+    const archived = allActivities.filter(a => a.archived);
+    const mergedActs = [...newActs, ...archived];
     const validIds = new Set(newActs.map(a => a.id));
     const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
 
@@ -1722,7 +1744,7 @@ export default function EditView({
 
     onUpdateProjectFull(editingIdx, {
       ...p,
-      activities_identified: newActs,
+      activities_identified: mergedActs,
       task_status: {
         ...newTs,
         completed_dates: pruneObjKeys(ts.completed_dates),
@@ -1736,6 +1758,55 @@ export default function EditView({
         weekly_detail: pruneArr(eng.weekly_detail),
       })),
     });
+  };
+
+  // Aplica una importación de Planner ya confirmada en el modal.
+  // Recibe { rows, engineersToCreate }. Pasos:
+  //   1) Crear los ingenieros faltantes (onCreateEngineer es síncrono, devuelve id).
+  //   2) Merge definitivo pasando el mapa nombre→id ya resuelto (enlaza responsables).
+  //   3) Persistir proyecto (localStorage + servidor).
+  const handleApplyPlannerImport = ({ rows, engineersToCreate }) => {
+    const nameToId = new Map();
+    (engineerCatalog || []).forEach(e => { if (e?.name) nameToId.set(normalizeName(e.name), e.id); });
+    (engineersToCreate || []).forEach(({ name }) => {
+      const newId = onCreateEngineer ? onCreateEngineer(name, "") : null;
+      if (newId) nameToId.set(normalizeName(name), newId);
+    });
+
+    const res = mergePlannerImport(
+      allActivities, p.task_status, rows, engineerCatalog, createActivity, nameToId
+    );
+
+    // Poblar el "Equipo del Proyecto" (p.engineers) con los responsables que trae
+    // el Excel, sin duplicar los que ya están. Reúne todos los ids asignados a las
+    // actividades importadas (no archivadas) y agrega una fila por cada uno nuevo.
+    const teamIds = new Set((p.engineers || []).map(r => r.engineer_id).filter(Boolean));
+    const importedEngIds = new Set();
+    res.activities.forEach(a => {
+      if (a.archived) return;
+      (a.assigned_engineers || []).forEach(e => {
+        // Solo ingenieros del catálogo (ids "eng_..."), no colaboradores externos ("ext_...").
+        if (e.id && e.id.startsWith("eng_")) importedEngIds.add(e.id);
+      });
+    });
+    const newTeamRows = [...importedEngIds]
+      .filter(id => !teamIds.has(id))
+      .map(id => ({ ...createDefaultEngineer(), engineer_id: id }));
+    const mergedEngineers = [...(p.engineers || []), ...newTeamRows];
+
+    const updatedProject = {
+      ...p,
+      activities_identified: res.activities,
+      task_status:           res.task_status,
+      manual_metrics:        buildAutoMetrics(res.activities, res.task_status),
+      engineers:             mergedEngineers,
+      planner_last_import:   new Date().toISOString(),
+    };
+    const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
+    onUpdateProjectFull(editingIdx, updatedProject);
+    // Persistir con el array explícito para evitar estado obsoleto (mismo patrón que
+    // handleActivityModalSave). Los ingenieros nuevos ya se persistieron en onCreateEngineer.
+    if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
   };
 
   const handleUpdateActivityMeta = (actId, newEngId, newStatus) => {
@@ -2076,6 +2147,7 @@ export default function EditView({
             onUpdateActivityMeta={handleUpdateActivityMeta}
             onAddActivity={handleAddActivity}
             onCreateExternal={onAddExternalContact}
+            onImportPlanner={() => setShowPlannerModal(true)}
           />
 
           {/* ══ 3b. Asignación masiva ══ */}
@@ -2296,6 +2368,17 @@ export default function EditView({
           onSave={handleActivityModalSave}
           onDelete={handleActivityModalDelete}
           onClose={() => setModalActId(null)}
+        />
+      )}
+
+      {p && (
+        <PlannerImportModal
+          isOpen={showPlannerModal}
+          onClose={() => setShowPlannerModal(false)}
+          onConfirm={handleApplyPlannerImport}
+          existingActivities={allActivities}
+          existingTaskStatus={p.task_status}
+          engineerCatalog={engineerCatalog}
         />
       )}
     </div>

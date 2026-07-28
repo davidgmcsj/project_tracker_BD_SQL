@@ -145,7 +145,22 @@ export function createActivity(text = "") {
     notes: [],
     key_dates: [],
     attachments: [],      // metadata de adjuntos (bytes en SQL)
+    planner_task_number: null, // "Número de tarea" de Planner (clave estable de sync). null = creada a mano.
+    archived: false,      // true si desapareció de Planner en una importación (oculta, recuperable)
+    archived_reason: "",  // motivo del archivado (p. ej. fecha de la importación que la retiró)
   };
+}
+
+// ── Actividades archivadas ────────────────────────────────────────────────────
+// Una actividad archivada (archived: true) desapareció del Planner en una
+// importación pero NO se borra: se oculta de listas, métricas y reportes, y
+// queda recuperable en activities_identified. isArchived tolera actividades
+// antiguas que aún no tienen el campo (undefined → false).
+
+export const isArchived = (a) => !!a && a.archived === true;
+
+export function visibleActivities(acts) {
+  return (Array.isArray(acts) ? acts : []).filter(a => !isArchived(a));
 }
 
 // ── Cálculo de horas hábiles ──────────────────────────────────────────────────
@@ -416,7 +431,7 @@ function projectBlock(p, i, engineerIndex) {
   const icon     = STATUS_ICONS[p.status]  || "🟡";
   const label    = STATUS_LABELS[p.status] || p.status;
   const blockers = (p.impediments || []).filter(im => im.category === "blocker");
-  const acts     = Array.isArray(p.activities_identified) ? p.activities_identified : [];
+  const acts     = visibleActivities(p.activities_identified); // excluye archivadas de Planner
   const actIndex = buildActivityIndex(acts);
   const actTexts = acts.map(a => a.text || "");
 
@@ -584,7 +599,7 @@ export function generateAssignmentsByEngineer(projects, engineerCatalog, weekLab
 
   projects.forEach(p => {
     const projectName = p.project_name || "Proyecto sin nombre";
-    (p.activities_identified || []).forEach(a => {
+    visibleActivities(p.activities_identified).forEach(a => {
       const assignees = a.assigned_engineers || [];
       if (assignees.length === 0) {
         unassigned.push({ project: projectName, text: a.text });
@@ -636,7 +651,7 @@ export function generateAssignmentsMarkdown(projects, weekLabel) {
 
   projects.forEach((p, idx) => {
     md += `## Proyecto: ${p.project_name || `Proyecto ${idx + 1}`}\n`;
-    const acts = p.activities_identified || [];
+    const acts = visibleActivities(p.activities_identified);
     if (acts.length === 0) {
       md += `*Sin actividades registradas.*\n\n`;
       return;
@@ -665,7 +680,7 @@ export function generateAssignmentsPlainText(projects, weekLabel) {
   projects.forEach((p, idx) => {
     txt += `Proyecto: ${p.project_name || `Proyecto ${idx + 1}`}\n`;
     txt += `--------------------------------------------------------------------------------\n`;
-    const acts = p.activities_identified || [];
+    const acts = visibleActivities(p.activities_identified);
     if (acts.length === 0) {
       txt += `  Sin actividades registradas.\n\n`;
       return;
