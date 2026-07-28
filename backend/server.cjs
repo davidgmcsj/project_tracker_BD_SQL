@@ -31,7 +31,7 @@ const crypto  = require("crypto");
 require("dotenv/config");
 const { toArray } = require("./utils.cjs");
 
-const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
+const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
         saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB } = (() => {
   try {
     const mod = require("./db-operations.cjs");
@@ -39,7 +39,7 @@ const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngi
     return mod;
   } catch (e) {
     console.error("[DB] Error cargando db-operations.cjs:", e.message);
-    return { saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null,
+    return { getPool: null, saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null,
              saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null };
   }
 })();
@@ -359,21 +359,8 @@ app.get("/api/db-ping", async (req, res) => {
     return res.json({ ok: false, error: "db-operations.cjs no cargó (módulo no encontrado)" });
   }
   try {
-    const sql  = require("mssql");
-    require("dotenv/config");
-    const cfg = {
-      user:     process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      server:   process.env.DB_SERVER || "localhost",
-      port:     1433,
-      database: process.env.DB_NAME,
-      options:  { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
-      connectionTimeout: 5000,
-    };
-    console.log("[DB-PING] Intentando conectar con:", { server: cfg.server, database: cfg.database, user: cfg.user });
-    const pool   = await sql.connect(cfg);
+    const pool   = await getPool();
     const result = await pool.request().query("SELECT @@SERVERNAME AS srv, DB_NAME() AS db");
-    await pool.close();
     res.json({ ok: true, ...result.recordset[0] });
   } catch (e) {
     console.error("[DB-PING] Fallo:", e.message);
@@ -507,6 +494,17 @@ app.post("/api/engineers/tasks/delete-one", async (req, res) => {
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
+// Limpia el nombre de archivo antes de guardarlo: quita caracteres de control
+// (que podrían usarse para inyección de headers al descargarlo) y lo recorta
+// a una longitud razonable. No restringe el charset a ASCII — nombres con
+// acentos/ñ son normales en este contexto — solo bloquea lo peligroso.
+function sanitizeFilename(name) {
+  return String(name || "")
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .trim()
+    .slice(0, 255) || "adjunto";
+}
+
 app.post("/api/attachments/upload", attachmentJsonParser, async (req, res) => {
   if (!saveAttachmentToDB) {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
@@ -522,7 +520,7 @@ app.post("/api/attachments/upload", attachmentJsonParser, async (req, res) => {
     }
     await saveAttachmentToDB({
       appAdjuntoID, appActividadID, proyectoAppID,
-      nombre, mime, size: buffer.length, buffer,
+      nombre: sanitizeFilename(nombre), mime, size: buffer.length, buffer,
     });
     res.json({ ok: true, size: buffer.length });
   } catch (e) {
@@ -538,8 +536,15 @@ app.get("/api/attachments/:id", async (req, res) => {
   try {
     const att = await getAttachmentFromDB(req.params.id);
     if (!att || !att.buffer) return res.status(404).json({ error: "Adjunto no encontrado" });
+    const safeName = sanitizeFilename(att.nombre);
+    // RFC 5987: filename* con UTF-8 percent-encoded, más robusto para nombres
+    // con acentos/ñ que el solo encodeURIComponent en el atributo filename clásico.
+    // Se incluyen ambas variantes para compatibilidad con navegadores antiguos.
     res.setHeader("Content-Type", att.mime || "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(att.nombre)}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeName.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+    );
     res.setHeader("Content-Length", att.buffer.length);
     res.send(att.buffer);
   } catch (e) {
@@ -710,18 +715,7 @@ app.post("/api/restore-from-db", async (req, res) => {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
   }
   try {
-    const { sql, connect } = require("mssql");
-    const config = {
-      user:              process.env.DB_USER,
-      password:          process.env.DB_PASSWORD,
-      server:            process.env.DB_SERVER || "localhost",
-      port:              1433,
-      database:          process.env.DB_NAME,
-      connectionTimeout: 60000,
-      requestTimeout:    60000,
-      options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
-    };
-    const pool = await connect(config);
+    const pool = await getPool();
 
     // Trae el RawDataJSON más reciente de cada proyecto
     const result = await pool.request().query(`
@@ -734,8 +728,6 @@ app.post("/api/restore-from-db", async (req, res) => {
       ) latest ON r.ProyectoID = latest.ProyectoID AND r.SavedAt = latest.UltimoGuardado
       WHERE r.RawDataJSON IS NOT NULL AND r.RawDataJSON != ''
     `);
-
-    await pool.close();
 
     const projects = result.recordset
       .map(row => { try { return JSON.parse(row.RawDataJSON); } catch { return null; } })
@@ -812,18 +804,8 @@ app.post("/api/quarter-reset", async (req, res) => {
     //    Usamos el pool de db-operations si está disponible.
     //    Si falla SQL, el archivo físico ya tiene el backup — no bloqueamos el reset.
     try {
-      const mssql  = require("mssql");
-      const config = {
-        user:              process.env.DB_USER,
-        password:          process.env.DB_PASSWORD,
-        server:            process.env.DB_SERVER || "localhost",
-        port:              1433,
-        database:          process.env.DB_NAME,
-        connectionTimeout: 30000,
-        requestTimeout:    30000,
-        options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
-      };
-      const pool = await mssql.connect(config);
+      const mssql = require("mssql");
+      const pool  = await getPool();
       await pool.request()
         .input("quarterLabel",  mssql.NVarChar(50),   quarterLabel)
         .input("fechaInicio",   mssql.Date,           quarterStart ? new Date(quarterStart) : new Date())
@@ -837,7 +819,6 @@ app.post("/api/quarter-reset", async (req, res) => {
           VALUES
             (@quarterLabel, @fechaInicio, @totalProy, @archivadas, @transferidas, @jsonData)
         `);
-      await pool.close();
       console.log(`[QUARTER] ✓ Snapshot guardado en SQL: ${quarterLabel}`);
     } catch (sqlErr) {
       // SQL falló pero el archivo físico ya está guardado — el reset continúa igual
@@ -1005,25 +986,13 @@ app.post("/api/clean-stats", async (req, res) => {
 app.get("/api/quarters", async (req, res) => {
   // Intentar desde SQL primero
   try {
-    const mssql  = require("mssql");
-    const config = {
-      user:              process.env.DB_USER,
-      password:          process.env.DB_PASSWORD,
-      server:            process.env.DB_SERVER || "localhost",
-      port:              1433,
-      database:          process.env.DB_NAME,
-      connectionTimeout: 15000,
-      requestTimeout:    15000,
-      options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
-    };
-    const pool   = await mssql.connect(config);
+    const pool   = await getPool();
     const result = await pool.request().query(`
       SELECT TrimestreID, QuarterLabel, FechaInicio, FechaReset,
              TotalProyectos, ActividadesArchivadas, ActividadesTransferidas, CreadoEn
       FROM Trimestres_Archivo
       ORDER BY FechaReset DESC
     `);
-    await pool.close();
     return res.json({ ok: true, source: "sql", quarters: result.recordset });
   } catch (sqlErr) {
     console.warn("[QUARTER] SQL no disponible para listar trimestres, leyendo archivos físicos:", sqlErr.message);
@@ -1069,21 +1038,10 @@ app.get("/api/quarters/:id", async (req, res) => {
   if (/^\d+$/.test(id)) {
     try {
       const mssql  = require("mssql");
-      const config = {
-        user:              process.env.DB_USER,
-        password:          process.env.DB_PASSWORD,
-        server:            process.env.DB_SERVER || "localhost",
-        port:              1433,
-        database:          process.env.DB_NAME,
-        connectionTimeout: 15000,
-        requestTimeout:    30000,
-        options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
-      };
-      const pool   = await mssql.connect(config);
+      const pool   = await getPool();
       const result = await pool.request()
         .input("id", mssql.Int, parseInt(id))
         .query(`SELECT ArchivedDataJSON, QuarterLabel, FechaInicio, FechaReset FROM Trimestres_Archivo WHERE TrimestreID = @id`);
-      await pool.close();
 
       if (!result.recordset.length) return res.status(404).json({ error: "Trimestre no encontrado" });
 

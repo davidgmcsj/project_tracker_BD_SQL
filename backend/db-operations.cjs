@@ -744,6 +744,7 @@ async function deleteAttachmentFromDB(appAdjuntoID) {
 // ── Exportar ──────────────────────────────────────────────────────────────────
 
 module.exports = {
+  getPool,
   saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
   syncExternalContactToSQL, syncActividadesDetalle,
   saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
