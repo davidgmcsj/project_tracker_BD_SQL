@@ -275,6 +275,22 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
 }));
 
+// ── Logging de eventos de seguridad ───────────────────────────────────────────
+// Formato JSON de una línea (fácil de grep/parsear) para los eventos que
+// importan para detectar abuso: fallos de auth y límites de rate excedidos.
+// No reemplaza el console.log/error operacional existente en el resto del
+// archivo — es un canal aparte, específico para auditoría de seguridad.
+function logSecurityEvent(event, req, extra = {}) {
+  console.warn(JSON.stringify({
+    ts:     new Date().toISOString(),
+    event,
+    ip:     req.ip || req.socket?.remoteAddress || "unknown",
+    path:   req.originalUrl || req.path,
+    method: req.method,
+    ...extra,
+  }));
+}
+
 // ── Autenticación: API key compartida ─────────────────────────────────────────
 // Herramienta interna: todos los clientes autorizados comparten la misma clave,
 // enviada en el header X-API-Key. No distingue usuarios individuales — para eso
@@ -299,7 +315,10 @@ function requireApiKey(req, res, next) {
   const a = Buffer.from(String(provided));
   const b = Buffer.from(API_KEY);
   const valid = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!valid) return res.status(401).json({ error: "No autorizado" });
+  if (!valid) {
+    logSecurityEvent("auth_failed", req);
+    return res.status(401).json({ error: "No autorizado" });
+  }
   next();
 }
 
@@ -321,12 +340,21 @@ app.use((req, res, next) => {
 // (dinero en el caso de IA, pérdida de datos en el caso de quarter-reset).
 const rateLimit = require("express-rate-limit");
 
+// handler común: loguea el evento antes de responder con el mensaje del limiter.
+function rateLimitHandler(event) {
+  return (req, res, next, options) => {
+    logSecurityEvent(event, req);
+    res.status(options.statusCode).json(options.message);
+  };
+}
+
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Demasiadas solicitudes de generación con IA, intenta de nuevo más tarde" },
+  handler: rateLimitHandler("rate_limit_ai_exceeded"),
 });
 
 const destructiveLimiter = rateLimit({
@@ -335,6 +363,7 @@ const destructiveLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Demasiadas operaciones destructivas, intenta de nuevo más tarde" },
+  handler: rateLimitHandler("rate_limit_destructive_exceeded"),
 });
 
 const generalLimiter = rateLimit({
@@ -342,6 +371,8 @@ const generalLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: "Demasiadas solicitudes, intenta de nuevo más tarde" },
+  handler: rateLimitHandler("rate_limit_general_exceeded"),
 });
 
 app.use("/api", generalLimiter);
