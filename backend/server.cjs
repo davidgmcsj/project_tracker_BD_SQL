@@ -44,6 +44,15 @@ const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, d
   }
 })();
 
+const reportsRouter = (() => {
+  try {
+    return require("./reports/index.cjs");
+  } catch (e) {
+    console.error("[REPORTS] Error cargando reports/index.cjs:", e.message);
+    return null;
+  }
+})();
+
 const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = (() => {
   try {
     return require("./gemini-report.cjs");
@@ -378,6 +387,10 @@ const generalLimiter = rateLimit({
 app.use("/api", generalLimiter);
 app.use(["/api/generate-report", "/api/project-status", "/api/generate-global-status"], aiLimiter);
 app.use(["/api/quarter-reset", "/api/clean-stats"], destructiveLimiter);
+
+// Router de reportes: montado aquí para heredar requireApiKey y generalLimiter
+// (ambos aplicados por prefijo "/api" arriba) sin tocar el resto de rutas.
+if (reportsRouter) app.use("/api/reports", reportsRouter);
 
 // ── API: Diagnóstico de conexión BD (solo desarrollo) ────────────────────────
 // Deshabilitada en producción: expone nombre de servidor/BD y detalle de error.

@@ -7,6 +7,7 @@
 //   4. Se reempaqueta y descarga el .docx con formato institucional intacto
 
 import JSZip from "jszip";
+import { authHeaders } from "./storage";
 
 const MONTHS     = ["enero","febrero","marzo","abril","mayo","junio","julio",
                     "agosto","septiembre","octubre","noviembre","diciembre"];
@@ -196,7 +197,7 @@ export async function generateQuarterlyReport(project, engineerCatalog = [], sig
   try {
     const res = await fetch(`${API_BASE}/api/generate-report`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body:    JSON.stringify({ project, quarterLabel, engineerCatalog }),
       ...(signal ? { signal } : {}),
     });

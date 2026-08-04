@@ -10,6 +10,7 @@ import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
 import GanttChart from "./GanttChart";
 import PlannerImportModal from "./PlannerImportModal";
+import { ProjectNotesPanel } from "./ProjectNotesPanel";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -211,6 +212,11 @@ function ActivitiesList({
   const [editVal,      setEditVal]      = useState("");
   const [confirmDelId, setConfirmDelId] = useState(null); // ID de actividad pendiente de confirmar borrado
 
+  // Selección múltiple para borrado por lotes. Guardamos IDs (no índices) para
+  // que la selección no se corra si la lista cambia mientras hay marcadas.
+  const [selectedIds,     setSelectedIds]     = useState(() => new Set());
+  const [confirmBulkDel,  setConfirmBulkDel]  = useState(false);
+
   const acts = safeActs(activities);
 
   const confirmAdd = () => {
@@ -240,6 +246,26 @@ function ActivitiesList({
   const confirmRemoveAct = () => {
     onChange(acts.filter(a => a.id !== confirmDelId));
     setConfirmDelId(null);
+  };
+
+  // ── Selección múltiple ──────────────────────────────────────────────────────
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const allSelected  = acts.length > 0 && acts.every(a => selectedIds.has(a.id));
+  const someSelected = selectedIds.size > 0;
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(acts.map(a => a.id)));
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const confirmBulkRemove = () => {
+    onChange(acts.filter(a => !selectedIds.has(a.id)));
+    clearSelection();
+    setConfirmBulkDel(false);
   };
 
   const getAssignedEngId = (act) => {
@@ -288,6 +314,31 @@ function ActivitiesList({
         )}
       </div>
 
+      {/* Barra de acciones por lotes: visible solo cuando hay actividades y no se está agregando */}
+      {!adding && acts.length > 0 && (
+        <div className="act-bulk-bar">
+          <label className="act-bulk-bar__all">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+              onChange={toggleSelectAll}
+            />
+            {someSelected ? `${selectedIds.size} seleccionada(s)` : "Seleccionar todo"}
+          </label>
+          {someSelected && (
+            <div className="act-bulk-bar__actions">
+              <button type="button" className="btn btn--secondary act-bulk-bar__btn" onClick={clearSelection}>
+                Limpiar
+              </button>
+              <button type="button" className="btn btn--danger act-bulk-bar__btn" onClick={() => setConfirmBulkDel(true)}>
+                🗑️ Eliminar {selectedIds.size} seleccionada(s)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {adding && (
         <div className="list-field-draft list-field-draft--activity">
           <input
@@ -332,8 +383,10 @@ function ActivitiesList({
             if (statusVal === "completed") statusSelectClass = "act-list__select--status-completed";
             else if (statusVal === "in_progress") statusSelectClass = "act-list__select--status-progress";
 
+            const isSelected = selectedIds.has(act.id);
+
             return (
-              <li key={act.id} className="act-list__item" style={{ alignItems: "center" }}>
+              <li key={act.id} className={`act-list__item${isSelected ? " act-list__item--selected" : ""}`} style={{ alignItems: "center" }}>
                 {editIdx === i ? (
                   <div className="list-field-draft" style={{ flex: 1, margin: 0 }}>
                     <input
@@ -350,6 +403,14 @@ function ActivitiesList({
                   </div>
                 ) : (
                   <>
+                    <input
+                      type="checkbox"
+                      className="act-list__select-box"
+                      checked={isSelected}
+                      onChange={() => toggleSelected(act.id)}
+                      title="Seleccionar para eliminar"
+                      style={{ flexShrink: 0 }}
+                    />
                     <span className="act-list__num">{i + 1}.</span>
                     <span className="act-list__text">{act.text}</span>
                     
@@ -428,6 +489,22 @@ function ActivitiesList({
           </div>
         );
       })()}
+
+      {/* Diálogo de confirmación de eliminación por lotes */}
+      {confirmBulkDel && (
+        <div className="act-del-overlay">
+          <div className="act-del-dialog">
+            <div className="act-del-dialog__icon">🗑️</div>
+            <h4 className="act-del-dialog__title">¿Eliminar {selectedIds.size} actividad(es)?</h4>
+            <p className="act-del-dialog__name">Se eliminarán las {selectedIds.size} actividades seleccionadas.</p>
+            <p className="act-del-dialog__warn">Esta acción no se puede deshacer.</p>
+            <div className="act-del-dialog__actions">
+              <button className="btn btn--secondary" onClick={() => setConfirmBulkDel(false)}>Cancelar</button>
+              <button className="btn btn--danger-solid" onClick={confirmBulkRemove}>Eliminar seleccionadas</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2052,6 +2129,9 @@ export default function EditView({
             value={p.status_notes || ""}
             onChange={val => onUpdateProject(editingIdx, "status_notes", val)}
           />
+
+          {/* ══ 9b. Notas y comentarios fechados (Proyecto_Notas, independiente del pulso) ══ */}
+          <ProjectNotesPanel proyectoAppID={p.id} />
 
           {/* ══ 10. Cierre semanal ══ */}
           <div className="field field--optional">

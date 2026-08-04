@@ -7,17 +7,21 @@
     "start": "node server.cjs",
     "server": "node server.cjs",
     "kill-port": "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :3002 ^| findstr LISTENING') do taskkill /PID %a /F",
-    "fresh": "npm run kill-port & npm run server"
+    "fresh": "npm run kill-port & npm run server",
+    "migrate": "node run-migration.cjs",
+    "test": "node --test tests/**/*.test.cjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.1",
     "groq-sdk": "^1.2.0",
     "helmet": "^8.3.0",
-    "mssql": "^12.5.3"
+    "mssql": "^12.5.3",
+    "pdfmake": "^0.3.11"
   },
   "engines": {
     "node": ">=18.0.0"

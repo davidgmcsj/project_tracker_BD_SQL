@@ -5,6 +5,7 @@ import ReportView    from "./components/ReportView";
 import EngineersView from "./components/EngineersView";
 import EngineerReportView from "./components/EngineerReportView";
 import QuartersView  from "./components/QuartersView";
+import { ReportesView } from "./components/ReportesView";
 import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
@@ -15,6 +16,7 @@ import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
   syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
   syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
+  authHeaders,
 } from "./utils/storage";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import "./App.css";
@@ -346,7 +348,7 @@ export default function App() {
       const API_BASE = import.meta.env.VITE_API_URL || "";
       const res = await fetch(`${API_BASE}/api/generate-global-status`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body:    JSON.stringify({ projects: projectsToAnalyze, weekLabel, engineerCatalog: engineers, mode }),
       });
       const data = await res.json();
@@ -449,7 +451,7 @@ export default function App() {
     if (!ok) return;
     try {
       const API_BASE = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${API_BASE}/api/restore-from-db`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/restore-from-db`, { method: "POST", headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       alert(`✓ Restauración exitosa — ${data.restored} proyectos recuperados.\n\nEl aplicativo se recargará ahora.`);
@@ -513,7 +515,7 @@ export default function App() {
 
         <div className="header__actions">
           <nav className="header__nav">
-            {["dashboard", "edit", "report", "engineers", "engineer-report", "quarters"].map(v => (
+            {["dashboard", "edit", "report", "engineers", "engineer-report", "quarters", "reportes"].map(v => (
               <button
                 key={v}
                 className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
@@ -524,7 +526,8 @@ export default function App() {
                   : v === "report"          ? "Reporte"
                   : v === "engineers"       ? "Ingenieros"
                   : v === "engineer-report" ? "Rep. Ingenieros"
-                  :                           "Trimestres"}
+                  : v === "quarters"        ? "Trimestres"
+                  :                           "Reportes"}
               </button>
             ))}
           </nav>
@@ -537,7 +540,7 @@ export default function App() {
       </header>
 
       <main className="main-content">
-        {view !== "edit" && (
+        {view !== "edit" && view !== "reportes" && (
           <section className="summary">
             <div className="summary__progress">
               <ProgressRing percent={stats.percent} color="var(--accent)" />
@@ -627,14 +630,18 @@ export default function App() {
             globalStatusOpen={globalStatusOpen}
             onToggleGlobalStatusOpen={() => setGlobalStatusOpen(o => !o)}
             onGenerateGlobalStatus={handleGenerateGlobalStatus}
+          />
+        )}
+        {view === "quarters" && (
+          <QuartersView
+            onBack={() => setView("dashboard")}
+            projects={projects}
             quarterInfo={getCurrentQuarterInfo()}
             onQuarterReset={applyQuarterReset}
             onCleanStats={applyCleanStats}
           />
         )}
-        {view === "quarters" && (
-          <QuartersView onBack={() => setView("dashboard")} />
-        )}
+        {view === "reportes" && <ReportesView />}
         {view === "edit" && (
           <EditView
             projects={projects} editingIdx={editingIdx}

@@ -7,12 +7,16 @@
 
 // ── Fecha ────────────────────────────────────────────────────────────────────
 
+import { isoWeekNumber, todayISO } from "./isoWeek.js";
+
 const MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
+// Semana ISO 8601 (antes: días transcurridos / 7, que no alinea con lunes ni
+// respeta años bisiestos de 53 semanas). El número puede diferir en ±1 del
+// cálculo anterior — es la corrección esperada.
 export function getWeekLabel() {
-  const now   = new Date();
-  const start = new Date(now.getFullYear(), 0, 1);
-  const week  = Math.ceil((now - start) / 604800000);
+  const now  = new Date();
+  const week = isoWeekNumber(todayISO());
   return `Semana ${week} — ${now.getDate()} ${MONTHS_SHORT[now.getMonth()]} ${now.getFullYear()}`;
 }
 

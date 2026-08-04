@@ -5,6 +5,7 @@ import { projectProgress, generateReportText, generateSingleProjectReportText, b
 import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
 import { getProjectsForEngineer } from "../utils/engineers";
 import { useClickOutside } from "../hooks/useClickOutside";
+import { authHeaders } from "../utils/storage";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -249,7 +250,7 @@ function AIStatusSection({ project, autoRun }) {
     try {
       const res  = await fetch(`${API_BASE}/api/project-status`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body:    JSON.stringify({ project }),
       });
       const data = await res.json();

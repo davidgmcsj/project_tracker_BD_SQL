@@ -23,6 +23,14 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 // X-API-Key de cada request. El backend la exige a partir de esta versión.
 const API_KEY = import.meta.env.VITE_API_KEY || "";
 
+// Para los pocos call-sites que hacen fetch() directo en vez de pasar por
+// apiFetch (necesitan su propio manejo de respuesta: AbortSignal, cuerpo de
+// error con detalle de IA, POST sin body). No expone apiFetch en sí — solo
+// el header de autenticación que todos necesitan.
+export function authHeaders() {
+  return API_KEY ? { "X-API-Key": API_KEY } : {};
+}
+
 async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}), ...(API_KEY ? { "X-API-Key": API_KEY } : {}) };
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
@@ -159,6 +167,127 @@ export async function deleteEngineerTaskFromSQL(taskId) {
       body:    JSON.stringify({ taskId }),
     });
   } catch { /* el cambio local ya quedó guardado */ }
+}
+
+// ── Notas de proyecto ──────────────────────────────────────────────────────────
+// Viven solo en SQL (Proyecto_Notas), no en data.json — a diferencia de
+// status_notes, que sigue siendo el "pulso" de una línea dentro del proyecto.
+
+export async function loadProjectNotes(proyectoAppID) {
+  try {
+    return await apiFetch(`/api/reports/notes/${encodeURIComponent(proyectoAppID)}`);
+  } catch {
+    return [];
+  }
+}
+
+// `nota` es { id, date, author, type, text, include_in_report }. Devuelve
+// true si se guardó, false si falló (el llamador decide cómo avisar).
+export async function saveProjectNote(proyectoAppID, nota) {
+  try {
+    await apiFetch("/api/reports/notes", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ nota: { ...nota, proyectoAppID } }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteProjectNote(appNotaID) {
+  try {
+    await apiFetch("/api/reports/notes/delete", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ id: appNotaID }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Motor de reportes ──────────────────────────────────────────────────────────
+// El registro dice qué consultas y filtros existen (para dibujar el panel de
+// facetas sin campos hardcodeados); runReportQuery ejecuta una combinación
+// consulta+filtros y devuelve { total, filas }.
+
+export async function loadReportRegistry() {
+  try {
+    return await apiFetch("/api/reports/registry");
+  } catch {
+    return {};
+  }
+}
+
+// No usa apiFetch: si el filtro es inválido el backend responde 400 con un
+// mensaje concreto ("Campo de filtro no permitido: ...") que el panel de
+// reportes necesita mostrar tal cual, no un genérico "API ... → 400".
+export async function runReportQuery(body) {
+  const res = await fetch(`${API_BASE}/api/reports/query`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body:    JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ── Reportes guardados ─────────────────────────────────────────────────────
+
+export async function loadSavedReports() {
+  try {
+    return await apiFetch("/api/reports/saved");
+  } catch {
+    return [];
+  }
+}
+
+export async function saveReportCombination(nombre, config) {
+  return apiFetch("/api/reports/saved", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ nombre, config }),
+  });
+}
+
+export async function deleteSavedReport(id) {
+  try {
+    await apiFetch("/api/reports/saved/delete", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ id }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Exporta el mismo filtro ya aplicado a Excel o PDF y dispara la descarga.
+// POST + blob: apiFetchBlob (abajo) solo hace GET, así que esto no la reutiliza.
+export async function exportReport(body, formato) {
+  const res = await fetch(`${API_BASE}/api/reports/export`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body:    JSON.stringify({ ...body, formato }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `${body.consulta || "reporte"}.${formato}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ── Adjuntos de actividades ───────────────────────────────────────────────────

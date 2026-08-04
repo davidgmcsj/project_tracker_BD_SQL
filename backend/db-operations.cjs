@@ -2,7 +2,8 @@
 
 require("dotenv/config");
 const sql = require("mssql");
-const { toArray, buildActivityIndexFlat, buildEngineerIndex, resolveActText, resolveActArr } = require("./utils.cjs");
+const { toArray, buildActivityIndexFlat, buildEngineerIndex, resolveActText, resolveActArr, isoWeekNumber, isoYearOf, todayISO } = require("./utils.cjs");
+const { snapshotFromRows, snapshotFromProject, diffSnapshots, insertEvents } = require("./activity-events.cjs");
 
 // ── Conexión ──────────────────────────────────────────────────────────────────
 
@@ -36,13 +37,8 @@ async function getPool() {
 // toArray, buildActivityIndexFlatFlat, buildEngineerIndex, resolveActText, resolveActArr
 // vienen de utils.cjs — funciones compartidas con server.cjs y gemini-report.cjs.
 
-function getWeekNumber(dateStr) {
-  const d = new Date(dateStr + "T12:00:00");
-  const day = d.getDay() || 7;
-  d.setDate(d.getDate() + 4 - day);
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-}
+// getWeekNumber / año ISO viven en utils.cjs (isoWeekNumber / isoYearOf) —
+// compartidos con el motor de reportes y el frontend (Fase 0).
 
 // ── Pre-carga global en una sola query ────────────────────────────────────────
 
@@ -316,8 +312,8 @@ async function syncActividades(pool, proyectoID, activitiesArr) {
 async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCache, engineerCatalogIndex) {
   const proyectoID  = await resolveProject(pool, project, proyCache);
   const reportDate  = new Date().toISOString().slice(0, 10);
-  const semana      = getWeekNumber(reportDate);
-  const anio        = new Date(reportDate + "T12:00:00").getFullYear();
+  const semana      = isoWeekNumber(reportDate);
+  const anio        = isoYearOf(reportDate);
   const m           = project.manual_metrics || {};
   const total       = Number(m.total_tasks          || 0);
   const completadas = Number(m.completed_tasks       || 0);
@@ -557,6 +553,22 @@ async function syncActividadesDetalle(project) {
   const pool = await getPool();
 
   const proyectoAppID = project.id || "";
+
+  // Fase 1 — SELECT previo para el event log. Degradación explícita: si falla,
+  // el guardado normal de abajo procede idéntico a como funcionaba antes de
+  // esta fase — se pierde el evento, nunca el dato operacional.
+  let prevSnapshot = null;
+  try {
+    const prevRes = await pool.request()
+      .input("proyId", sql.NVarChar(60), proyectoAppID)
+      .query(`SELECT AppActividadID, Estado, Progreso, FechaInicio, FechaFin, HorasPlaneadas
+              FROM Actividades_Detalle WHERE ProyectoAppID = @proyId`);
+    prevSnapshot = snapshotFromRows(prevRes.recordset);
+  } catch (e) {
+    console.warn(`[EVENTOS] ⚠ SELECT previo falló para ${proyectoAppID}:`, e.message);
+    prevSnapshot = null;
+  }
+
   const acts = Array.isArray(project.activities_identified) ? project.activities_identified : [];
   const ts   = project.task_status || {};
   const hist = ts.status_history   || {};
@@ -693,6 +705,16 @@ async function syncActividadesDetalle(project) {
   } catch (e) {
     console.error(`[SQL] ✗ Error en bulk sync proyecto ${proyectoAppID}:`, e.message);
     throw e;
+  }
+
+  // Fase 1 — insertar eventos como efecto secundario, sin bloquear el guardado
+  // (sin await, con .catch propio: si falla, se reintenta en el próximo save).
+  if (prevSnapshot) {
+    const nextSnapshot = snapshotFromProject(project);
+    const eventos = diffSnapshots(prevSnapshot, nextSnapshot, { proyectoAppID, fechaEvento: todayISO(), origen: "app" });
+    if (eventos.length) {
+      insertEvents(pool, eventos).catch(e => console.warn(`[EVENTOS] ⚠ Insert falló para ${proyectoAppID}:`, e.message));
+    }
   }
 }
 
