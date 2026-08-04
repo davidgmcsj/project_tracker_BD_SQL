@@ -32,7 +32,7 @@ require("dotenv/config");
 const { toArray } = require("./utils.cjs");
 
 const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
-        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB } = (() => {
+        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, rebuildDataJsonFromSQL, maxSqlSavedAt } = (() => {
   try {
     const mod = require("./db-operations.cjs");
     console.log("[DB] db-operations.cjs cargado correctamente");
@@ -40,7 +40,7 @@ const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, d
   } catch (e) {
     console.error("[DB] Error cargando db-operations.cjs:", e.message);
     return { getPool: null, saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null,
-             saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null };
+             saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null, rebuildDataJsonFromSQL: null, maxSqlSavedAt: null };
   }
 })();
 
@@ -229,20 +229,79 @@ async function migrateCommentsAndMilestones() {
 
 // ── Inicialización ────────────────────────────────────────────────────────────
 
+// SQL es la fuente de verdad; data.json es la caché rápida. Si falta o está
+// corrupto, se intenta reconstruir desde SQL antes de aceptar tráfico —
+// antes de esto, un data.json ausente en Azure App Service (disco no
+// persistente) arrancaba con un archivo vacío y perdía todos los proyectos
+// en silencio.
+async function recoverDataFileFromSQL(reason) {
+  if (!rebuildDataJsonFromSQL) {
+    console.warn(`[INIT] ⚠ data.json ${reason} y el módulo de BD no está disponible — no se puede reconstruir.`);
+    return false;
+  }
+  console.warn(`[INIT] ⚠ data.json ${reason} — intentando reconstruir desde SQL...`);
+  try {
+    const rebuilt = await rebuildDataJsonFromSQL();
+    if (!rebuilt) {
+      console.warn("[INIT] ⚠ SQL tampoco tiene datos de respaldo (ReportesSemanales vacía).");
+      return false;
+    }
+    await writeJson(DATA_FILE, rebuilt);
+    console.log(`[INIT] ✓ data.json reconstruido desde SQL — ${rebuilt.projects.length} proyectos. El catálogo de ingenieros quedó vacío, se reconstruye solo con el uso.`);
+    return true;
+  } catch (e) {
+    console.error("[INIT] ✗ Falló la reconstrucción desde SQL:", e.message);
+    return false;
+  }
+}
+
+async function warnIfDataFileStale() {
+  if (!maxSqlSavedAt) return;
+  const data = await readJson(DATA_FILE, null);
+  if (!data?.savedAt) return; // archivo previo a esta fase, sin el campo — nada que comparar
+  try {
+    const maxSql = await maxSqlSavedAt();
+    if (maxSql && new Date(maxSql) > new Date(data.savedAt)) {
+      console.warn(
+        `[INIT] ⚠ data.json (${data.savedAt}) está más viejo que el último guardado en SQL (${new Date(maxSql).toISOString()}). ` +
+        `Si esto es inesperado (no un simple redeploy), considera restaurar con POST /api/restore-from-db.`
+      );
+    }
+  } catch (e) {
+    console.warn("[INIT] No se pudo comparar data.json contra SQL:", e.message);
+  }
+}
+
 async function init() {
   await fs.mkdir(DATA_DIR, { recursive: true });
 
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    const localData = path.join(__dirname, "data.json");
-    try {
-      await fs.access(localData);
-      await fs.copyFile(localData, DATA_FILE);
-      console.log("data.json copiado al directorio de datos");
-    } catch {
-      await writeJson(DATA_FILE, { projects: [], weekLabel: null, engineers: [] });
+  const existe = await fs.access(DATA_FILE).then(() => true).catch(() => false);
+  let corrupto = false;
+  if (existe) {
+    try { JSON.parse(await fs.readFile(DATA_FILE, "utf-8")); }
+    catch { corrupto = true; }
+  }
+
+  if (!existe || corrupto) {
+    const recuperado = await recoverDataFileFromSQL(corrupto ? "está corrupto" : "no existe");
+    if (!recuperado && !existe) {
+      // Último recurso: copia de desarrollo local, o arrancar vacío.
+      const localData = path.join(__dirname, "data.json");
+      try {
+        await fs.access(localData);
+        await fs.copyFile(localData, DATA_FILE);
+        console.log("[INIT] data.json copiado al directorio de datos (copia local de desarrollo)");
+      } catch {
+        await writeJson(DATA_FILE, { projects: [], weekLabel: null, engineers: [] });
+        console.warn("[INIT] ⚠ Arrancando con data.json vacío — no había respaldo en SQL ni copia local.");
+      }
     }
+    // Si estaba corrupto y no se pudo recuperar, se deja el archivo corrupto tal
+    // cual (no se sobreescribe con vacío): readJson() ya cae a su fallback en
+    // memoria en cada lectura, y el archivo original queda disponible para
+    // revisión o recuperación manual.
+  } else {
+    await warnIfDataFileStale();
   }
 
   await migrateArrayFields();
@@ -424,7 +483,10 @@ app.get("/api/projects", async (req, res) => {
 
 app.post("/api/projects", async (req, res) => {
   try {
-    await writeJson(DATA_FILE, req.body);
+    // savedAt: permite comparar data.json contra el máximo SavedAt de SQL al
+    // arrancar (warnIfDataFileStale) sin cambiar el contrato de la respuesta
+    // ni la latencia percibida — sigue siendo fire-and-forget hacia SQL.
+    await writeJson(DATA_FILE, { ...req.body, savedAt: new Date().toISOString() });
     res.json({ ok: true });
 
     // Sync operacional: solo el proyecto que cambió (identificado por changedProjectId)
@@ -755,38 +817,23 @@ app.post("/api/generate-global-status", async (req, res) => {
 // ── API: Restaurar desde BD ───────────────────────────────────────────────────
 
 app.post("/api/restore-from-db", async (req, res) => {
-  if (!saveWeekReportToDB) {
+  if (!rebuildDataJsonFromSQL) {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
   }
   try {
-    const pool = await getPool();
-
-    // Trae el RawDataJSON más reciente de cada proyecto
-    const result = await pool.request().query(`
-      SELECT r.RawDataJSON
-      FROM ReportesSemanales r
-      INNER JOIN (
-        SELECT ProyectoID, MAX(SavedAt) AS UltimoGuardado
-        FROM ReportesSemanales
-        GROUP BY ProyectoID
-      ) latest ON r.ProyectoID = latest.ProyectoID AND r.SavedAt = latest.UltimoGuardado
-      WHERE r.RawDataJSON IS NOT NULL AND r.RawDataJSON != ''
-    `);
-
-    const projects = result.recordset
-      .map(row => { try { return JSON.parse(row.RawDataJSON); } catch { return null; } })
-      .filter(Boolean);
-
-    if (!projects.length) {
+    const rebuilt = await rebuildDataJsonFromSQL();
+    if (!rebuilt) {
       return res.status(404).json({ error: "No hay datos de respaldo en la base de datos" });
     }
 
-    // Sobreescribe el data.json con los proyectos restaurados
+    // A diferencia del rebuild de arranque (donde no hay nada que preservar),
+    // acá sí hay un data.json vivo — se conservan weekLabel/engineers/
+    // externalContacts actuales y solo se reemplazan los proyectos.
     const currentData = await readJson(DATA_FILE, { projects: [], weekLabel: null });
-    await writeJson(DATA_FILE, { ...currentData, projects });
+    await writeJson(DATA_FILE, { ...currentData, projects: rebuilt.projects, savedAt: new Date().toISOString() });
 
-    console.log(`[RESTORE] ✓ Restaurados ${projects.length} proyectos desde la BD`);
-    res.json({ ok: true, restored: projects.length });
+    console.log(`[RESTORE] ✓ Restaurados ${rebuilt.projects.length} proyectos desde la BD`);
+    res.json({ ok: true, restored: rebuilt.projects.length });
   } catch (e) {
     console.error("[RESTORE] Error:", e.message);
     res.status(500).json(errorBody("Error restaurando desde BD", e));
