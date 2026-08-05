@@ -36,12 +36,34 @@ const COLUMN_LABELS = {
 };
 
 // Depósito (bucket) de Planner → estado de actividad de la app.
+// Todos los planes usan los mismos depósitos: "Tareas Identificadas",
+// "Tareas en Ejecución", "Tareas Completadas", "Reuniones" y
+// "Actividades en seguimiento". Se conservan las variantes antiguas
+// ("Actividades ...") por compatibilidad con exports previos.
 const BUCKET_TO_STATUS = {
-  "actividades completadas":  "completed",
-  "actividades en ejecucion": "in_progress",
-  "actividad identificadas":  "not_started",
+  // Nombres reales de los depósitos de Planner
+  "tareas completadas":        "completed",
+  "tareas en ejecucion":       "in_progress",
+  "tareas identificadas":      "not_started",
+  "actividades en seguimiento": "in_progress",
+  // Variantes antiguas (compatibilidad)
+  "actividades completadas":   "completed",
+  "actividades en ejecucion":  "in_progress",
+  "actividad identificadas":   "not_started",
   "actividades identificadas": "not_started",
 };
+
+// Depósitos cuyo estado se resuelve por el % completado en lugar de una
+// correspondencia fija. Las Reuniones son actividades que se marcan como
+// completadas al 100%; con avance parcial quedan en proceso.
+const PROGRESS_BASED_BUCKETS = new Set(["reuniones"]);
+
+// Estado derivado del % de avance: 100 → completada, 1-99 → en proceso, 0 → no iniciada.
+function statusFromProgress(progress) {
+  if (progress >= 100) return "completed";
+  if (progress > 0) return "in_progress";
+  return "not_started";
+}
 
 // ── Utilidades de normalización y parseo de celdas ────────────────────────────
 
@@ -83,9 +105,13 @@ export function parseProgress(raw) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-// "Actividades en Ejecución" → "in_progress". Desconocido → "not_started".
-export function bucketToStatus(deposito) {
-  return BUCKET_TO_STATUS[normalizeName(deposito)] || "not_started";
+// "Tareas en Ejecución" → "in_progress". Desconocido → "not_started".
+// Para depósitos basados en avance (Reuniones), el estado sale del % completado:
+// una reunión al 100% queda completada, con avance parcial en proceso.
+export function bucketToStatus(deposito, progress = 0) {
+  const key = normalizeName(deposito);
+  if (PROGRESS_BASED_BUCKETS.has(key)) return statusFromProgress(progress);
+  return BUCKET_TO_STATUS[key] || "not_started";
 }
 
 // "Nombre Uno, Nombre Dos" → ["Nombre Uno", "Nombre Dos"]. Vacío → [].
@@ -185,15 +211,17 @@ export async function parsePlannerWorkbook(arrayBuffer) {
     }
     if (taskNumber) seenNumbers.add(taskNumber);
 
+    const progress = parseProgress(cell(row, "progress"));
+
     out.push({
       planner_task_number: taskNumber || null,
       text,
       assigneeNames: parseAssignees(cell(row, "assignees")),
       start_date:    excelSerialToDate(cell(row, "start")),
       due_date:      excelSerialToDate(cell(row, "finish")),
-      progress:      parseProgress(cell(row, "progress")),
+      progress,
       planned_hours: parseEsfuerzo(cell(row, "effort")),
-      status:        bucketToStatus(cell(row, "bucket")),
+      status:        bucketToStatus(cell(row, "bucket"), progress),
       notes_raw:     String(cell(row, "notes") ?? "").trim(),
       _rowIndex:     i,
     });

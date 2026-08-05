@@ -1,16 +1,19 @@
 // ReportesFilterPanel.jsx — Panel de facetas construido a partir del registro
-// del backend (GET /api/reports/registry). No tiene campos hardcodeados: lo
-// que se puede filtrar por cada consulta viene del backend (§5.3 del plan).
+// del backend (GET /api/reports/registry). Los campos disponibles por
+// consulta vienen del backend (§5.3 del plan); lo único que decide el
+// frontend es CÓMO se captura el valor.
 //
-// "lista" se controla con un input de texto (valores separados por coma →
-// operador "in" si hay más de uno, "=" si hay uno solo) en vez de un combo
-// con opciones fijas: los valores válidos de cada campo (estados en español
-// vs. en inglés según la consulta, orígenes de evento, etc.) viven en el
-// backend y listarlos aquí duplicaría esa lógica con riesgo de desincronía.
+// "lista" se resuelve como combo con buscador (SearchableMultiSelect) cuando
+// hay opciones conocidas en `opciones` — o bien datos ya cargados en memoria
+// (proyecto_id/ingeniero_id, ver ReportesView.jsx) o enums fijos que reflejan
+// exactamente lo que graba el backend (frontend/src/utils/filtroOpciones.js).
+// Si no hay opciones para un campo (p.ej. grupo_trabajo, que aún no se
+// escribe desde ninguna UI) cae al input de texto libre original.
 
 import { useState } from "react";
+import { SearchableMultiSelect } from "./SearchableMultiSelect";
 
-function FiltroControl({ campo, def, onAdd }) {
+function FiltroControl({ campo, def, opciones, onAdd }) {
   const [valor, setValor]   = useState("");
   const [desde, setDesde]   = useState("");
   const [hasta, setHasta]   = useState("");
@@ -46,6 +49,19 @@ function FiltroControl({ campo, def, onAdd }) {
     );
   }
 
+  if (def.tipo === "lista" && opciones && opciones.length) {
+    return (
+      <div className="reportes-filter">
+        <span className="reportes-filter__label">{campo.replace(/_/g, " ")}</span>
+        <SearchableMultiSelect
+          options={opciones}
+          placeholder={`Buscar ${campo.replace(/_/g, " ")}…`}
+          onAdd={parcial => onAdd({ campo, ...parcial })}
+        />
+      </div>
+    );
+  }
+
   if (def.tipo === "lista") {
     return (
       <div className="reportes-filter">
@@ -75,7 +91,7 @@ function FiltroControl({ campo, def, onAdd }) {
   );
 }
 
-export function ReportesFilterPanel({ registryEntry, onAdd }) {
+export function ReportesFilterPanel({ registryEntry, opcionesPorCampo, onAdd }) {
   if (!registryEntry) return null;
   const campos = Object.entries(registryEntry.filtros || {});
   if (!campos.length) return null;
@@ -83,7 +99,7 @@ export function ReportesFilterPanel({ registryEntry, onAdd }) {
   return (
     <div className="reportes-filter-panel">
       {campos.map(([campo, def]) => (
-        <FiltroControl key={campo} campo={campo} def={def} onAdd={onAdd} />
+        <FiltroControl key={campo} campo={campo} def={def} opciones={opcionesPorCampo?.[campo]} onAdd={onAdd} />
       ))}
     </div>
   );

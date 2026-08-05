@@ -15,7 +15,7 @@
 // guardado con una vista que hoy es puramente de lectura es un cambio de
 // arquitectura aparte, no una extensión de una tarde.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { loadReportRegistry, runReportQuery, exportReport } from "../utils/storage";
 import { useUrlState } from "../hooks/useUrlState";
 import { ReportesTemplates } from "./ReportesTemplates";
@@ -24,6 +24,10 @@ import { ReportesTable } from "./ReportesTable";
 import { ReportesSavedPanel } from "./ReportesSavedPanel";
 import { GlobalBoardView } from "./GlobalBoardView";
 import { WorkloadMatrix } from "./WorkloadMatrix";
+import {
+  ESTADOS_PROYECTO, ESTADOS_INGENIERO_REPORTE, TIPOS_EVENTO_ACTIVIDAD,
+  ORIGENES_EVENTO, PRIORIDADES_PROYECTO, TIPOS_NOTA,
+} from "../utils/filtroOpciones";
 
 const MODOS = [
   { value: "tabla",   label: "📋 Tabla" },
@@ -73,6 +77,32 @@ export function ReportesView({ projects, engineers }) {
   }, []);
 
   const registryEntry = registry?.[consulta];
+
+  // Opciones para los combos con buscador de ReportesFilterPanel.jsx: para
+  // proyecto_id/ingeniero_id se arman desde projects/engineers (ya en
+  // memoria, sin llamar al backend); para los demás campos "lista" se usan
+  // los enums fijos de filtroOpciones.js que reflejan lo que graba el
+  // backend. Distintas consultas pueden usar el mismo nombre de campo con
+  // significado distinto (p.ej. "estado" es español en ingenieros e inglés
+  // en proyectos), por eso el mapa se arma por consulta.
+  const opcionesPorCampo = useMemo(() => {
+    const proyectoOpciones = (projects || [])
+      .map(p => ({ value: p.id, label: p.project_name || "Proyecto sin nombre" }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const ingenieroOpciones = (engineers || [])
+      .filter(e => e.sql_id != null)
+      .map(e => ({ value: String(e.sql_id), label: e.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const porConsulta = {
+      actividades: { proyecto_id: proyectoOpciones, tipo: TIPOS_EVENTO_ACTIVIDAD, origen: ORIGENES_EVENTO },
+      ingenieros:  { ingeniero_id: ingenieroOpciones, proyecto_id: proyectoOpciones, estado: ESTADOS_INGENIERO_REPORTE },
+      proyectos:   { proyecto_id: proyectoOpciones, estado: ESTADOS_PROYECTO, prioridad: PRIORIDADES_PROYECTO },
+      notas:       { proyecto_id: proyectoOpciones, tipo: TIPOS_NOTA },
+      vencidas:    { proyecto_id: proyectoOpciones },
+    };
+    return porConsulta[consulta] || {};
+  }, [projects, engineers, consulta]);
 
   // Re-ejecutar la consulta cuando cambian la consulta base o los filtros.
   // Se piden TODAS las columnas disponibles (no solo las visibles): así
@@ -177,7 +207,7 @@ export function ReportesView({ projects, engineers }) {
             onLoad={handleLoadSaved}
           />
 
-          <ReportesFilterPanel registryEntry={registryEntry} onAdd={handleAddFiltro} />
+          <ReportesFilterPanel registryEntry={registryEntry} opcionesPorCampo={opcionesPorCampo} onAdd={handleAddFiltro} />
 
           {filtros.length > 0 && (
             <div className="reportes-chips">

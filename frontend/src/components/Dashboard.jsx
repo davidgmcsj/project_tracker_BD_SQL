@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { GlobalMetricsTable, ProjectMetricsTableCompact } from "./MetricsTable";
 import { generateAssignmentsByEngineer } from "../utils/formulas";
-import QuarterResetModal from "./QuarterResetModal";
 
 const STATUS = {
   "on-track":        { label: "En curso",        cssClass: "on-track",        icon: "🟡" },
@@ -14,25 +13,9 @@ const STATUS = {
 // Orden de urgencia en el dashboard: lo que necesita atención primero.
 const STATUS_ORDER = { blocked: 0, "at-risk": 1, "on-track": 2, "mejora-continua": 3, completed: 4 };
 
-export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, onTogglePriority, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset, onCleanStats }) {
+export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, onTogglePriority, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, onOpenPlanning }) {
   const [toast,            setToast]            = useState("");
-  const [showResetModal,   setShowResetModal]   = useState(false);
-  const [cleaningStats,    setCleaningStats]    = useState(false);
   const [search,           setSearch]           = useState("");
-
-  const handleCleanStats = async () => {
-    if (!window.confirm("¿Aplicar limpieza de trimestre a los proyectos actuales?\n\nSe reiniciará:\n• Estado del proyecto → En curso\n• Indicadores → en cero\n• Logros, plan, impedimentos, comentarios → vacíos\n• Actividades completadas → eliminadas\n• Historial de fechas de depósito → borrado\n• Estadísticas semanales de ingenieros → cero\n\nSe conservará:\n• Actividades en proceso y no iniciadas (con sus responsables y detalle)\n\n¿Continuar?")) return;
-    setCleaningStats(true);
-    try {
-      await onCleanStats();
-      setToast("✓ Estadísticas limpiadas correctamente");
-    } catch {
-      setToast("Error al limpiar estadísticas");
-    } finally {
-      setCleaningStats(false);
-      setTimeout(() => setToast(""), 3000);
-    }
-  };
 
   const handleCopyAssign = (p, i, e) => {
     e.stopPropagation();
@@ -156,33 +139,6 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
 
       {toast && <div className="toast">{toast}</div>}
 
-      {/* Barra de acciones de trimestre */}
-      {quarterInfo && onQuarterReset && (
-        <div className="dashboard-quarter-bar">
-          <div className="dashboard-quarter-bar__info">
-            <span className="dashboard-quarter-bar__label">Trimestre actual:</span>
-            <span className="dashboard-quarter-bar__name">{quarterInfo.label}</span>
-          </div>
-          <button
-            className="btn btn--new-quarter"
-            onClick={() => setShowResetModal(true)}
-            title={`Cerrar ${quarterInfo.label} e iniciar ${quarterInfo.nextLabel}`}
-          >
-            🗂 Nuevo trimestre
-          </button>
-          {onCleanStats && (
-            <button
-              className="btn btn--clean-stats"
-              onClick={handleCleanStats}
-              disabled={cleaningStats}
-              title="Limpiar estadísticas semanales e historial sin archivar"
-            >
-              {cleaningStats ? "⏳ Limpiando…" : "🧹 Limpiar estadísticas"}
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Buscador de proyectos */}
       <div className="dashboard-search-bar">
         <input
@@ -272,6 +228,19 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
                   👥 Asignaciones
                 </button>
               </div>
+              {/* Accesos rápidos a las vistas de planificación, sin salir del
+                  dashboard: se abren en overlay y al cerrarlas se vuelve aquí. */}
+              <div className="project-card__actions project-card__actions--planning" onClick={e => e.stopPropagation()}>
+                <button className="btn btn--card-plan" onClick={() => onOpenPlanning(i, "status")} title="Estado de actividades">
+                  🗃 Estados
+                </button>
+                <button className="btn btn--card-plan" onClick={() => onOpenPlanning(i, "gantt")} title="Diagrama de Gantt">
+                  📅 Gantt
+                </button>
+                <button className="btn btn--card-plan" onClick={() => onOpenPlanning(i, "hierarchy")} title="Planificación completa">
+                  🗂 Planificación
+                </button>
+              </div>
             </div>
           );
         })}
@@ -281,16 +250,6 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
           <span className="add-card__text">Agregar proyecto</span>
         </div>
       </div>
-
-      {/* Modal de doble confirmación para reinicio de trimestre */}
-      {showResetModal && quarterInfo && (
-        <QuarterResetModal
-          quarterInfo={quarterInfo}
-          projects={projects}
-          onConfirm={onQuarterReset}
-          onClose={() => setShowResetModal(false)}
-        />
-      )}
     </div>
   );
 }

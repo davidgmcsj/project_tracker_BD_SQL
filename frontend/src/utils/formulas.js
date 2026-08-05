@@ -134,9 +134,11 @@ export function genActivityId() {
   return "act_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-export function createActivity(text = "") {
+export function createActivity(text = "", parentId = null, sequenceOrder = 0) {
   return {
     id: genActivityId(),
+    parent_id: parentId,           // id de otra actividad, o null = nivel raíz (jerarquía de subtareas)
+    sequence_order: sequenceOrder, // orden entre hermanas del mismo padre — usado por el motor de cascada
     text,
     assigned_engineers: [],
     assigned_date: null,
@@ -262,6 +264,137 @@ export function activityLabel(index, id) {
   return entry ? `${entry.position}. ${entry.text}` : (id || "");
 }
 
+// ── Jerarquía de subtareas (parent_id plano) ──────────────────────────────────
+// Las actividades siguen viviendo en un array PLANO (activities_identified);
+// parent_id es la única adición. El árbol se reconstruye en memoria, on-demand,
+// solo donde se necesita (HierarchyTable) — el resto del sistema (Gantt, Kanban,
+// reportes, sync a SQL) sigue viendo el mismo array plano sin cambios.
+//
+// sequence_order fija el orden entre hermanas del mismo padre. Actividades sin
+// el campo (datos existentes anteriores a esta funcionalidad) se ordenan por su
+// posición actual en el array la primera vez que se construye el árbol.
+
+// Construye { rootIds, childrenOf } a partir del array plano de actividades.
+// childrenOf: Map<parentId|null, Activity[]>, cada lista ya ordenada por
+// sequence_order (con fallback a la posición original del array).
+// Ignora referencias huérfanas (parent_id apunta a un id que no existe) y
+// ciclos (una actividad que, siguiendo parent_id hacia arriba, se referencia
+// a sí misma) tratándolas como raíz — nunca cuelga el recorrido.
+export function buildActivityTree(activities) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const byId = new Map(acts.map(a => [a.id, a]));
+
+  const isDescendantCycle = (id, parentId) => {
+    let cur = parentId;
+    const seen = new Set();
+    while (cur != null) {
+      if (cur === id) return true;
+      if (seen.has(cur)) return true; // ciclo preexistente en los datos, no relacionado con `id`
+      seen.add(cur);
+      cur = byId.get(cur)?.parent_id ?? null;
+    }
+    return false;
+  };
+
+  const childrenOf = new Map();
+  const rootIds = [];
+
+  acts.forEach((a, i) => {
+    const rawParent = a.parent_id ?? null;
+    const validParent = rawParent != null && byId.has(rawParent) && !isDescendantCycle(a.id, rawParent)
+      ? rawParent
+      : null;
+    if (validParent === null) rootIds.push(a.id);
+    const key = validParent;
+    if (!childrenOf.has(key)) childrenOf.set(key, []);
+    childrenOf.get(key).push({ activity: a, originalIndex: i });
+  });
+
+  const bySeq = (x, y) => {
+    const sx = Number(x.activity.sequence_order);
+    const sy = Number(y.activity.sequence_order);
+    if (Number.isFinite(sx) && Number.isFinite(sy) && sx !== sy) return sx - sy;
+    return x.originalIndex - y.originalIndex;
+  };
+
+  for (const list of childrenOf.values()) {
+    list.sort(bySeq);
+  }
+  rootIds.sort((idA, idB) => {
+    const a = byId.get(idA), b = byId.get(idB);
+    const sa = Number(a?.sequence_order), sb = Number(b?.sequence_order);
+    if (Number.isFinite(sa) && Number.isFinite(sb) && sa !== sb) return sa - sb;
+    return acts.indexOf(a) - acts.indexOf(b);
+  });
+
+  const childrenOfFlat = new Map();
+  for (const [key, list] of childrenOf.entries()) {
+    childrenOfFlat.set(key, list.map(x => x.activity));
+  }
+
+  return { rootIds, childrenOf: childrenOfFlat };
+}
+
+// Recorre el árbol en preorden (respetando sequence_order) y devuelve un array
+// plano de { activity, level, path }. path = [1,1,13,3,1] — números 1-based por
+// nivel; level = path.length - 1. La numeración NUNCA se guarda, se calcula en
+// cada llamada (mismo principio que buildActivityIndex de arriba).
+//
+// collapsedIds: Set<id> de actividades cuyos hijos se omiten del resultado
+// (permanece la propia fila, se ocultan sus descendientes) — usado por
+// HierarchyTable para colapsar ramas sin perder el resto del árbol.
+export function flattenTree(activities, { collapsedIds } = {}) {
+  const { rootIds, childrenOf } = buildActivityTree(activities);
+  const byId = new Map((Array.isArray(activities) ? activities : []).map(a => [a.id, a]));
+  const collapsed = collapsedIds instanceof Set ? collapsedIds : new Set();
+  const out = [];
+
+  const visit = (id, path) => {
+    const activity = byId.get(id);
+    if (!activity) return;
+    out.push({ activity, level: path.length - 1, path });
+    if (collapsed.has(id)) return;
+    const children = childrenOf.get(id) || [];
+    children.forEach((child, i) => visit(child.id, [...path, i + 1]));
+  };
+
+  rootIds.forEach((id, i) => visit(id, [i + 1]));
+  return out;
+}
+
+export function formatHierarchyNumber(path) {
+  return Array.isArray(path) ? path.join(".") : "";
+}
+
+// Progreso agregado de un nodo con hijos: promedio simple de los hijos DIRECTOS,
+// recursivo (si un hijo también tiene hijos, su valor ya viene agregado). Nodos
+// sin hijos devuelven su propio act.progress manual tal cual. Puramente derivado
+// para presentación — nunca se persiste en el dato de la actividad.
+export function aggregatedProgress(activity, childrenOf) {
+  const children = childrenOf.get(activity.id) || [];
+  if (!children.length) return Math.max(0, Math.min(100, Number(activity.progress) || 0));
+  const sum = children.reduce((s, child) => s + aggregatedProgress(child, childrenOf), 0);
+  return Math.round(sum / children.length);
+}
+
+// Protege contra mover una tarea a un descendiente suyo (crearía un ciclo).
+// Devuelve true si asignar newParentId como padre de activityId formaría un ciclo
+// (incluye el caso trivial newParentId === activityId).
+export function wouldCreateCycle(activities, activityId, newParentId) {
+  if (newParentId == null) return false;
+  if (newParentId === activityId) return true;
+  const byId = new Map((Array.isArray(activities) ? activities : []).map(a => [a.id, a]));
+  let cur = newParentId;
+  const seen = new Set();
+  while (cur != null) {
+    if (cur === activityId) return true;
+    if (seen.has(cur)) return false; // ciclo preexistente ajeno a este movimiento — no lo agrava
+    seen.add(cur);
+    cur = byId.get(cur)?.parent_id ?? null;
+  }
+  return false;
+}
+
 export const createDefaultMilestone  = () => ({ activity: "", date: "", note: "" });
 export const createDefaultComment    = () => ({ activity: "", date: "", text: "" });
 
@@ -318,6 +451,15 @@ export function buildEngineerIndex(engineers) {
 // Resuelve un id de ingeniero a su nombre. Si no se encuentra, devuelve el id tal cual.
 export function engineerName(index, id) {
   return index.get(id) ?? id ?? "";
+}
+
+// "Cristian Mauricio Rodriguez" → "Cristian M." — usado donde el espacio es
+// reducido (celdas de tabla) y basta con distinguir personas por su primer
+// nombre + inicial. Un solo nombre (sin segunda palabra) se devuelve tal cual.
+export function shortEngineerName(fullName) {
+  const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || "";
+  return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
 }
 
 export function genEngineerTaskId() {

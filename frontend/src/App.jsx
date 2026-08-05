@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Dashboard     from "./components/Dashboard";
-import EditView      from "./components/EditView";
+import EditView, { TaskStatusSelector } from "./components/EditView";
+import ProjectPlanningOverlays from "./components/ProjectPlanningOverlays";
 import ReportView    from "./components/ReportView";
 import EngineersView from "./components/EngineersView";
 import EngineerReportView from "./components/EngineerReportView";
@@ -139,6 +140,7 @@ export default function App() {
   // proyecto a la vez. Autosaves de modales y toggles del dashboard no
   // mandan expectedVersion, así que nunca disparan este modal.
   const [saveConflict, setSaveConflict] = useState(null); // { projectId, localProject, serverProject }
+  const [planning, setPlanning] = useState(null); // { idx, view } — overlay de planificación abierto desde el dashboard
 
   const handleSaveEditedProject = useCallback(async () => {
     const editing = projects[editingIdx];
@@ -719,6 +721,7 @@ export default function App() {
             globalStatusOpen={globalStatusOpen}
             onToggleGlobalStatusOpen={() => setGlobalStatusOpen(o => !o)}
             onGenerateGlobalStatus={handleGenerateGlobalStatus}
+            onOpenPlanning={(idx, which) => setPlanning({ idx, view: which })}
           />
         )}
         {view === "quarters" && (
@@ -764,6 +767,18 @@ export default function App() {
         engineers={engineers}
         onGoToProject={handleGoToProject}
         onGoToView={navigateTo}
+      />
+
+      {/* Accesos rápidos de planificación desde las tarjetas del dashboard:
+          se abren en overlay y al cerrarlos se sigue en el dashboard. */}
+      <ProjectPlanningOverlays
+        project={planning ? projects[planning.idx] : null}
+        view={planning?.view}
+        onClose={() => setPlanning(null)}
+        onUpdateProject={updated => updateProjectFull(planning.idx, updated)}
+        engineerCatalog={engineers}
+        externalContacts={externalContacts}
+        StatusBoard={TaskStatusSelector}
       />
 
       {saveConflict && (

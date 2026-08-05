@@ -1214,6 +1214,30 @@
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
+/* Segunda fila de acciones (planificación): va pegada a la de reportes, sin
+   repetir el separador ni empujar con margin-top:auto. */
+.project-card__actions--planning {
+  margin-top: 0;
+  padding-top: 8px;
+  border-top: none;
+}
+.btn--card-plan {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.btn--card-plan:hover {
+  background: var(--accent-bg);
+  border-color: var(--inst-azul);
+  color: var(--inst-azul);
+}
 .report-project__metrics {
   margin: 14px 0 4px;
 }
@@ -1303,6 +1327,17 @@
 .btn-add-item:hover {
   background: var(--accent-bg);
   border-color: var(--azul-claro);
+}
+/* Variante secundaria: acción alterna junto al botón principal de agregar. */
+.btn-add-item--ghost {
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--text-3);
+}
+.btn-add-item--ghost:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-2);
 }
 
 /* ═══ LIST FIELD DRAFT (inline input) ═══ */
@@ -1423,6 +1458,39 @@
 @media (max-width: 600px) {
   .engineer-card__sections { grid-template-columns: 1fr; }
 }
+/* "Esta semana" ahora es una sola tabla automática — ya no hay selector +
+   lista elegida en columnas separadas. */
+.engineer-card__sections--single { grid-template-columns: 1fr; }
+
+.engineer-week-auto-hint {
+  font-size: 9px; font-weight: 700; text-transform: none; letter-spacing: normal;
+  color: var(--text-3); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-pill); padding: 1px 7px; margin-left: 8px;
+}
+
+.week-auto-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.week-auto-table th {
+  text-align: left; font-size: 10px; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.03em; padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.week-auto-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.week-auto-table tr:last-child td { border-bottom: none; }
+.week-auto-table__name { max-width: 0; width: 40%; }
+.week-auto-table__name-link {
+  background: none; border: none; padding: 0; text-align: left; cursor: pointer;
+  color: var(--azul-oscuro); font-size: inherit; text-decoration: underline; text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.week-auto-table__name-link:hover { text-decoration-color: var(--azul-oscuro); }
+.week-auto-table__situation {
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill);
+  border: 1px solid transparent; white-space: nowrap;
+}
+.week-auto-table__situation--overdue   { background: var(--red-bg);   color: var(--red); }
+.week-auto-table__situation--due       { background: var(--amber-bg); color: var(--amber); }
+.week-auto-table__situation--starts    { background: var(--info-bg);  color: var(--info); }
+.week-auto-table__situation--continues { background: var(--surface);  color: var(--text-3); border-color: var(--border); }
 .engineer-section {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -2683,6 +2751,12 @@
   overflow-y: auto;
   padding-right: 2px;
 }
+/* A pantalla completa el tablero ocupa toda la altura disponible en vez del
+   tope fijo de 560px pensado para el formulario. */
+.fs-overlay__body .task-status-board { height: 100%; }
+.fs-overlay__body .task-status-cols { flex: 1; min-height: 0; }
+.fs-overlay__body .task-status-col { min-height: 0; }
+.fs-overlay__body .task-status-col__list { max-height: none; flex: 1; }
 .task-status-col__list::-webkit-scrollbar {
   width: 5px;
 }
@@ -3801,7 +3875,11 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 1000;
+  /* Por encima de .fs-overlay (1200): la tarjeta de actividad se abre DESDE la
+     planificación a pantalla completa (al crear una subtarea o al hacer clic
+     en una fila), así que debe superponerse a ella. Con z-index menor quedaba
+     oculta detrás y solo aparecía al cerrar la planificación. */
+  z-index: 1300;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -4372,6 +4450,74 @@
 }
 .adm-checklist__item:hover .adm-checklist__remove { opacity: 1; }
 .adm-checklist__remove:hover { color: var(--red); }
+
+/* ── Subtareas reales (jerarquía) ── */
+.adm-subtask-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.adm-subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.adm-subtask-item:hover { background: var(--azul-oscuro-10, rgba(20, 60, 120, 0.06)); }
+.adm-subtask-item__num {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.adm-subtask-item__name {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--azul-oscuro);
+  padding: 2px 0;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.adm-subtask-item__name:hover { text-decoration-color: var(--azul-oscuro); }
+.adm-subtask-item__dates {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.adm-subtask-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.adm-subtask-status--not-started { background: var(--red-bg);   color: var(--red);   border-color: var(--red); }
+.adm-subtask-status--in-progress { background: var(--info-bg);  color: var(--info);  border-color: var(--info); }
+.adm-subtask-status--completed   { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+.adm-subtask-item__remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.adm-subtask-item:hover .adm-subtask-item__remove { opacity: 1; }
+.adm-subtask-item__remove:hover { color: var(--red); }
 
 /* ── Fechas clave ── */
 .adm-keydate-list,
@@ -4977,7 +5123,12 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  overflow: hidden;
+  /* SIN overflow:hidden a propósito: rompería `position:sticky` del thead
+     (Fix scroll) — cualquier ancestro con overflow distinto de visible
+     desactiva el sticky, aunque no sea el que scrollea. Las esquinas ya
+     quedan limpias porque .gantt-filterbar y .gantt-cal tienen su propio
+     borde/fondo alineado al radio del contenedor. */
+  overflow: visible;
 }
 .gantt-empty {
   padding: 20px;
@@ -4988,42 +5139,50 @@
   border-radius: 10px;
   line-height: 1.5;
 }
-.gantt__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-2, #f7f8fa);
+/* ── Barra de filtros unificada (reemplaza al antiguo Zoom + panel de fechas
+   separados, que mostraban el mismo control dos veces) — dos filas: atajos
+   de período arriba, rango exacto + filtro de estado abajo. Siempre visible. */
+.gantt-filterbar {
+  display: flex; flex-direction: column; gap: var(--s2);
+  padding: var(--s3) 12px; border-bottom: 1px solid var(--border); background: var(--bg-2, #f7f8fa);
+  border-radius: 10px 10px 0 0;
 }
-.gantt__zoom-label { font-size: 12px; color: var(--text-3); margin-right: 2px; }
-.gantt__zoom-btn {
-  font-size: 12px;
-  padding: 3px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text-2, #555);
-  cursor: pointer;
-  transition: all 0.15s;
+.gantt-filterbar__row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gantt-filterbar__label { font-size: 12px; color: var(--text-3); font-weight: 600; margin-right: 2px; }
+
+.gantt__toolbar-sep { width: 1px; height: 18px; background: var(--border-strong); margin: 0 4px; }
+.gantt__filter-chip {
+  font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--surface); color: var(--text-2); cursor: pointer; transition: all 0.15s;
 }
-.gantt__zoom-btn:hover { border-color: var(--azul-oscuro); }
-.gantt__zoom-btn--active {
-  background: var(--azul-oscuro);
-  color: #fff;
-  border-color: var(--azul-oscuro);
+.gantt__filter-chip:hover { border-color: var(--border-strong); }
+.gantt__filter-chip--on { background: var(--inst-azul); border-color: var(--inst-azul); color: #fff; font-weight: 600; }
+
+/* Navegación de semana (solo visible con el atajo "Semana actual" activo) */
+.gantt__week-nav { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.gantt__week-nav-btn {
+  font-size: 12px; width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text-2); cursor: pointer;
 }
-.gantt__toggle {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-2, #555);
-  cursor: pointer;
-  user-select: none;
+.gantt__week-nav-btn:hover { border-color: var(--azul-oscuro); color: var(--azul-oscuro); }
+.gantt__week-nav-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+.gantt-date-filter__label {
+  display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-3); font-weight: 600;
 }
-.gantt__toggle input { cursor: pointer; accent-color: var(--azul-oscuro); }
+.gantt-date-filter__input {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 4px 6px;
+}
+.gantt-date-filter__clear {
+  font-size: var(--t-cap); color: var(--red); background: none; border: none; cursor: pointer;
+  padding: 4px 0; text-decoration: underline;
+}
+.gantt-date-filter__chip {
+  font-size: 11px; padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--surface-2); color: var(--text-2); cursor: pointer; transition: all 0.15s;
+}
+.gantt-date-filter__chip:hover { border-color: var(--inst-azul); color: var(--inst-azul); }
 .gantt-empty__link {
   background: none;
   border: none;
@@ -5035,111 +5194,83 @@
   text-decoration: underline;
 }
 .gantt-empty__link:hover { opacity: 0.75; }
-.gantt__scroll { overflow-x: auto; }
-.gantt__inner { position: relative; }
+/* Sin scroll vertical propio: la tabla crece con todas sus filas y se ve
+   completa haciendo scroll de la página (un solo scrollbar, sin el conflicto
+   de dos áreas de scroll superpuestas que impedía arrastrar el thumb). El
+   scroll horizontal sí se mantiene — hay más columnas de las que caben. */
+.gantt__scroll { overflow-x: auto; overflow-y: visible; }
 
-/* Cabecera del eje */
-.gantt__header {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  position: relative;
+/* ── Calendario de celdas (reemplaza el modelo de barras) ──────────────────
+   Cada fila es una actividad, cada columna es una unidad de tiempo exacta
+   del zoom activo (día/semana/mes) — no un eje continuo en píxeles. Solo se
+   pinta la celda que contiene la fecha de ENTREGA de cada fila. */
+/* SIN table-layout:fixed a propósito: con muchas columnas de día (30+), fixed
+   hacía que el navegador comprimiera la primera columna por debajo de su
+   min-width real — el ancho de "Actividad" quedaba en ~50px pese al CSS. El
+   ancho real de esta tabla lo fija el <colgroup> con estilos inline desde
+   React (labelWidth, arrastrable), no CSS estático. */
+/* table-layout:fixed es obligatorio aquí: es el único modo en que el navegador
+   respeta los anchos declarados en <colgroup>. Sin él (y con width:100%) el
+   navegador reparte el ancho del contenedor entre todas las columnas, y al
+   ensanchar "Actividad" las de fecha se comprimían hasta desaparecer. Con
+   fixed, la suma de los <col> define el ancho real y .gantt__scroll aporta el
+   scroll horizontal cuando esa suma excede el contenedor. */
+/* Sin width aquí: lo fija GanttChart.jsx inline con la suma real de columnas. */
+.gantt-cal { border-collapse: collapse; table-layout: fixed; }
+.gantt-cal__label-col {
+  position: sticky; left: 0; z-index: 2; background: var(--surface-2);
+  text-align: left; padding: 6px 10px; white-space: nowrap;
+  border-right: 2px solid var(--border-strong); border-bottom: 1px solid var(--border);
+  font-size: var(--t-sm); box-sizing: border-box; overflow: hidden;
 }
-.gantt__corner {
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  background: var(--bg-2, #f7f8fa);
+thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2); }
+.gantt-cal__row-num { color: var(--text-3); font-weight: 700; margin-right: 4px; }
+.gantt-cal__row-text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Redimensionable desde CUALQUIER fila — cada <td>/<th> de esta columna
+   detecta con JS (getBoundingClientRect) si el mousedown cayó cerca de su
+   propio borde derecho y arranca el arrastre ahí mismo (ver
+   useResizableColumn en GanttChart.jsx). El borde derecho ya existente
+   (border-right de .gantt-cal__label-col) se resalta en hover de toda la
+   columna como pista visual de que es arrastrable. */
+.gantt-cal__label-col--resizable:hover { border-right-color: var(--inst-azul); }
+
+.gantt-cal__col-head {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--text-3);
+  font-size: 10px; font-weight: 600; text-align: center; padding: 6px 2px; min-width: 34px;
+  border-bottom: 2px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap;
 }
-.gantt__timeline { position: relative; flex-shrink: 0; }
-.gantt__tick {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-}
-.gantt__tick-label {
-  position: absolute;
-  top: 6px;
-  font-size: 10px;
-  color: var(--text-3);
-  white-space: nowrap;
-  transform: translateX(-50%);
+.gantt-cal__col-head--weekend { background: rgba(0, 51, 153, 0.05); }
+/* Único lugar donde se marca "hoy" — antes también se repetía en cada celda
+   de cada fila (parecía una alerta de "vencido" en las 40 filas); ahora
+   resalta solo el encabezado de esa columna. */
+.gantt-cal__col-head--today {
+  background: var(--inst-amarillo); color: var(--text); font-weight: 800;
+  box-shadow: inset 0 -3px 0 var(--inst-azul);
 }
 
-/* Cuerpo */
-.gantt__body { position: relative; }
-.gantt__row {
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border-2, #eef0f3);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.gantt__row:hover { background: var(--bg-2, #f7f8fa); }
-.gantt__row-label {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  border-right: 1px solid var(--border);
-  height: 100%;
+.gantt-cal__row { cursor: pointer; transition: background 0.12s; }
+.gantt-cal__row:hover, .gantt-cal__row--hover { background: var(--accent-bg); }
+.gantt-cal__row:hover .gantt-cal__label-col, .gantt-cal__row--hover .gantt-cal__label-col { background: var(--accent-bg); }
+
+.gantt-cal__cell {
+  min-width: 34px; height: 30px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
   box-sizing: border-box;
-  overflow: hidden;
 }
-.gantt__row-num {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-3);
-  min-width: 20px;
-  text-align: right;
+.gantt-cal__cell--weekend { background: rgba(0, 51, 153, 0.035); }
+.gantt-cal__cell--col-hover { background: var(--accent-bg); }
+.gantt-cal__cell--due {
+  border-radius: 4px; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.15); cursor: help;
+  text-align: center; vertical-align: middle; overflow: hidden;
 }
-.gantt__row-text {
-  font-size: 12px;
-  color: var(--text, #222);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gantt__row-track { position: relative; flex-shrink: 0; height: 100%; }
-.gantt__bar {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 18px;
-  border-radius: 5px;
-  border: 1px solid;
-  background: var(--surface);
-  overflow: hidden;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-}
-.gantt__bar-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  opacity: 0.45;
-}
-.gantt__bar--completed { border-style: solid; }
-.gantt__bar--completed .gantt__bar-fill { opacity: 0.7; }
-.gantt__bar--not_started .gantt__bar-fill { opacity: 0.25; }
-.gantt__bar-pct {
-  position: relative;
-  z-index: 1;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text, #222);
-  padding-left: 6px;
-  white-space: nowrap;
-}
-.gantt__today {
-  position: absolute;
-  top: 0;
-  width: 2px;
-  background: #CC0033;
-  z-index: 2;
-  pointer-events: none;
+.gantt-cal__cell--due-completed  { opacity: 0.85; }
+.gantt-cal__cell--due-not_started { opacity: 0.9; }
+
+/* Fecha de entrega rotulada sobre el bloque de color. La sombra de texto la
+   mantiene legible sobre los tres colores de estado (rojo/azul/verde). */
+.gantt-cal__due-label {
+  color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  white-space: nowrap; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
 }
 
 /* Leyenda */
@@ -5153,10 +5284,12 @@
   background: var(--bg-2, #f7f8fa);
   font-size: 11px;
   color: var(--text-3);
+  border-radius: 0 0 10px 10px;
 }
 .gantt__legend-item { display: flex; align-items: center; gap: 5px; }
-.gantt__legend-item--hint { margin-left: auto; font-style: italic; }
-.gantt__legend-today { width: 2px; height: 12px; background: #CC0033; display: inline-block; }
+.gantt__legend-item--hint { margin-left: auto; font-style: italic; flex-basis: 100%; }
+.gantt__legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.gantt__legend-swatch--today { background: var(--inst-amarillo); box-shadow: inset 0 -2px 0 var(--inst-azul); }
 
 /* ═══ IMPORTAR DE PLANNER ═══ */
 .field__header-actions {
@@ -5633,6 +5766,27 @@
 }
 .reportes-filter__sep { color: var(--text-3); }
 
+/* ── Combo con buscador (filtros "lista") ── */
+.searchable-select { position: relative; display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; min-width: 200px; }
+.searchable-select__row { display: flex; align-items: center; gap: var(--s2); }
+.searchable-select__row .report-filters__search { flex: 1 1 auto; }
+.searchable-select__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.searchable-select__dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg); max-height: 240px; overflow-y: auto; padding: 4px;
+}
+.searchable-select__empty { color: var(--text-3); font-style: italic; font-size: var(--t-cap); padding: var(--s2) var(--s3); margin: 0; }
+.searchable-select__option {
+  display: flex; align-items: center; gap: var(--s2); width: 100%; text-align: left;
+  border: none; background: none; padding: 7px var(--s3); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: var(--t-sm); color: var(--text);
+}
+.searchable-select__option:hover { background: var(--surface-2); }
+.searchable-select__option--on { background: var(--accent-bg); font-weight: 600; }
+.searchable-select__check { width: 14px; color: var(--dorado); font-weight: 700; }
+.reportes-chip--pending { background: var(--surface-2); border-color: var(--border-strong); }
+
 /* ── Chips de filtros aplicados ── */
 .reportes-chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .reportes-chip {
@@ -5706,6 +5860,13 @@
 .global-board__card-text { color: var(--text); }
 .global-board__card-due { font-size: var(--t-cap); color: var(--text-3); margin-top: 4px; }
 
+/* Doble depósito (raíz vs. todas) cuando se agrupa por Estado */
+.global-board__deposito-title {
+  font-size: var(--t-lg); font-weight: 700; color: var(--text); margin: var(--s5) 0 0;
+  padding-bottom: var(--s2); border-bottom: 2px solid var(--border-hl);
+}
+.global-board__deposito-title:first-of-type { margin-top: 0; }
+
 /* ── Matriz de carga (WorkloadMatrix) ── */
 .workload-matrix-wrap {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -5719,3 +5880,111 @@
 .workload-matrix__cell--over { background: var(--red-bg); color: var(--red); font-weight: 700; }
 .workload-matrix__legend { display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-3); margin: var(--s3) 0 0; }
 .workload-matrix__legend-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--red-bg); border: 1px solid var(--red); display: inline-block; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   OVERLAY DE PANTALLA COMPLETA (FullscreenOverlay)
+   ═══════════════════════════════════════════════════════════════════ */
+.fs-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 1200;
+  display: flex; flex-direction: column;
+}
+.fs-overlay__panel {
+  background: var(--bg); flex: 1; display: flex; flex-direction: column;
+  margin: var(--s4); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg);
+}
+.fs-overlay__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--s4) var(--s5); background: var(--bg-header); color: #fff; flex: 0 0 auto;
+}
+.fs-overlay__title { font-size: var(--t-lg); font-weight: 700; }
+.fs-overlay__close {
+  background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer;
+  width: 32px; height: 32px; border-radius: var(--radius-pill); display: flex; align-items: center; justify-content: center;
+}
+.fs-overlay__close:hover { background: rgba(255, 255, 255, 0.15); }
+.fs-overlay__body { flex: 1; overflow: auto; padding: var(--s5); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   TABLA JERÁRQUICA DE TAREAS (HierarchyTable) — vista tipo MS Project
+   ═══════════════════════════════════════════════════════════════════ */
+.htable-wrap { display: flex; flex-direction: column; gap: var(--s3); height: 100%; }
+
+.htable-toolbar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.htable-toolbar__label { font-size: var(--t-sm); color: var(--text-2); font-weight: 600; }
+.htable-toolbar__chip {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill);
+  color: var(--text-2); font-size: var(--t-sm); padding: 4px 12px; cursor: pointer;
+}
+.htable-toolbar__chip:hover { border-color: var(--border-strong); }
+.htable-toolbar__chip--on { background: var(--inst-azul); border-color: var(--inst-azul); color: #fff; font-weight: 600; }
+.htable-toolbar__count { margin-left: auto; font-size: var(--t-cap); color: var(--text-3); }
+
+.htable-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.htable { width: 100%; border-collapse: collapse; font-size: var(--t-sm); table-layout: fixed; }
+.htable thead th {
+  position: sticky; top: 0; background: var(--surface-2); color: var(--text-2); font-weight: 700;
+  text-align: left; padding: var(--s2) var(--s3); border-bottom: 2px solid var(--border); white-space: nowrap; z-index: 1;
+}
+.htable__cell { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); vertical-align: middle; }
+.htable__cell--num { text-align: center; color: var(--text-3); font-variant-numeric: tabular-nums; width: 44px; white-space: nowrap; }
+.htable__cell--name { width: auto; }
+.htable__cell--assignee { width: 130px; }
+.htable__cell--date { width: 108px; }
+.htable__cell--progress { width: 64px; }
+.htable__cell--status { width: 116px; }
+.htable__cell--actions { width: 36px; text-align: right; white-space: nowrap; }
+.htable__row--parent { background: var(--surface-2); }
+.htable__row--parent:hover { background: var(--accent-bg); }
+.htable__row:not(.htable__row--parent):hover { background: var(--surface-2); }
+
+.htable__indent { display: flex; align-items: center; gap: 6px; }
+.htable__toggle {
+  background: transparent; border: none; cursor: pointer; color: var(--text-2); font-size: 11px;
+  width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.htable__toggle--spacer { cursor: default; }
+.htable__name-text {
+  background: none; border: none; padding: 0; font: inherit; text-align: left; cursor: pointer;
+  color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.htable__name-text--link:hover { color: var(--azul-claro); text-decoration: underline; }
+.htable__add-child {
+  background: var(--accent-bg); border: 1px solid var(--accent-bdr); border-radius: var(--radius-sm);
+  color: var(--text-2); font-size: var(--t-cap); padding: 2px 8px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;
+}
+.htable__add-child:hover { background: var(--accent); }
+
+.htable__date {
+  width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 3px 5px;
+}
+.htable__readonly {
+  color: var(--text-3); font-style: italic; font-size: var(--t-cap); white-space: nowrap;
+}
+.htable__readonly-text {
+  color: var(--text); font-size: var(--t-sm); white-space: nowrap;
+}
+.htable__icon-btn {
+  background: transparent; border: none; cursor: pointer; font-size: 14px; padding: 2px 4px;
+  color: var(--text-3); border-radius: var(--radius-sm);
+}
+.htable__icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.htable__icon-btn--danger:hover { background: var(--red-bg); color: var(--red); }
+
+/* Estado con color — mismo semáforo del resto de la app: rojo/azul/verde.
+   Antes era un <select> editable; ahora es una "pill" de solo lectura. */
+.htable__status-pill {
+  display: inline-block; font-weight: 700; font-size: var(--t-cap); border-radius: var(--radius-pill);
+  padding: 3px 10px; border: 1px solid; white-space: nowrap;
+}
+.htable__status-pill--not-started { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+.htable__status-pill--in-progress { background: var(--info-bg); color: var(--info); border-color: var(--info); }
+.htable__status-pill--completed   { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+
+.htable-footer { display: flex; justify-content: flex-start; }
+.htable-empty { color: var(--text-3); font-style: italic; padding: var(--s5); text-align: center; }
+
+.htable__cascade-notice {
+  background: var(--info-bg); color: var(--info); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: var(--s2) var(--s3); font-size: var(--t-sm);
+}

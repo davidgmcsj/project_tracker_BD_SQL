@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
 import { uploadAttachment, deleteAttachment, downloadAttachment } from "../utils/storage";
-import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
+import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection, SubtasksSection } from "./ActivityFormSections";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -215,6 +215,11 @@ export default function ActivityDetailModal({
   onSave,
   onClose,
   onDelete, // opcional — si se pasa, muestra el botón "Eliminar actividad"
+  // Subtareas reales (jerarquía) — opcionales: si no se pasan, la sección no se muestra.
+  subtasks,          // actividades hijas de esta (parent_id === activity.id)
+  onCreateSubtask,   // () => void — crea una subtarea y abre su tarjeta de inmediato
+  onOpenSubtask,     // (id) => void — abre la tarjeta de una subtarea existente
+  onDeleteSubtask,   // (id) => void
 }) {
   const overlayRef = useRef(null);
 
@@ -275,6 +280,18 @@ export default function ActivityDetailModal({
 
   const handleDiscard = () => {
     onClose();
+  };
+
+  // Crear/abrir una subtarea reemplaza esta tarjeta por la de la subtarea
+  // (mismo modal, otro id) — si hay cambios sin guardar aquí, se guardan
+  // primero para no perderlos al navegar, igual que "Guardar y cerrar".
+  const handleCreateSubtask = () => {
+    if (dirty) onSave(buildSaved());
+    onCreateSubtask();
+  };
+  const handleOpenSubtask = (id) => {
+    if (dirty) onSave(buildSaved());
+    onOpenSubtask(id);
   };
 
   // Escape respeta la misma lógica
@@ -547,6 +564,17 @@ export default function ActivityDetailModal({
             items={local.checklist}
             onChange={val => set("checklist", val)}
           />
+
+          {/* ── Subtareas reales (jerarquía) ── */}
+          {subtasks !== undefined && (
+            <SubtasksSection
+              subtasks={subtasks}
+              taskStatus={taskStatus}
+              onCreate={handleCreateSubtask}
+              onOpen={handleOpenSubtask}
+              onRemove={onDeleteSubtask}
+            />
+          )}
 
           {/* ── Fechas clave ── */}
           <KeyDatesSection

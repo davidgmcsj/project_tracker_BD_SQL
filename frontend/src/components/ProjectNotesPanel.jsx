@@ -9,13 +9,7 @@
 import { useState, useEffect } from "react";
 import { loadProjectNotes, saveProjectNote, deleteProjectNote, getCurrentUser } from "../utils/storage";
 import { getToday, formatDateDMY } from "../utils/formulas";
-
-const TIPOS = [
-  { value: "comentario",  label: "Comentario",  icon: "💬" },
-  { value: "decision",    label: "Decisión",    icon: "🧭" },
-  { value: "riesgo",      label: "Riesgo",       icon: "⚠️" },
-  { value: "compromiso",  label: "Compromiso",  icon: "🤝" },
-];
+import { TIPOS_NOTA as TIPOS } from "../utils/filtroOpciones";
 
 const AUTHOR_KEY = "wt-author";
 

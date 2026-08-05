@@ -49,11 +49,24 @@ test("parseProgress convierte decimal de Planner a 0-100", () => {
 
 // ── bucketToStatus ────────────────────────────────────────────────────────────
 
-test("bucketToStatus mapea depósitos (con y sin tilde) a estado", () => {
+test("bucketToStatus mapea los depósitos reales de Planner a estado", () => {
+  assert.equal(bucketToStatus("Tareas Completadas"), "completed");
+  assert.equal(bucketToStatus("Tareas en Ejecución"), "in_progress");
+  assert.equal(bucketToStatus("Tareas Identificadas"), "not_started");
+  assert.equal(bucketToStatus("Actividades en seguimiento"), "in_progress");
+  assert.equal(bucketToStatus("Cualquier otra cosa"), "not_started");
+});
+
+test("bucketToStatus conserva compatibilidad con depósitos antiguos 'Actividades'", () => {
   assert.equal(bucketToStatus("Actividades Completadas"), "completed");
   assert.equal(bucketToStatus("Actividades en Ejecución"), "in_progress");
   assert.equal(bucketToStatus("Actividad identificadas "), "not_started");
-  assert.equal(bucketToStatus("Cualquier otra cosa"), "not_started");
+});
+
+test("bucketToStatus resuelve Reuniones por su % completado", () => {
+  assert.equal(bucketToStatus("Reuniones", 100), "completed");
+  assert.equal(bucketToStatus("Reuniones", 40), "in_progress");
+  assert.equal(bucketToStatus("Reuniones", 0), "not_started");
 });
 
 // ── normalizeName ─────────────────────────────────────────────────────────────

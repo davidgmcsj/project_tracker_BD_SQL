@@ -1,17 +1,18 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator, createDefaultImpediment,
   createActivity, buildActivityIndex, activityText, activityLabel,
-  visibleActivities,
+  visibleActivities, formatDateDMY, getToday,
 } from "../utils/formulas";
+import { activitiesForEngineerWeek, weekRange, SITUATION_LABEL } from "../utils/weekPlanning";
 import { mergePlannerImport, normalizeName } from "../utils/plannerImport";
 import { matchesSearch } from "../utils/search";
 import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
-import GanttChart from "./GanttChart";
 import PlannerImportModal from "./PlannerImportModal";
 import { ProjectNotesPanel } from "./ProjectNotesPanel";
+import ProjectPlanningOverlays from "./ProjectPlanningOverlays";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,11 @@ const STATUS_OPTIONS = [
   { value: "completed",       label: "Completado"      },
   { value: "mejora-continua", label: "Mejora Continua" },
 ];
+
+// Semana en curso, calculada una vez al cargar el módulo — suficiente para
+// una sesión de trabajo normal (el caso extremo de dejar la pestaña abierta
+// cruzando la medianoche del domingo se corrige con un refresco de página).
+const CURRENT_WEEK = weekRange(getToday());
 
 const IMPEDIMENT_TYPES = [
   { category: "blocker",        label: "Bloqueante",         icon: "🚫", hasImpact: true  },
@@ -194,6 +200,7 @@ function ActivitiesList({
   onChange,
   onUpdateActivityMeta,
   onAddActivity,
+  onAddActivityDetailed,
   onCreateExternal,
   onImportPlanner,
 }) {
@@ -301,8 +308,14 @@ function ActivitiesList({
                 📥 Importar de Planner
               </button>
             )}
-            <button type="button" className="btn-add-item" onClick={() => setAdding(true)}>
+            {/* Abre la tarjeta completa (fechas, responsables, objetivos,
+                subtareas). El alta rápida inline queda como atajo secundario
+                para cargar varias actividades seguidas solo con su nombre. */}
+            <button type="button" className="btn-add-item" onClick={onAddActivityDetailed}>
               + Agregar actividad
+            </button>
+            <button type="button" className="btn-add-item btn-add-item--ghost" onClick={() => setAdding(true)} title="Agregar solo el nombre, sin abrir la tarjeta">
+              + Alta rápida
             </button>
           </div>
         )}
@@ -762,17 +775,30 @@ function SelectedList({ items, activities, onChange }) {
 const CREATE_ENGINEER_OPTION = "__create__";
 
 function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer }) {
-  const weeklyArr = safeArr(eng.weekly_detail);
-  const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
-
-  // IDs de actividades asignadas fijamente a este ingeniero (para destacar en verde)
-  const fixedAssigned = eng.engineer_id
-    ? safeActs(activities)
-        .filter(a => (a.assigned_engineers || []).some(e => e.id === eng.engineer_id))
-        .map(a => a.id)
-    : [];
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState("");
+
+  // "Esta semana" ya no se selecciona a mano: se deduce de las fechas de
+  // inicio/fin de las actividades asignadas a este ingeniero, por
+  // solapamiento con la semana actual (ver utils/weekPlanning.js). Una tarea
+  // de varias semanas aparece sola en cada una que atraviesa.
+  const weekRows = useMemo(() => {
+    if (!eng.engineer_id) return [];
+    return activitiesForEngineerWeek(activities, CURRENT_WEEK, taskStatus, eng.engineer_id);
+  }, [activities, taskStatus, eng.engineer_id]);
+  const weekIds = weekRows.map(r => r.activity.id);
+  // Comparación por contenido (no por referencia): el array se recalcula en
+  // cada render pero solo debe escribirse en el proyecto cuando cambia lo
+  // que contiene, para no disparar guardados/renders de más.
+  const weekIdsKey = weekIds.join(",");
+
+  useEffect(() => {
+    const current = safeArr(eng.weekly_detail);
+    if (current.join(",") === weekIdsKey) return;
+    onChange(index, "weekly_detail", weekIds);
+    if (eng.weekly_total !== weekIds.length) onChange(index, "weekly_total", weekIds.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se recalcula por weekIdsKey (contenido), no por identidad de weekIds
+  }, [weekIdsKey]);
 
   const confirmCreate = () => {
     const name = newName.trim();
@@ -828,50 +854,62 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, e
         </button>
       </div>
 
-      <div className="engineer-card__sections">
-        <div className="engineer-section">
-          <div className="engineer-section__title">Esta semana</div>
-          <div className="engineer-week-simple">
-            <label className="field__label" style={{ fontSize: "11px" }}>
-              Tareas semana
-              {limit && <span style={{ fontSize: "10px", color: "var(--text-3)", marginLeft: 6 }}>(selecciona hasta {limit})</span>}
-            </label>
-            <input
-              className="field__input engineer-week-simple__num" type="number" min="0"
-              value={eng.weekly_total || 0}
-              onFocus={e => e.target.select()}
-              onChange={e => onChange(index, "weekly_total", e.target.value === "" ? "" : Number(e.target.value))}
-            />
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <ActivitySelector
-              label="Actividades de la semana"
-              activities={activities}
-              selected={weeklyArr}
-              limit={limit}
-              onChange={val => onChange(index, "weekly_detail", val)}
-              excludeOldCompleted={taskStatus?.completed}
-              completedDates={taskStatus?.completed_dates}
-              fixedAssigned={fixedAssigned}
-            />
-          </div>
-        </div>
-
+      <div className="engineer-card__sections engineer-card__sections--single">
         <div className="engineer-section">
           <div className="engineer-section__title">
-            Seleccionadas
-            {weeklyArr.length > 0 && (
-              <span className="engineer-selected__count">{weeklyArr.length}</span>
-            )}
+            Esta semana
+            {weekRows.length > 0 && <span className="engineer-selected__count">{weekRows.length}</span>}
+            <span className="engineer-week-auto-hint" title="Calculado automáticamente desde las fechas de inicio/fin de cada actividad">
+              🔄 automático
+            </span>
           </div>
-          {weeklyArr.length === 0 ? (
-            <p className="engineer-selected__empty">Selecciona actividades en "Esta semana"</p>
+          {!eng.engineer_id ? (
+            <p className="engineer-selected__empty">Selecciona un ingeniero para ver sus tareas de la semana.</p>
+          ) : weekRows.length === 0 ? (
+            <p className="engineer-selected__empty">Sin actividades asignadas que crucen esta semana.</p>
           ) : (
-            <SelectedList items={weeklyArr} activities={activities} onChange={val => onChange(index, "weekly_detail", val)} />
+            <WeekActivitiesTable rows={weekRows} />
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+// Tabla de solo lectura: actividad, inicio, fin y su situación en la semana
+// (vence / inicia / continúa / en demora). Clic en el nombre abre su tarjeta.
+function WeekActivitiesTable({ rows, onOpenActivity }) {
+  return (
+    <table className="week-auto-table">
+      <thead>
+        <tr>
+          <th>Actividad</th>
+          <th>Inicio</th>
+          <th>Fin</th>
+          <th>Situación</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ activity, situation }) => (
+          <tr key={activity.id}>
+            <td className="week-auto-table__name">
+              {onOpenActivity ? (
+                <button type="button" className="week-auto-table__name-link" onClick={() => onOpenActivity(activity.id)}>
+                  {activity.text || "(sin nombre)"}
+                </button>
+              ) : (activity.text || "(sin nombre)")}
+            </td>
+            <td>{formatDateDMY(activity.start_date)}</td>
+            <td>{formatDateDMY(activity.due_date)}</td>
+            <td>
+              <span className={`week-auto-table__situation week-auto-table__situation--${situation}`}>
+                {SITUATION_LABEL[situation]}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -916,7 +954,7 @@ function StatusDateBadge({ label, value, onEdit }) {
   );
 }
 
-function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) {
+export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) {
   const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
   const acts = safeActs(activities);
   const actIndex  = buildActivityIndex(acts);
@@ -1473,6 +1511,7 @@ export default function EditView({
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
   const [modalActId,      setModalActId]      = useState(null);
   const [showPlannerModal, setShowPlannerModal] = useState(false);
+  const [planningView,    setPlanningView]    = useState(null); // "status" | "gantt" | "hierarchy" | null
   const dragSrcIdx = useRef(null);
 
   const handleDragStart = (e, i) => { dragSrcIdx.current = i; e.dataTransfer.effectAllowed = "move"; };
@@ -1784,9 +1823,25 @@ export default function EditView({
       task_status: updatedTs,
       manual_metrics: buildAutoMetrics(newActs, updatedTs),
     });
+    return actId;
+  };
+
+  // Crea una actividad vacía y abre su tarjeta completa de inmediato, para
+  // capturar todos los detalles (fechas, responsables, objetivos, subtareas)
+  // sin pasar por el formulario mínimo de la lista.
+  const handleAddActivityDetailed = () => {
+    const newId = handleAddActivity("Nueva actividad", "", "not_started");
+    setModalActId(newId);
   };
 
   const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
+
+  // Subtareas reales de la actividad abierta en el modal — sección "Subtareas"
+  // (distinta del checklist "Subactividades"). Crear/abrir una reemplaza el
+  // modal por la tarjeta de la subtarea (mismo modal, otro id).
+  const modalSubtasks = modalActId
+    ? activities.filter(a => a.parent_id === modalActId)
+    : [];
 
   const handleActivityModalSave = (updatedAct) => {
     // _history (fechas de transición Inscrita/En proceso/Completada) viene del modal
@@ -1832,6 +1887,54 @@ export default function EditView({
     onUpdateProjectFull(editingIdx, updatedProject);
     if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
     setModalActId(null);
+  };
+
+  // Crea una subtarea real (actividad hija) y devuelve su id, para abrir
+  // inmediatamente la tarjeta de la subtarea recién creada desde la sección
+  // "Subtareas" del modal de detalle.
+  const handleHierarchyAddChild = (parentId, sequenceOrder) => {
+    const newAct = createActivity("Nueva subtarea", parentId, sequenceOrder);
+    const newActs = [...activities, newAct];
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
+    });
+    return newAct.id;
+  };
+
+  // Crea una subtarea para la actividad abierta en el modal y navega a su
+  // tarjeta de inmediato (misma mecánica que HierarchyTable.handleAddChild).
+  const handleCreateSubtaskFromModal = () => {
+    const newId = handleHierarchyAddChild(modalActId, modalSubtasks.length);
+    setModalActId(newId);
+  };
+
+  // Elimina una actividad de la jerarquía. Sus hijas directas (si las tenía)
+  // suben a ser hijas de SU padre en vez de quedar huérfanas — mismo criterio
+  // que buildActivityTree ya aplica a datos huérfanos preexistentes.
+  const handleHierarchyDelete = (actId) => {
+    const target = activities.find(a => a.id === actId);
+    const parentId = target?.parent_id ?? null;
+    const newActs = activities
+      .filter(a => a.id !== actId)
+      .map(a => a.parent_id === actId ? { ...a, parent_id: parentId } : a);
+    const ts = p.task_status || {};
+    const updatedTs = {
+      ...ts,
+      completed:      (ts.completed   || []).filter(id => id !== actId),
+      in_progress:    (ts.in_progress || []).filter(id => id !== actId),
+      not_started:    (ts.not_started || []).filter(id => id !== actId),
+      status_history: Object.fromEntries(
+        Object.entries(ts.status_history || {}).filter(([id]) => id !== actId)
+      ),
+    };
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      task_status: updatedTs,
+      manual_metrics: buildAutoMetrics(newActs, updatedTs),
+    });
   };
 
   return (
@@ -1990,6 +2093,7 @@ export default function EditView({
             onChange={handleActivitiesChange}
             onUpdateActivityMeta={handleUpdateActivityMeta}
             onAddActivity={handleAddActivity}
+            onAddActivityDetailed={handleAddActivityDetailed}
             onCreateExternal={onAddExternalContact}
             onImportPlanner={() => setShowPlannerModal(true)}
           />
@@ -2005,44 +2109,60 @@ export default function EditView({
             />
           )}
 
-          {/* ══ 4. Estado de actividades ══ */}
+          {/* ══ 4. Planificación — accesos a las vistas a pantalla completa ══
+                 Las tres vistas (tablero de estados, Gantt y tabla jerárquica)
+                 viven en overlay: dentro del formulario quedaban demasiado
+                 estrechas para ser útiles. */}
           {activities.length > 0 && (
             <div className="field field--optional">
-              <label className="field__label" style={{ marginBottom: 10 }}>
-                Estado de Actividades
-                <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
-                  Clasifica cada actividad en su estado actual
-                </span>
-              </label>
-              <TaskStatusSelector
-                taskStatus={p.task_status}
-                activities={activities}
-                onOpenDetail={setModalActId}
-                onChange={val => onUpdateProjectFull(editingIdx, {
-                  ...p,
-                  task_status:    val,
-                  manual_metrics: buildAutoMetrics(activities, val),
-                })}
-              />
+              <div className="field__header">
+                <label className="field__label" style={{ marginBottom: 0 }}>
+                  Planificación
+                  <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
+                    Estados, cronograma y tabla de actividades, a pantalla completa
+                  </span>
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    style={{ padding: "5px 14px", fontSize: "12px" }}
+                    onClick={() => setPlanningView("status")}
+                  >
+                    🗃 Ver estado de actividades
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    style={{ padding: "5px 14px", fontSize: "12px" }}
+                    onClick={() => setPlanningView("gantt")}
+                  >
+                    📅 Ver diagrama de Gantt
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    style={{ padding: "5px 14px", fontSize: "12px" }}
+                    onClick={() => setPlanningView("hierarchy")}
+                  >
+                    🗂 Ver planificación completa
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ══ 4b. Línea de tiempo (Gantt) ══ */}
-          {activities.length > 0 && (
-            <div className="field field--optional">
-              <label className="field__label" style={{ marginBottom: 10 }}>
-                Línea de tiempo
-                <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
-                  Diagrama de Gantt de las actividades con fechas
-                </span>
-              </label>
-              <GanttChart
-                activities={activities}
-                taskStatus={p.task_status}
-                onOpenActivity={setModalActId}
-              />
-            </div>
-          )}
+          {/* Mismo componente que usa el dashboard: las tres vistas y la
+              tarjeta de detalle se comportan igual desde ambos accesos. */}
+          <ProjectPlanningOverlays
+            project={p}
+            view={planningView}
+            onClose={() => setPlanningView(null)}
+            onUpdateProject={updated => onUpdateProjectFull(editingIdx, updated)}
+            engineerCatalog={engineerCatalog}
+            externalContacts={externalContacts}
+            StatusBoard={TaskStatusSelector}
+          />
 
           {/* ══ 5. Indicadores ══ */}
           <div className="field field--optional">
@@ -2203,6 +2323,10 @@ export default function EditView({
           onSave={handleActivityModalSave}
           onDelete={handleActivityModalDelete}
           onClose={() => setModalActId(null)}
+          subtasks={modalSubtasks}
+          onCreateSubtask={handleCreateSubtaskFromModal}
+          onOpenSubtask={setModalActId}
+          onDeleteSubtask={handleHierarchyDelete}
         />
       )}
 
