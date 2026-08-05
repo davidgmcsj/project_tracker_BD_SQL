@@ -30,6 +30,7 @@ const path    = require("path");
 const crypto  = require("crypto");
 require("dotenv/config");
 const { toArray } = require("./utils.cjs");
+const { computeQuarterStats, buildResetProjects } = require("./quarter-reset.cjs");
 
 const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
         saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, rebuildDataJsonFromSQL, maxSqlSavedAt } = (() => {
@@ -978,16 +979,7 @@ app.post("/api/quarter-reset", async (req, res) => {
     if (!quarterLabel) return res.status(400).json({ error: "Falta quarterLabel (ej: 'Q2 2026')" });
 
     // ── 1. Calcular estadísticas del trimestre que se cierra ───────────────
-    let totalArchivadas  = 0;
-    let totalTransferidas = 0;
-
-    for (const p of projects) {
-      const completadas = (p.task_status?.completed   || []).length;
-      const enProceso   = (p.task_status?.in_progress || []).length;
-      const noIniciadas = (p.task_status?.not_started || []).length;
-      totalArchivadas   += completadas;
-      totalTransferidas += enProceso + noIniciadas;
-    }
+    const { totalArchivadas, totalTransferidas } = computeQuarterStats(projects);
 
     // ── 2. Guardar snapshot completo en archivo físico de respaldo ─────────
     const archiveDir  = path.join(__dirname, "archive");
@@ -1027,54 +1019,7 @@ app.post("/api/quarter-reset", async (req, res) => {
     }
 
     // ── 4. Construir el nuevo estado limpio para el nuevo trimestre ─────────
-    const newProjects = projects.map(p => {
-      const ts          = p.task_status || {};
-      const keepIds     = new Set([...(ts.in_progress || []), ...(ts.not_started || [])]);
-
-      // Solo conservar actividades que NO están completadas
-      const newActs = (p.activities_identified || []).filter(a => keepIds.has(a.id));
-
-      // Conservar solo las entradas de status_history de las actividades que continúan
-      const newHistory  = {};
-      for (const actId of keepIds) {
-        if (ts.status_history?.[actId]) newHistory[actId] = ts.status_history[actId];
-      }
-
-      // Recalcular métricas basadas en las actividades que quedan
-      const newMetrics = {
-        total_tasks:           newActs.length,
-        completed_tasks:       0,
-        in_progress_tasks:     (ts.in_progress || []).length,
-        shared_tasks_discount: 0,
-      };
-
-      // Resetear ingenieros: limpiar contadores históricos y estadísticas semanales
-      const newEngineers = (p.engineers || []).map(e => ({
-        ...e,
-        assigned:      0,
-        completed:     0,
-        in_progress:   0,
-        weekly_total:  0,
-        weekly_detail: [],
-      }));
-
-      return {
-        ...p,
-        activities_identified: newActs,
-        task_status: {
-          completed:      [],
-          in_progress:    ts.in_progress  || [],
-          not_started:    ts.not_started  || [],
-          status_history: newHistory,
-        },
-        manual_metrics:      newMetrics,
-        engineers:           newEngineers,
-        weekly_achievements: [],
-        next_week_plan:      [],
-        impediments:         [],
-        show_closing_fields: false,
-      };
-    });
+    const newProjects = buildResetProjects(projects);
 
     // ── 5. Sobreescribir data.json con el estado del nuevo trimestre ───────
     const currentData = await readJson(DATA_FILE, {});
