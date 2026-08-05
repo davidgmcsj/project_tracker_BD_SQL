@@ -5366,6 +5366,7 @@
 .notes-panel__type   { flex: 0 0 170px; }
 .notes-panel__date   { flex: 0 0 150px; }
 .notes-panel__author { flex: 1 1 200px; }
+.notes-panel__author-fixed { flex: 1 1 200px; font-size: var(--t-sm); color: var(--text-2); display: flex; align-items: center; }
 .notes-panel__textarea { width: 100%; resize: vertical; font-family: inherit; }
 .notes-panel__form-actions { display: flex; justify-content: flex-end; gap: var(--s2); }
 
@@ -5501,6 +5502,44 @@
   font-size: var(--t-cap); font-weight: 600; color: var(--text-2); cursor: pointer; transition: .15s;
 }
 .report-filters__clear:hover { border-color: var(--red); color: var(--red); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   LOGIN (Fase 9 revisada) — pantalla de acceso por base de datos
+   ═══════════════════════════════════════════════════════════════════ */
+.login-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-header); padding: var(--s5);
+}
+.login-screen__panel {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: var(--s7) var(--s6); width: 100%; max-width: 380px;
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+}
+.login-screen__logo { width: 64px; height: 64px; object-fit: contain; margin-bottom: var(--s2); }
+.login-screen__title { font-size: var(--t-xl); color: var(--azul-oscuro); margin: 0; text-align: center; }
+.login-screen__subtitle { font-size: var(--t-sm); color: var(--text-3); margin: 0 0 var(--s3); text-align: center; }
+.login-screen__label {
+  width: 100%; display: flex; flex-direction: column; gap: 4px;
+  font-size: var(--t-sm); font-weight: 600; color: var(--text-2);
+}
+.login-screen__input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: var(--t-body); color: var(--text); background: var(--surface-2); outline: none;
+}
+.login-screen__input:focus { border-color: var(--azul-claro); box-shadow: var(--ring); }
+.login-screen__error {
+  width: 100%; color: var(--red); background: var(--red-bg); border: 1px solid var(--red);
+  border-radius: var(--radius-sm); padding: var(--s2) var(--s3); font-size: var(--t-sm); margin: 0;
+}
+.login-screen__submit { width: 100%; margin-top: var(--s2); padding: 12px; font-size: var(--t-body); }
+
+.header__user { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--text-2); }
+.header__user-name { font-weight: 700; color: var(--text); }
+.header__logout {
+  border: 1px solid var(--border-strong); background: none; color: var(--text-2);
+  border-radius: var(--radius-pill); padding: 5px 12px; font-size: var(--t-cap); cursor: pointer; transition: .15s;
+}
+.header__logout:hover { border-color: var(--red); color: var(--red); }
 
 /* ═══════════════════════════════════════════════════════════════════
    MÓDULO DE REPORTES — catálogo de consultas + filtros acumulativos

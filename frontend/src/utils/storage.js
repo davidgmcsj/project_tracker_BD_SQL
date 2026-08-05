@@ -33,7 +33,9 @@ export function authHeaders() {
 
 async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}), ...(API_KEY ? { "X-API-Key": API_KEY } : {}) };
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  // credentials: "include" — manda/recibe la cookie de sesión (Fase 9) aunque
+  // frontend y backend vivan en orígenes distintos.
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json();
 }
@@ -93,6 +95,7 @@ export async function saveProjects(projects, weekLabel, engineers, externalConta
     const res = await fetch(`${API_BASE}/api/projects`, {
       method:  "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
+      credentials: "include",
       body: JSON.stringify({
         projects, weekLabel, engineers, externalContacts: externalContacts || [],
         changedProjectId: changedProjectId || null,
@@ -253,6 +256,7 @@ export async function runReportQuery(body) {
   const res = await fetch(`${API_BASE}/api/reports/query`, {
     method:  "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "include",
     body:    JSON.stringify(body),
   });
   const data = await res.json();
@@ -297,6 +301,7 @@ export async function exportReport(body, formato) {
   const res = await fetch(`${API_BASE}/api/reports/export`, {
     method:  "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "include",
     body:    JSON.stringify({ ...body, formato }),
   });
   if (!res.ok) {
@@ -312,6 +317,38 @@ export async function exportReport(body, formato) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// ── Login por base de datos (Fase 9 revisada) ───────────────────────────────
+// Sesión en cookie httpOnly (el backend la pone/lee, el frontend nunca toca
+// el token directamente) — por eso ninguna de estas funciones lo maneja.
+
+export async function login(username, password) {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "include",
+    body:    JSON.stringify({ username, password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data.user;
+}
+
+export async function logout() {
+  try {
+    await apiFetch("/api/auth/logout", { method: "POST" });
+  } catch { /* la cookie puede haber expirado ya; no hay nada más que hacer */ }
+}
+
+// Devuelve el usuario logueado, o null si no hay sesión válida.
+export async function getCurrentUser() {
+  try {
+    const data = await apiFetch("/api/auth/me");
+    return data.user || null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Adjuntos de actividades ───────────────────────────────────────────────────
@@ -355,7 +392,7 @@ export async function uploadAttachment(file, { appActividadID, proyectoAppID }) 
 // y se guarda con un <a> temporal apuntando a un blob: URL local.
 async function apiFetchBlob(path) {
   const headers = API_KEY ? { "X-API-Key": API_KEY } : {};
-  const res = await fetch(`${API_BASE}${path}`, { headers });
+  const res = await fetch(`${API_BASE}${path}`, { headers, credentials: "include" });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.blob();
 }

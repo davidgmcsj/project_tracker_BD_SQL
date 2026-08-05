@@ -135,6 +135,10 @@ router.post("/notes", async (req, res) => {
   if (!nota?.id || !nota?.proyectoAppID) {
     return res.status(400).json({ error: "nota.id y nota.proyectoAppID son obligatorios" });
   }
+  // Con sesión activa, el backend toma el autor del login e ignora lo que
+  // mande el cliente — un campo de texto libre no es una fuente confiable
+  // una vez que existe identidad real (Fase 9 revisada).
+  if (req.user?.name) nota.author = req.user.name;
   try {
     const pool = await getPool();
     res.json(await upsertNote(pool, nota));

@@ -7,7 +7,7 @@
 // del estado global de App.jsx.
 
 import { useState, useEffect } from "react";
-import { loadProjectNotes, saveProjectNote, deleteProjectNote } from "../utils/storage";
+import { loadProjectNotes, saveProjectNote, deleteProjectNote, getCurrentUser } from "../utils/storage";
 import { getToday, formatDateDMY } from "../utils/formulas";
 
 const TIPOS = [
@@ -34,6 +34,7 @@ export function ProjectNotesPanel({ proyectoAppID }) {
   const [draft, setDraft]     = useState(emptyDraft());
   const [saving, setSaving]   = useState(false);
   const [open, setOpen]       = useState(false);
+  const [sessionUser, setSessionUser] = useState(null); // con sesión activa, el backend ignora el campo autor igual
 
   // Sin setState síncrono en el cuerpo del efecto: todo pasa dentro de
   // .then()/.finally() (mismo patrón que QuartersView.jsx).
@@ -43,6 +44,8 @@ export function ProjectNotesPanel({ proyectoAppID }) {
       .then(data => setNotes(data))
       .finally(() => setLoading(false));
   }, [proyectoAppID, version]);
+
+  useEffect(() => { getCurrentUser().then(setSessionUser); }, []);
 
   if (!proyectoAppID) return null;
 
@@ -97,12 +100,18 @@ export function ProjectNotesPanel({ proyectoAppID }) {
               value={draft.date}
               onChange={e => setDraft({ ...draft, date: e.target.value })}
             />
-            <input
-              type="text" className="field__input notes-panel__author"
-              placeholder="Autor (opcional)"
-              value={draft.author}
-              onChange={e => setDraft({ ...draft, author: e.target.value })}
-            />
+            {sessionUser ? (
+              <span className="notes-panel__author-fixed" title="Con sesión activa, la nota se atribuye a tu usuario">
+                Se guardará como: <strong>{sessionUser.name}</strong>
+              </span>
+            ) : (
+              <input
+                type="text" className="field__input notes-panel__author"
+                placeholder="Autor (opcional)"
+                value={draft.author}
+                onChange={e => setDraft({ ...draft, author: e.target.value })}
+              />
+            )}
           </div>
           <textarea
             className="field__input notes-panel__textarea"

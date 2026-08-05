@@ -7,6 +7,7 @@ import EngineerReportView from "./components/EngineerReportView";
 import QuartersView  from "./components/QuartersView";
 import { ReportesView } from "./components/ReportesView";
 import SaveConflictModal from "./components/SaveConflictModal";
+import { LoginScreen } from "./components/LoginScreen";
 import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
@@ -17,7 +18,7 @@ import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
   syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
   syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
-  authHeaders,
+  authHeaders, getCurrentUser, logout,
 } from "./utils/storage";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import "./App.css";
@@ -69,7 +70,19 @@ export default function App() {
   const [generatingGlobalStatus,setGeneratingGlobalStatus]= useState(false);
   const [globalStatusOpen,      setGlobalStatusOpen]      = useState(false);
   const [theme,                 setTheme]                 = useState(() => localStorage.getItem("wt-theme") || "light");
+  // undefined = verificando sesión, null = sin sesión (mostrar login), objeto = logueado.
+  const [currentUser,           setCurrentUser]            = useState(undefined);
   const abortCtrlRef = useRef(null);
+
+  // ── Sesión (Fase 9 revisada) ────────────────────────────────────────────────
+  useEffect(() => {
+    getCurrentUser().then(setCurrentUser);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    setCurrentUser(null);
+  };
 
   // Aplica el tema al documento y lo persiste. data-theme en <html> activa los
   // tokens del tema oscuro definidos en App.css.
@@ -80,7 +93,10 @@ export default function App() {
   const toggleTheme = () => setTheme(t => (t === "dark" ? "light" : "dark"));
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
+  // No carga datos de proyecto hasta confirmar la sesión — evita una carrera
+  // donde se pide /api/projects mientras el login todavía se está resolviendo.
   useEffect(() => {
+    if (!currentUser) return;
     async function init() {
       const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers, externalContacts: savedExternals } = await loadProjects();
       if (saved?.length) {
@@ -95,7 +111,7 @@ export default function App() {
       if (wl) setWeekLabel(wl);
     }
     init();
-  }, []);
+  }, [currentUser]);
 
   // ── Persistencia ───────────────────────────────────────────────────────────
   // Patrón dual-write: localStorage (síncrono, fuente de verdad del cliente) +
@@ -528,6 +544,16 @@ export default function App() {
   const stats = globalStats(filteredForAvg);
   const statusCounts = countByStatus(projects);
 
+  // ── Puerta de sesión (Fase 9 revisada) ──────────────────────────────────────
+  // Todos los hooks del componente ya se declararon arriba — este early
+  // return solo decide qué JSX renderizar, no cambia el orden de hooks.
+  if (currentUser === undefined) {
+    return <div className="login-screen"><p style={{ color: "#fff" }}>Verificando sesión…</p></div>;
+  }
+  if (currentUser === null) {
+    return <LoginScreen onLoginSuccess={setCurrentUser} />;
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -577,6 +603,10 @@ export default function App() {
           </button>
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
           <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
+          <div className="header__user">
+            <span className="header__user-name">{currentUser.name}</span>
+            <button type="button" className="header__logout" onClick={handleLogout}>Cerrar sesión</button>
+          </div>
         </div>
       </header>
 

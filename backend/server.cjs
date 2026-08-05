@@ -53,6 +53,15 @@ const reportsRouter = (() => {
   }
 })();
 
+const { parseCookies, hashPassword, verifyPassword, createSession, getSessionUser, deleteSession, SESSION_COOKIE } = (() => {
+  try {
+    return require("./auth.cjs");
+  } catch (e) {
+    console.error("[AUTH] Error cargando auth.cjs:", e.message);
+    return { parseCookies: null, hashPassword: null, verifyPassword: null, createSession: null, getSessionUser: null, deleteSession: null, SESSION_COOKIE: "sid" };
+  }
+})();
+
 const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = (() => {
   try {
     return require("./gemini-report.cjs");
@@ -341,6 +350,7 @@ if (isProduction && !process.env.FRONTEND_URL) {
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  credentials: true, // necesario para que el navegador mande/reciba la cookie de sesión (Fase 9)
 }));
 
 // ── Logging de eventos de seguridad ───────────────────────────────────────────
@@ -443,9 +453,84 @@ const generalLimiter = rateLimit({
   handler: rateLimitHandler("rate_limit_general_exceeded"),
 });
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // login de humanos, no de scripts — bajo a propósito para frenar fuerza bruta
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiados intentos de inicio de sesión, intenta de nuevo más tarde" },
+  handler: rateLimitHandler("rate_limit_auth_exceeded"),
+});
+
 app.use("/api", generalLimiter);
 app.use(["/api/generate-report", "/api/project-status", "/api/generate-global-status"], aiLimiter);
 app.use(["/api/quarter-reset", "/api/clean-stats"], destructiveLimiter);
+app.use("/api/auth/login", authLimiter);
+
+// ── Login por base de datos (Fase 9 revisada) ─────────────────────────────
+// Convive con X-API-Key (requireApiKey arriba lo sigue exigiendo en todo
+// /api/*): esto agrega identidad real ENCIMA, no la reemplaza. Sin roles
+// todavía — cualquier usuario logueado puede hacer lo mismo que ya permite
+// la API_KEY. req.user queda disponible para el resto de rutas (ej. Autor
+// real en notas de proyecto) sin bloquear la request si no hay sesión.
+app.use("/api", async (req, res, next) => {
+  if (!getSessionUser) return next();
+  try {
+    const pool = await getPool();
+    const { [SESSION_COOKIE]: token } = parseCookies(req);
+    req.user = await getSessionUser(pool, token);
+  } catch {
+    req.user = null;
+  }
+  next();
+});
+
+app.post("/api/auth/login", jsonParser, async (req, res) => {
+  if (!createSession) return res.status(503).json({ error: "Módulo de autenticación no disponible" });
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: "Usuario y contraseña son obligatorios" });
+
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("usuario", require("mssql").NVarChar(100), String(username).trim())
+      .query("SELECT UsuarioID, NombreCompleto, Email, PasswordHash, PasswordSalt, Activo FROM Usuarios WHERE NombreUsuario = @usuario");
+    const row = result.recordset[0];
+
+    if (!row || !row.Activo || !verifyPassword(password, row.PasswordSalt, row.PasswordHash)) {
+      logSecurityEvent("login_failed", req, { username: String(username).slice(0, 100) });
+      return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
+    }
+
+    const { token, expiraEn } = await createSession(pool, row.UsuarioID);
+    res.cookie(SESSION_COOKIE, token, {
+      httpOnly: true, secure: isProduction, sameSite: "lax", expires: expiraEn, path: "/",
+    });
+    res.json({ ok: true, user: { name: row.NombreCompleto, email: row.Email || "" } });
+  } catch (e) {
+    console.error("[AUTH] Error en login:", e.message);
+    res.status(500).json(errorBody("Error iniciando sesión", e));
+  }
+});
+
+app.post("/api/auth/logout", async (req, res) => {
+  try {
+    if (deleteSession) {
+      const pool = await getPool();
+      const { [SESSION_COOKIE]: token } = parseCookies(req);
+      await deleteSession(pool, token);
+    }
+  } catch (e) {
+    console.warn("[AUTH] No se pudo borrar la sesión en BD:", e.message);
+  }
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "No autenticado" });
+  res.json({ user: req.user });
+});
 
 // Router de reportes: montado aquí para heredar requireApiKey y generalLimiter
 // (ambos aplicados por prefijo "/api" arriba) sin tocar el resto de rutas.
