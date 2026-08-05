@@ -75,18 +75,42 @@ export async function loadProjects() {
 
 // ── Persistencia base ─────────────────────────────────────────────────────────
 
-export async function saveProjects(projects, weekLabel, engineers, externalContacts, changedProjectId) {
+// expectedVersion es opcional: solo los guardados que lo mandan activan el
+// chequeo de versión optimista en el backend (Fase 8). Sin él, se guarda
+// igual que siempre — último guardado gana, comportamiento sin cambios.
+//
+// Devuelve { ok, conflict, serverProject?, version? } en vez de lanzar error
+// para que el llamador pueda distinguir "hubo un conflicto de edición" (409,
+// con el estado del servidor para que el usuario elija) de "el servidor no
+// respondió" (el guardado local ya quedó completado, no hay nada que hacer).
+export async function saveProjects(projects, weekLabel, engineers, externalContacts, changedProjectId, expectedVersion) {
   // localStorage primero: garantiza que el usuario no pierde datos
   // aunque la llamada al servidor falle
   localStorage.setItem(LS_PROJECTS, JSON.stringify(projects));
   if (weekLabel !== undefined) localStorage.setItem(LS_WEEK, weekLabel ?? "");
+
   try {
-    await apiFetch("/api/projects", {
+    const res = await fetch(`${API_BASE}/api/projects`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ projects, weekLabel, engineers, externalContacts: externalContacts || [], changedProjectId: changedProjectId || null }),
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({
+        projects, weekLabel, engineers, externalContacts: externalContacts || [],
+        changedProjectId: changedProjectId || null,
+        expectedVersion:  expectedVersion ?? null,
+      }),
     });
-  } catch { /* guardado local completado */ }
+
+    if (res.status === 409) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, conflict: true, serverProject: data.serverProject || null };
+    }
+    if (!res.ok) return { ok: false, conflict: false };
+
+    const data = await res.json().catch(() => ({}));
+    return { ok: true, conflict: false, version: data.version };
+  } catch {
+    return { ok: false, conflict: false }; // servidor no disponible — guardado local completado
+  }
 }
 
 // ── Snapshot semanal (historial) ──────────────────────────────────────────────

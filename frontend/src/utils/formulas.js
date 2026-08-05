@@ -103,6 +103,7 @@ export function createDefaultProject() {
     project_name: "",
     status:       "on-track",
     priority:     false,   // proyecto prioritario (marca de estrella ⭐) para filtrar en Reporte
+    version:      1,       // control de versión optimista — se incrementa en cada guardado identificado
     planner_url:  "",
     report_date:  getToday(),
     manual_metrics: {

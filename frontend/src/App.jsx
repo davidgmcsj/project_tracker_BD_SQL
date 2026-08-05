@@ -6,6 +6,7 @@ import EngineersView from "./components/EngineersView";
 import EngineerReportView from "./components/EngineerReportView";
 import QuartersView  from "./components/QuartersView";
 import { ReportesView } from "./components/ReportesView";
+import SaveConflictModal from "./components/SaveConflictModal";
 import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
@@ -100,11 +101,51 @@ export default function App() {
   // Patrón dual-write: localStorage (síncrono, fuente de verdad del cliente) +
   // servidor/SQL (async, fire-and-forget). Si el servidor falla, el dato no se
   // pierde — vive en localStorage hasta el siguiente save exitoso.
-  const persist = useCallback(async (data, engs, changedProjectId) => {
+  const persist = useCallback(async (data, engs, changedProjectId, expectedVersion) => {
     setProjects(data);
-    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers, externalContacts, changedProjectId);
+    const result = await saveProjects(
+      data, weekLabel, engs !== undefined ? engs : engineers, externalContacts, changedProjectId, expectedVersion
+    );
     setHasUnsaved(false);
+    if (result.ok && changedProjectId && result.version != null) {
+      setProjects(prev => prev.map(p => (p.id === changedProjectId ? { ...p, version: result.version } : p)));
+    }
+    return result;
   }, [weekLabel, engineers, externalContacts]);
+
+  // ── Conflicto de edición (Fase 8 — versión optimista) ──────────────────────
+  // Solo se activa desde el botón "Guardar cambios" del editor: es el único
+  // punto donde dos personas realistamente pueden estar editando EL MISMO
+  // proyecto a la vez. Autosaves de modales y toggles del dashboard no
+  // mandan expectedVersion, así que nunca disparan este modal.
+  const [saveConflict, setSaveConflict] = useState(null); // { projectId, localProject, serverProject }
+
+  const handleSaveEditedProject = useCallback(async () => {
+    const editing = projects[editingIdx];
+    if (!editing) { await persist(projects); return; }
+    const result = await persist(projects, undefined, editing.id, editing.version || 1);
+    if (result.conflict) {
+      setSaveConflict({ projectId: editing.id, localProject: editing, serverProject: result.serverProject });
+    }
+  }, [projects, editingIdx, persist]);
+
+  const resolveConflictOverwrite = useCallback(async () => {
+    if (!saveConflict) return;
+    const { projectId } = saveConflict;
+    setSaveConflict(null);
+    // Reintenta sin expectedVersion: el backend salta el chequeo y guarda igual.
+    await persist(projects, undefined, projectId);
+  }, [saveConflict, projects, persist]);
+
+  const resolveConflictDiscard = useCallback(() => {
+    if (!saveConflict) return;
+    const { projectId, serverProject } = saveConflict;
+    if (serverProject) {
+      setProjects(prev => prev.map(p => (p.id === projectId ? serverProject : p)));
+    }
+    setHasUnsaved(false);
+    setSaveConflict(null);
+  }, [saveConflict]);
 
   const persistEngineers = useCallback(async (nextEngineers) => {
     setEngineers(nextEngineers);
@@ -649,7 +690,7 @@ export default function App() {
             onSelectProject={setEditingIdx}
             onUpdateProject={updateProject}
             onUpdateProjectFull={updateProjectFull}
-            onSaveChanges={() => persist(projects)}
+            onSaveChanges={handleSaveEditedProject}
             onSaveProjectsDirect={persist}
             onReorderProjects={reorderProjects}
             onAddProject={addProject}
@@ -669,6 +710,16 @@ export default function App() {
         <span className="footer__copy">© 2026 Oficina de Tecnología — Corte Suprema de Justicia. Todos los derechos reservados.</span>
         <span className="footer__credit">Desarrollado internamente por la Oficina de Tecnología - Corte Suprema de Justicia</span>
       </footer>
+
+      {saveConflict && (
+        <SaveConflictModal
+          localProject={saveConflict.localProject}
+          serverProject={saveConflict.serverProject}
+          onOverwrite={resolveConflictOverwrite}
+          onDiscard={resolveConflictDiscard}
+          onClose={() => setSaveConflict(null)}
+        />
+      )}
     </div>
   );
 }
