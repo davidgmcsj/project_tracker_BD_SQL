@@ -12,6 +12,14 @@ import { ReportesTemplates } from "./ReportesTemplates";
 import { ReportesFilterPanel } from "./ReportesFilterPanel";
 import { ReportesTable } from "./ReportesTable";
 import { ReportesSavedPanel } from "./ReportesSavedPanel";
+import { GlobalBoardView } from "./GlobalBoardView";
+import { WorkloadMatrix } from "./WorkloadMatrix";
+
+const MODOS = [
+  { value: "tabla",   label: "📋 Tabla" },
+  { value: "tablero", label: "🗂 Tablero" },
+  { value: "carga",   label: "📊 Carga" },
+];
 
 const NOMBRES_CONSULTA = {
   actividades: "Actividades",
@@ -27,7 +35,8 @@ function humanizeFiltro(f) {
   return `${campo}: ${valor}`;
 }
 
-export function ReportesView() {
+export function ReportesView({ projects, engineers }) {
+  const [modo, setModo]           = useState("tabla"); // "tabla" | "tablero" | "carga"
   const [registry, setRegistry]   = useState(null);
   const [consulta, setConsulta]   = useState("vencidas");
   const [filtros, setFiltros]     = useState([]);
@@ -64,18 +73,16 @@ export function ReportesView() {
       .finally(() => setLoading(false));
   }, [consulta, filtros, registryEntry]);
 
-  if (!registry) return <div className="reportes-view"><p>Cargando catálogo de reportes…</p></div>;
-
   const handleSelectConsulta = (nueva) => {
     setConsulta(nueva);
     setFiltros([]);
-    setColumnasVisibles(registry[nueva]?.columnasDefault || []);
+    setColumnasVisibles(registry?.[nueva]?.columnasDefault || []);
   };
 
   const handleTemplate = ({ consulta: c, filtros: f }) => {
     setConsulta(c);
     setFiltros(f);
-    setColumnasVisibles(registry[c]?.columnasDefault || []);
+    setColumnasVisibles(registry?.[c]?.columnasDefault || []);
   };
 
   const handleAddFiltro = (nuevoFiltro) => {
@@ -93,7 +100,7 @@ export function ReportesView() {
   const handleLoadSaved = (config) => {
     setConsulta(config.consulta);
     setFiltros(config.filtros || []);
-    setColumnasVisibles(config.columnas || registry[config.consulta]?.columnasDefault || []);
+    setColumnasVisibles(config.columnas || registry?.[config.consulta]?.columnasDefault || []);
   };
 
   // Mismo consulta+filtros que la vista previa — el backend vuelve a correr
@@ -114,51 +121,72 @@ export function ReportesView() {
     <div className="reportes-view">
       <ReportesTemplates onSelect={handleTemplate} />
 
-      <div className="report-filters reportes-view__toolbar">
-        <select className="report-filters__select" value={consulta} onChange={e => handleSelectConsulta(e.target.value)}>
-          {Object.keys(registry).map(c => <option key={c} value={c}>{NOMBRES_CONSULTA[c] || c}</option>)}
-        </select>
-        {filtros.length > 0 && (
-          <button type="button" className="report-filters__clear" onClick={() => setFiltros([])}>Limpiar filtros</button>
-        )}
-        <div className="reportes-view__export">
-          <button type="button" className="btn btn--secondary btn--sm" disabled={!!exporting || !resultado.total} onClick={() => handleExport("xlsx")}>
-            {exporting === "xlsx" ? "Generando…" : "⬇ Excel"}
+      <div className="reportes-view__modos">
+        {MODOS.map(m => (
+          <button
+            key={m.value} type="button"
+            className={`reportes-col-chip ${modo === m.value ? "reportes-col-chip--on" : ""}`}
+            onClick={() => setModo(m.value)}
+          >
+            {m.label}
           </button>
-          <button type="button" className="btn btn--secondary btn--sm" disabled={!!exporting || !resultado.total} onClick={() => handleExport("pdf")}>
-            {exporting === "pdf" ? "Generando…" : "⬇ PDF"}
-          </button>
-        </div>
+        ))}
       </div>
 
-      <ReportesSavedPanel
-        currentConfig={{ consulta, filtros, columnas: columnasVisibles }}
-        onLoad={handleLoadSaved}
-      />
+      {modo === "tablero" && <GlobalBoardView projects={projects} engineers={engineers} />}
+      {modo === "carga" && <WorkloadMatrix projects={projects} engineers={engineers} />}
 
-      <ReportesFilterPanel registryEntry={registryEntry} onAdd={handleAddFiltro} />
+      {modo === "tabla" && (!registry ? (
+        <p>Cargando catálogo de reportes…</p>
+      ) : (
+        <>
+          <div className="report-filters reportes-view__toolbar">
+            <select className="report-filters__select" value={consulta} onChange={e => handleSelectConsulta(e.target.value)}>
+              {Object.keys(registry).map(c => <option key={c} value={c}>{NOMBRES_CONSULTA[c] || c}</option>)}
+            </select>
+            {filtros.length > 0 && (
+              <button type="button" className="report-filters__clear" onClick={() => setFiltros([])}>Limpiar filtros</button>
+            )}
+            <div className="reportes-view__export">
+              <button type="button" className="btn btn--secondary btn--sm" disabled={!!exporting || !resultado.total} onClick={() => handleExport("xlsx")}>
+                {exporting === "xlsx" ? "Generando…" : "⬇ Excel"}
+              </button>
+              <button type="button" className="btn btn--secondary btn--sm" disabled={!!exporting || !resultado.total} onClick={() => handleExport("pdf")}>
+                {exporting === "pdf" ? "Generando…" : "⬇ PDF"}
+              </button>
+            </div>
+          </div>
 
-      {filtros.length > 0 && (
-        <div className="reportes-chips">
-          {filtros.map(f => (
-            <span key={f.campo} className="reportes-chip">
-              {humanizeFiltro(f)}
-              <button type="button" className="reportes-chip__remove" onClick={() => handleRemoveFiltro(f.campo)}>✕</button>
-            </span>
-          ))}
-        </div>
-      )}
+          <ReportesSavedPanel
+            currentConfig={{ consulta, filtros, columnas: columnasVisibles }}
+            onLoad={handleLoadSaved}
+          />
 
-      {error && <p className="reportes-view__error">⚠ {error}</p>}
+          <ReportesFilterPanel registryEntry={registryEntry} onAdd={handleAddFiltro} />
 
-      <ReportesTable
-        columnasDisponibles={registryEntry?.columnas || []}
-        columnasVisibles={columnasVisibles}
-        onToggleColumna={handleToggleColumna}
-        filas={resultado.filas}
-        total={resultado.total}
-        loading={loading}
-      />
+          {filtros.length > 0 && (
+            <div className="reportes-chips">
+              {filtros.map(f => (
+                <span key={f.campo} className="reportes-chip">
+                  {humanizeFiltro(f)}
+                  <button type="button" className="reportes-chip__remove" onClick={() => handleRemoveFiltro(f.campo)}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {error && <p className="reportes-view__error">⚠ {error}</p>}
+
+          <ReportesTable
+            columnasDisponibles={registryEntry?.columnas || []}
+            columnasVisibles={columnasVisibles}
+            onToggleColumna={handleToggleColumna}
+            filas={resultado.filas}
+            total={resultado.total}
+            loading={loading}
+          />
+        </>
+      ))}
     </div>
   );
 }

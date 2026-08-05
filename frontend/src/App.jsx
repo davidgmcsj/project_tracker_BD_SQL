@@ -712,7 +712,7 @@ export default function App() {
             onCleanStats={applyCleanStats}
           />
         )}
-        {view === "reportes" && <ReportesView />}
+        {view === "reportes" && <ReportesView projects={projects} engineers={engineers} />}
         {view === "edit" && (
           <EditView
             projects={projects} editingIdx={editingIdx}

@@ -5646,3 +5646,45 @@
 .reportes-table tr:last-child td { border-bottom: none; }
 .reportes-table tr:hover td { background: var(--surface-2); }
 .reportes-table__empty { text-align: center; color: var(--text-3); padding: var(--s6) !important; font-style: italic; }
+
+/* ── Selector de modo (Tabla / Tablero / Carga) — Fase 12 ── */
+.reportes-view__modos { display: flex; gap: var(--s2); }
+
+/* ── Tablero global cross-proyecto (GlobalBoardView) ── */
+.global-board { display: flex; flex-direction: column; gap: var(--s4); }
+.global-board__columns { display: flex; gap: var(--s4); overflow-x: auto; padding-bottom: var(--s2); }
+.global-board__column {
+  flex: 0 0 280px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 640px;
+}
+.global-board__column-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--s3) var(--s4); border-bottom: 2px solid var(--border);
+  font-weight: 700; color: var(--text); background: var(--surface-2); border-radius: var(--radius) var(--radius) 0 0;
+}
+.global-board__column-count {
+  background: var(--info-bg); color: var(--info); border-radius: var(--radius-pill);
+  padding: 2px 9px; font-size: var(--t-cap); font-weight: 700;
+}
+.global-board__column-body { padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); overflow-y: auto; }
+.global-board__card {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: var(--s3); font-size: var(--t-sm);
+}
+.global-board__card-project { font-size: var(--t-cap); font-weight: 700; color: var(--azul-claro); margin-bottom: 2px; }
+.global-board__card-text { color: var(--text); }
+.global-board__card-due { font-size: var(--t-cap); color: var(--text-3); margin-top: 4px; }
+
+/* ── Matriz de carga (WorkloadMatrix) ── */
+.workload-matrix-wrap {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: var(--s4); overflow-x: auto;
+}
+.workload-matrix { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.workload-matrix th, .workload-matrix td { padding: var(--s2) var(--s3); text-align: center; border-bottom: 1px solid var(--border); }
+.workload-matrix th { background: var(--surface-2); font-weight: 700; color: var(--text-2); white-space: nowrap; }
+.workload-matrix__eng-col { text-align: left !important; font-weight: 600; white-space: nowrap; }
+.workload-matrix__week-range { font-weight: 400; color: var(--text-3); font-size: var(--t-cap); }
+.workload-matrix__cell--over { background: var(--red-bg); color: var(--red); font-weight: 700; }
+.workload-matrix__legend { display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-3); margin: var(--s3) 0 0; }
+.workload-matrix__legend-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--red-bg); border: 1px solid var(--red); display: inline-block; }
