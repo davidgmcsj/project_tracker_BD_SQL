@@ -5504,6 +5504,37 @@
 .report-filters__clear:hover { border-color: var(--red); color: var(--red); }
 
 /* ═══════════════════════════════════════════════════════════════════
+   PALETA DE COMANDOS (Ctrl+K) — Fase 14
+   ═══════════════════════════════════════════════════════════════════ */
+.cmdk-overlay {
+  position: fixed; inset: 0; background: rgba(16,32,58,.5); z-index: 1000;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
+}
+.cmdk-panel {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 560px; max-height: 60vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.cmdk-input {
+  border: none; border-bottom: 1px solid var(--border); padding: var(--s4); font-size: var(--t-lg);
+  color: var(--text); outline: none; background: transparent;
+}
+.cmdk-list { overflow-y: auto; padding: var(--s2); display: flex; flex-direction: column; gap: 2px; }
+.cmdk-empty { color: var(--text-3); font-style: italic; padding: var(--s4); text-align: center; margin: 0; }
+.cmdk-item {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; text-align: left;
+  border: none; background: none; padding: var(--s2) var(--s3); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: var(--t-sm); color: var(--text);
+}
+.cmdk-item--active { background: var(--accent-bg); }
+.cmdk-item__icon { font-size: var(--t-lg); }
+.cmdk-item__label { flex: 1; }
+.cmdk-item__type { font-size: var(--t-cap); color: var(--text-3); text-transform: uppercase; }
+.cmdk-footer {
+  display: flex; gap: var(--s4); padding: var(--s2) var(--s4); border-top: 1px solid var(--border);
+  font-size: var(--t-cap); color: var(--text-3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    LOGIN (Fase 9 revisada) — pantalla de acceso por base de datos
    ═══════════════════════════════════════════════════════════════════ */
 .login-screen {

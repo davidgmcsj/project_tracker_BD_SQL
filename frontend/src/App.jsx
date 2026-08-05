@@ -8,6 +8,7 @@ import QuartersView  from "./components/QuartersView";
 import { ReportesView } from "./components/ReportesView";
 import SaveConflictModal from "./components/SaveConflictModal";
 import { LoginScreen } from "./components/LoginScreen";
+import { CommandPalette } from "./components/CommandPalette";
 import ProgressRing  from "./components/ProgressRing";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
@@ -155,6 +156,20 @@ export default function App() {
     // Reintenta sin expectedVersion: el backend salta el chequeo y guarda igual.
     await persist(projects, undefined, projectId);
   }, [saveConflict, projects, persist]);
+
+  // ── Paleta de comandos (Fase 14 — Ctrl+K) ──────────────────────────────────
+  // Mismo guard de cambios sin guardar que navigateTo, pero en el orden
+  // correcto: solo cambia editingIdx si la navegación se confirma — si no,
+  // editingIdx quedaría apuntando a otro proyecto sin que la vista cambiara.
+  const handleGoToProject = useCallback((idx) => {
+    if (hasUnsavedChanges) {
+      const ok = window.confirm("Tienes cambios sin guardar. ¿Descartar y salir?");
+      if (!ok) return;
+      setHasUnsaved(false);
+    }
+    setEditingIdx(idx);
+    setView("edit");
+  }, [hasUnsavedChanges, setView]);
 
   const resolveConflictDiscard = useCallback(() => {
     if (!saveConflict) return;
@@ -743,6 +758,13 @@ export default function App() {
         <span className="footer__copy">© 2026 Oficina de Tecnología — Corte Suprema de Justicia. Todos los derechos reservados.</span>
         <span className="footer__credit">Desarrollado internamente por la Oficina de Tecnología - Corte Suprema de Justicia</span>
       </footer>
+
+      <CommandPalette
+        projects={projects}
+        engineers={engineers}
+        onGoToProject={handleGoToProject}
+        onGoToView={navigateTo}
+      />
 
       {saveConflict && (
         <SaveConflictModal

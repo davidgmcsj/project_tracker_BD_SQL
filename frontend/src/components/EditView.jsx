@@ -6,6 +6,7 @@ import {
   visibleActivities,
 } from "../utils/formulas";
 import { mergePlannerImport, normalizeName } from "../utils/plannerImport";
+import { matchesSearch } from "../utils/search";
 import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
 import GanttChart from "./GanttChart";
@@ -52,13 +53,6 @@ function buildAssignables(engineerCatalog, externalContacts) {
     id: c.id, name: c.name, company: c.company || "", type: "external",
   }));
   return [...engineers, ...externals];
-}
-
-// Filtra items: todas las palabras del query deben aparecer en el texto (case-insensitive)
-function matchesSearch(text, query) {
-  if (!query.trim()) return true;
-  const lower = text.toLowerCase();
-  return query.trim().toLowerCase().split(/\s+/).every(word => lower.includes(word));
 }
 
 // ── Dropdown de asignación con soporte de externos y creación en popover ──────
