@@ -5,9 +5,19 @@
 // través de storage.js, sin recibir el estado de proyectos por props — las
 // consultas del registro ya devuelven nombres resueltos (proyecto, ingeniero)
 // vía JOIN en SQL, así que no hace falta cruzarlas con el catálogo local.
+//
+// modo/consulta/filtros/columnas quedan en la URL (useUrlState, Fase 13):
+// un enlace a la pestaña Reportes reproduce la misma vista sin que el
+// destinatario reconfigure nada. Edición en línea (estado/responsable
+// desde esta tabla) quedó fuera de esta fase a propósito: escribiría de
+// vuelta en el mismo proyecto completo que ya gobierna EditView/App.jsx,
+// con el mismo chequeo de versión de la Fase 8 — mezclar ese camino de
+// guardado con una vista que hoy es puramente de lectura es un cambio de
+// arquitectura aparte, no una extensión de una tarde.
 
 import { useState, useEffect } from "react";
 import { loadReportRegistry, runReportQuery, exportReport } from "../utils/storage";
+import { useUrlState } from "../hooks/useUrlState";
 import { ReportesTemplates } from "./ReportesTemplates";
 import { ReportesFilterPanel } from "./ReportesFilterPanel";
 import { ReportesTable } from "./ReportesTable";
@@ -35,24 +45,29 @@ function humanizeFiltro(f) {
   return `${campo}: ${valor}`;
 }
 
+const SIN_FILTROS = [];
+const SIN_COLUMNAS = [];
+
 export function ReportesView({ projects, engineers }) {
-  const [modo, setModo]           = useState("tabla"); // "tabla" | "tablero" | "carga"
+  const [modo, setModo]                         = useUrlState("modo", "tabla"); // "tabla" | "tablero" | "carga"
+  const [consulta, setConsulta]                 = useUrlState("consulta", "vencidas");
+  const [filtros, setFiltros]                   = useUrlState("filtros", SIN_FILTROS);
+  const [columnasVisibles, setColumnasVisibles] = useUrlState("columnas", SIN_COLUMNAS);
   const [registry, setRegistry]   = useState(null);
-  const [consulta, setConsulta]   = useState("vencidas");
-  const [filtros, setFiltros]     = useState([]);
-  const [columnasVisibles, setColumnasVisibles] = useState([]);
   const [resultado, setResultado] = useState({ total: 0, filas: [] });
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
   const [exporting, setExporting] = useState(""); // "" | "xlsx" | "pdf"
 
-  // Cargar el registro una sola vez al montar.
+  // Cargar el registro una sola vez al montar. Si la URL ya traía una
+  // consulta/columnas válidas (enlace compartido), se respetan tal cual —
+  // los defaults del registro solo rellenan lo que falte.
   useEffect(() => {
     loadReportRegistry().then(reg => {
       setRegistry(reg);
-      const primera = reg[consulta] ? consulta : Object.keys(reg)[0];
-      setConsulta(primera);
-      setColumnasVisibles(reg[primera]?.columnasDefault || []);
+      const valida = reg[consulta] ? consulta : Object.keys(reg)[0];
+      if (valida !== consulta) setConsulta(valida);
+      if (!columnasVisibles.length) setColumnasVisibles(reg[valida]?.columnasDefault || []);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo debe correr al montar
   }, []);

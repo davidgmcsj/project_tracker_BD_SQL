@@ -21,6 +21,7 @@ import {
   authHeaders, getCurrentUser, logout,
 } from "./utils/storage";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
+import { useUrlState } from "./hooks/useUrlState";
 import "./App.css";
 
 const STAT_CARDS = [
@@ -55,7 +56,9 @@ export default function App() {
   const [projects,          setProjects]          = useState([]);
   const [engineers,         setEngineers]         = useState([]);
   const [externalContacts,  setExternalContacts]  = useState([]);
-  const [view,              setView]              = useState("dashboard");
+  // Sincronizado con la URL (Fase 13): un enlace compartido abre la pestaña
+  // correcta directamente, no solo los filtros internos de Reportes.
+  const [view,              setView]              = useUrlState("view", "dashboard");
   const [editingIdx,        setEditingIdx]        = useState(null);
   const [weekLabel,         setWeekLabel]         = useState(getWeekLabel());
   const [reportDate,        setReportDate]        = useState(getToday());
