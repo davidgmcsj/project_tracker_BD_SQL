@@ -183,15 +183,6 @@
 }
 .nav-group__item:hover { background: var(--surface-2); }
 .nav-group__item--active { background: var(--accent-bg); color: var(--azul-oscuro); }
-.btn--theme {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-  padding: 8px 12px;
-  font-size: var(--t-body);
-  line-height: 1;
-}
-.btn--theme:hover { border-color: var(--azul-claro); }
 
 /* ═══ FOOTER ═══ */
 .footer {
@@ -5766,13 +5757,36 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 }
 .login-screen__submit { width: 100%; margin-top: var(--s2); padding: 12px; font-size: var(--t-body); }
 
-.header__user { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--text-2); }
-.header__user-name { font-weight: 700; color: var(--text); }
-.header__logout {
-  border: 1px solid var(--border-strong); background: none; color: var(--text-2);
-  border-radius: var(--radius-pill); padding: 5px 12px; font-size: var(--t-cap); cursor: pointer; transition: .15s;
+/* ── Avatar de usuario con menú desplegable (nombre, tema, cerrar sesión) ── */
+.user-menu { position: relative; }
+.user-menu__avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; color: #fff;
+  background: var(--azul-oscuro); border: 2px solid transparent;
+  font-size: var(--t-sm); font-weight: 800; letter-spacing: -.02em;
+  cursor: pointer; transition: border-color .15s;
 }
-.header__logout:hover { border-color: var(--red); color: var(--red); }
+.user-menu__avatar:hover { border-color: var(--dorado); }
+.user-menu__panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 50;
+  min-width: 200px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg); padding: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.user-menu__name {
+  padding: 8px 10px 6px; font-size: var(--t-sm); font-weight: 700; color: var(--text);
+  border-bottom: 1px solid var(--border); margin-bottom: 2px;
+}
+.user-menu__item {
+  display: block; width: 100%; text-align: left;
+  border: none; background: none; padding: 8px 10px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: var(--t-sm); font-weight: 600; color: var(--text);
+  white-space: nowrap;
+}
+.user-menu__item:hover { background: var(--surface-2); }
+.user-menu__item--danger { color: var(--red); }
+.user-menu__item--danger:hover { background: var(--red-bg); }
 
 /* ═══════════════════════════════════════════════════════════════════
    MÓDULO DE REPORTES — catálogo de consultas + filtros acumulativos

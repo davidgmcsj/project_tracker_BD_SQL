@@ -10,13 +10,22 @@
 // una vista previa (cientos de filas, no decenas de miles) es suficiente.
 
 import { useState, useMemo } from "react";
+import StatusBadge from "./engineer/StatusBadge";
 
 function humanize(key) {
   return key.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
 }
 
-function formatCell(value) {
+// Las consultas "actividades", "ingenieros" y "vencidas" traen el estado tal
+// cual lo guarda Actividades_Detalle/Estado_Actividades_Reporte en SQL
+// (not_started/in_progress/completed) — sin traducir se veía en inglés y sin
+// color. Reutiliza el mismo StatusBadge que ya traduce/colorea en Ingenieros.
+const STATUS_COLUMNS = new Set(["estado"]);
+const KNOWN_STATUSES = new Set(["not_started", "in_progress", "completed"]);
+
+function formatCell(col, value) {
   if (value == null) return "—";
+  if (STATUS_COLUMNS.has(col) && KNOWN_STATUSES.has(value)) return <StatusBadge status={value} />;
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
   if (typeof value === "boolean") return value ? "Sí" : "No";
   return String(value);
@@ -89,7 +98,7 @@ export function ReportesTable({ columnasDisponibles, columnasVisibles, onToggleC
             ) : (
               filasOrdenadas.map((fila, i) => (
                 <tr key={i}>
-                  {columnasVisibles.map(col => <td key={col}>{formatCell(fila[col])}</td>)}
+                  {columnasVisibles.map(col => <td key={col}>{formatCell(col, fila[col])}</td>)}
                 </tr>
               ))
             )}

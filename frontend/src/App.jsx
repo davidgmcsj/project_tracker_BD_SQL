@@ -11,6 +11,7 @@ import { LoginScreen } from "./components/LoginScreen";
 import { CommandPalette } from "./components/CommandPalette";
 import ProgressRing  from "./components/ProgressRing";
 import NavGroup from "./components/NavGroup";
+import UserMenu from "./components/UserMenu";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
@@ -663,15 +664,9 @@ export default function App() {
               />
             ))}
           </nav>
-          <button className="btn btn--theme" onClick={toggleTheme} title="Alternar modo claro / oscuro">
-            {theme === "dark" ? "☀" : "🌙"}
-          </button>
           <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
           <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
-          <div className="header__user">
-            <span className="header__user-name">{currentUser.name}</span>
-            <button type="button" className="header__logout" onClick={handleLogout}>Cerrar sesión</button>
-          </div>
+          <UserMenu user={currentUser} theme={theme} onToggleTheme={toggleTheme} onLogout={handleLogout} />
         </div>
       </header>
 
