@@ -196,6 +196,35 @@ export function buildEngineerWeekKpis(rows, projects, today = new Date()) {
   return { overdue, dueToday, thisWeek: rows.length, pending: pendingRows.length, todo };
 }
 
+// ── Conteo agregado + vencidas históricas (hero del dashboard del ingeniero) ──
+// Distinto de buildEngineerWeekKpis a propósito: ese mide la ventana semanal
+// actual; esto mide TODA la carga del ingeniero en TODOS sus proyectos, sin
+// importar cuándo cae la fecha — completadas/en proceso/no iniciadas +
+// vencidas históricas (fecha de fin pasada, sin completar, sin importar si
+// cae en la semana actual o hace meses). Se apoyan en la misma fuente de
+// verdad que getAllAssignedActivitiesInProject (assigned_engineers +
+// activityStatusIn), pero necesitan due_date/start_date, que ese shape no
+// expone — se recorren las actividades del proyecto directo.
+export function buildEngineerTotals(engineerId, projects, today = new Date()) {
+  const todayIso = today.toISOString().slice(0, 10);
+  let completed = 0, inProgress = 0, notStarted = 0, overdue = 0;
+
+  getProjectsForEngineer(engineerId, projects).forEach(project => {
+    engineerActivitiesInProject(engineerId, project).forEach(a => {
+      const status = activityStatusIn(project, a.id);
+      if (status === "completed") { completed++; return; }
+
+      if (status === "in_progress") inProgress++;
+      else notStarted++;
+
+      const due = a.due_date || a.start_date;
+      if (due && due < todayIso) overdue++;
+    });
+  });
+
+  return { completed, inProgress, notStarted, overdue, total: completed + inProgress + notStarted };
+}
+
 // ── Reporte por ingeniero (texto plano para copiar) ───────────────────────────
 
 const STATUS_TXT = { completed: "Completada", in_progress: "En proceso", not_started: "No iniciada" };

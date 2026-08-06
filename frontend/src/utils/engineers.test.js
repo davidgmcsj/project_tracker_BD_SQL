@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   engineerWeekTasks, engineerNextWeekTasks,
   countLiveWeeklyTasks, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countActiveWeeklyTasks,
-  buildEngineerWeekKpis,
+  buildEngineerWeekKpis, buildEngineerTotals,
 } from "./engineers.js";
 
 // "Hoy" fijo para todos los tests: miércoles 2026-08-05.
@@ -237,4 +237,67 @@ test("buildEngineerWeekKpis ordena 'todo' con vencidas primero, luego por fecha 
 test("buildEngineerWeekKpis sin actividades devuelve todo en cero", () => {
   const kpis = buildEngineerWeekKpis([], [], TODAY);
   assert.deepEqual(kpis, { overdue: 0, dueToday: 0, thisWeek: 0, pending: 0, todo: [] });
+});
+
+// ── buildEngineerTotals — conteo agregado + vencidas históricas ───────────────
+// Distinto de buildEngineerWeekKpis a propósito: KpisWeek mide la ventana
+// semanal actual, esto mide TODA la carga del ingeniero en TODOS sus
+// proyectos, sin importar cuándo cae la fecha — completadas/en proceso/no
+// iniciadas + vencidas históricas (fecha de fin pasada, sin completar, sin
+// importar si cae en la semana actual o hace meses).
+
+test("buildEngineerTotals cuenta por estado a través de TODOS los proyectos del ingeniero", () => {
+  const projects = [
+    project("p1", "Proyecto A", [
+      act("a1", "2026-07-01", "2026-07-05", "e1"),
+      act("a2", "2026-07-01", "2026-07-05", "e1"),
+    ], { completed: ["a1"], in_progress: ["a2"] }, "e1"),
+    project("p2", "Proyecto B", [
+      act("b1", "2026-08-01", "2026-08-10", "e1"),
+    ], {}, "e1"), // sin listas de estado → not_started por defecto
+  ];
+  const totals = buildEngineerTotals("e1", projects, TODAY);
+  assert.equal(totals.completed, 1);
+  assert.equal(totals.inProgress, 1);
+  assert.equal(totals.notStarted, 1);
+  assert.equal(totals.total, 3);
+});
+
+test("buildEngineerTotals cuenta vencidas históricas (fecha de fin pasada, sin completar)", () => {
+  const projects = [
+    project("p1", "Proyecto A", [
+      act("vieja-en-proceso", "2026-06-01", "2026-06-10", "e1"), // venció hace mucho, en proceso
+      act("vieja-no-iniciada", "2026-06-01", "2026-06-15", "e1"), // venció hace mucho, no iniciada
+      act("futura", "2026-08-10", "2026-08-20", "e1"), // no vencida
+    ], { in_progress: ["vieja-en-proceso"] }, "e1"),
+  ];
+  const totals = buildEngineerTotals("e1", projects, TODAY);
+  assert.equal(totals.overdue, 2);
+});
+
+test("buildEngineerTotals NUNCA cuenta una completada como vencida, aunque su fecha ya pasó", () => {
+  const projects = [
+    project("p1", "Proyecto A", [
+      act("hecha-tarde", "2026-06-01", "2026-06-10", "e1"),
+    ], { completed: ["hecha-tarde"] }, "e1"),
+  ];
+  const totals = buildEngineerTotals("e1", projects, TODAY);
+  assert.equal(totals.overdue, 0);
+  assert.equal(totals.completed, 1);
+});
+
+test("buildEngineerTotals solo cuenta actividades asignadas a ESE ingeniero", () => {
+  const projects = [
+    project("p1", "Compartido", [
+      act("mia", "2026-06-01", "2026-06-10", "e1"),
+      act("suya", "2026-06-01", "2026-06-10", "e2"),
+    ], {}, "e1"),
+  ];
+  const totals = buildEngineerTotals("e1", projects, TODAY);
+  assert.equal(totals.total, 1);
+});
+
+test("buildEngineerTotals sin proyectos devuelve todo en cero", () => {
+  const totals = buildEngineerTotals("e1", [], TODAY);
+  assert.deepEqual(totals, { completed: 0, inProgress: 0, notStarted: 0, overdue: 0, total: 0 });
 });

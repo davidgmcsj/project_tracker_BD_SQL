@@ -5615,10 +5615,15 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .eng-kpi-chip--warn    .eng-kpi-chip__count { color: var(--amber); }
 .eng-kpi-chip--info    .eng-kpi-chip__count { color: var(--info); }
 .eng-kpi-chip--neutral .eng-kpi-chip__count { color: var(--text); }
+.eng-kpi-chip--ok      .eng-kpi-chip__count { color: var(--green); }
 .eng-kpi-chip--active {
   border-color: var(--azul-oscuro);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--azul-oscuro) 25%, transparent);
 }
+/* KpiStat (EngineerHub.jsx) reusa .eng-kpi-chip pero es un <div> de solo
+   lectura, no un <button> — sin cursor de mano ni hover de enlace. */
+div.eng-kpi-chip { cursor: default; }
+div.eng-kpi-chip:hover { border-color: var(--border); }
 
 /* Fila de sub-pestañas dentro de una pantalla (distinto de .header__nav,
    que es la navegación principal) — mismo componente visual .tab-btn. */

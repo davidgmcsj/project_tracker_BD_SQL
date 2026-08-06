@@ -21,6 +21,7 @@ import {
   engineerWeekTasks,
   engineerNextWeekTasks,
   buildEngineerWeekKpis,
+  buildEngineerTotals,
   generateEngineerReportText,
 } from "../utils/engineers";
 import EngineerWeekTable from "./engineer/EngineerWeekTable";
@@ -61,6 +62,19 @@ function KpiChip({ tone, count, label, active, onClick }) {
   );
 }
 
+// Variante de solo lectura de KpiChip — para el panorama agregado
+// (buildEngineerTotals), que no filtra nada al hacer clic, a diferencia de
+// la franja semanal de arriba. <div>, no <button>: un control sin acción
+// confunde más de lo que ayuda.
+function KpiStat({ tone, count, label }) {
+  return (
+    <div className={`eng-kpi-chip eng-kpi-chip--${tone}`}>
+      <span className="eng-kpi-chip__count">{count}</span>
+      <span className="eng-kpi-chip__label">{label}</span>
+    </div>
+  );
+}
+
 // Sub-pestaña "Mi semana": KPIs accionables + lista priorizada "qué hacer
 // ahora" + vista rápida de la próxima semana. Todo se deriva en vivo desde
 // las fechas (utils/weekPlanning.js vía utils/engineers.js) — nada nuevo que
@@ -80,6 +94,10 @@ function MyWeekTab({ engineer, projects, onOpenActivity }) {
     () => buildEngineerWeekKpis(weekRows, projects, TODAY),
     [weekRows, projects]
   );
+  const totals = useMemo(
+    () => buildEngineerTotals(engineer.id, projects, TODAY),
+    [engineer.id, projects]
+  );
 
   const todayIso = TODAY.toISOString().slice(0, 10);
   const visibleTodo = kpis.todo.filter(row => {
@@ -90,6 +108,20 @@ function MyWeekTab({ engineer, projects, onOpenActivity }) {
 
   return (
     <>
+      <h3 className="report-section-title" style={{ marginBottom: 12 }}>
+        Total en todos los proyectos
+      </h3>
+      <div className="eng-kpi-strip">
+        <KpiStat tone="info"    count={totals.total}      label="Asignadas" />
+        <KpiStat tone="ok"      count={totals.completed}  label="Completadas" />
+        <KpiStat tone="warn"    count={totals.inProgress} label="En proceso" />
+        <KpiStat tone="neutral" count={totals.notStarted} label="No iniciadas" />
+        <KpiStat tone="danger"  count={totals.overdue}    label="Vencidas" />
+      </div>
+
+      <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
+        Esta semana
+      </h3>
       <div className="eng-kpi-strip">
         <KpiChip tone="danger"  count={kpis.overdue}  label="Vencidas"
           active={filter === "overdue"} onClick={() => setFilter(f => f === "overdue" ? null : "overdue")} />
