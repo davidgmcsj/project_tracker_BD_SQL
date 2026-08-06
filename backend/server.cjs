@@ -33,7 +33,8 @@ const { toArray } = require("./utils.cjs");
 const { computeQuarterStats, buildResetProjects } = require("./quarter-reset.cjs");
 
 const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
-        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, rebuildDataJsonFromSQL, maxSqlSavedAt } = (() => {
+        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, rebuildDataJsonFromSQL, maxSqlSavedAt,
+        listUsers, createUser, updateUser } = (() => {
   try {
     const mod = require("./db-operations.cjs");
     console.log("[DB] db-operations.cjs cargado correctamente");
@@ -41,7 +42,8 @@ const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, d
   } catch (e) {
     console.error("[DB] Error cargando db-operations.cjs:", e.message);
     return { getPool: null, saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null,
-             saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null, rebuildDataJsonFromSQL: null, maxSqlSavedAt: null };
+             saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null, rebuildDataJsonFromSQL: null, maxSqlSavedAt: null,
+             listUsers: null, createUser: null, updateUser: null };
   }
 })();
 
@@ -486,6 +488,20 @@ app.use("/api", async (req, res, next) => {
   next();
 });
 
+// Capa de autorización (migración 019) — distinta de requireApiKey (que
+// sigue siendo el candado general) y de "estar logueado" (que solo exige
+// req.user truthy). Va DESPUÉS del middleware de arriba porque depende de
+// req.user ya resuelto. Solo se aplica a los endpoints de administración de
+// usuarios — nada más del API cambia de comportamiento.
+function requireAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "No autenticado" });
+  if (!req.user.esAdmin) {
+    logSecurityEvent("admin_required_denied", req, { userId: req.user.id });
+    return res.status(403).json({ error: "Requiere rol de administrador" });
+  }
+  next();
+}
+
 app.post("/api/auth/login", jsonParser, async (req, res) => {
   if (!createSession) return res.status(503).json({ error: "Módulo de autenticación no disponible" });
   const { username, password } = req.body || {};
@@ -708,6 +724,51 @@ app.post("/api/engineers/tasks/delete-one", async (req, res) => {
   } catch (e) {
     console.error("[SQL] Error borrando tarea suelta:", e.message);
     res.status(500).json(errorBody("Error borrando tarea suelta", e));
+  }
+});
+
+// ── API: Administración de usuarios (migración 019 — solo admins) ────────────
+// No hay endpoint de auto-registro (ver backend/scripts/create-user.cjs):
+// crear/editar usuarios pasa por requireAdmin, así que solo un admin ya
+// logueado puede provisionar cuentas nuevas — no reabre el hueco que
+// create-user.cjs documenta evitar.
+
+app.get("/api/users", requireAdmin, async (req, res) => {
+  if (!listUsers) return res.status(503).json({ error: "Módulo de BD no disponible" });
+  try {
+    res.json(await listUsers());
+  } catch (e) {
+    console.error("[USERS] Error listando usuarios:", e.message);
+    res.status(500).json(errorBody("Error listando usuarios", e));
+  }
+});
+
+app.post("/api/users", requireAdmin, async (req, res) => {
+  if (!createUser) return res.status(503).json({ error: "Módulo de BD no disponible" });
+  try {
+    const id = await createUser(req.body || {});
+    res.json({ ok: true, id });
+  } catch (e) {
+    // Errores de validación (usuario/nombre/contraseña faltante, contraseña
+    // corta) vienen de createUser como Error simple — se devuelven tal cual
+    // al frontend en vez de un genérico 500, igual que query-builder.cjs.
+    const isValidation = /obligatorio|al menos 8 caracteres/.test(e.message);
+    if (isValidation) return res.status(400).json({ error: e.message });
+    console.error("[USERS] Error creando usuario:", e.message);
+    res.status(500).json(errorBody("Error creando usuario", e));
+  }
+});
+
+app.post("/api/users/:id", requireAdmin, async (req, res) => {
+  if (!updateUser) return res.status(503).json({ error: "Módulo de BD no disponible" });
+  try {
+    await updateUser(Number(req.params.id), req.body || {});
+    res.json({ ok: true });
+  } catch (e) {
+    const isValidation = /obligatorio|al menos 8 caracteres/.test(e.message);
+    if (isValidation) return res.status(400).json({ error: e.message });
+    console.error("[USERS] Error actualizando usuario:", e.message);
+    res.status(500).json(errorBody("Error actualizando usuario", e));
   }
 });
 
