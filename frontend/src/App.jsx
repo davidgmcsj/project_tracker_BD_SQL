@@ -3,8 +3,7 @@ import Dashboard     from "./components/Dashboard";
 import EditView, { TaskStatusSelector } from "./components/EditView";
 import ProjectPlanningOverlays from "./components/ProjectPlanningOverlays";
 import ReportView    from "./components/ReportView";
-import EngineersView from "./components/EngineersView";
-import EngineerReportView from "./components/EngineerReportView";
+import EngineerHub from "./components/EngineerHub";
 import QuartersView  from "./components/QuartersView";
 import { ReportesView } from "./components/ReportesView";
 import SaveConflictModal from "./components/SaveConflictModal";
@@ -696,18 +695,20 @@ export default function App() {
             onCancelInforme={cancelInforme}
           />
         )}
-        {view === "engineers" && (
-          <EngineersView
+        {(view === "engineers" || view === "engineer-report") && (
+          <EngineerHub
             engineers={engineers}
             projects={projects}
             onAdd={addEngineer}
             onUpdate={updateEngineer}
             onToggleActive={toggleEngineerActive}
             onUpdateTasks={updateEngineerTasks}
+            onOpenActivity={(projectId, activityId) => {
+              const idx = projects.findIndex(p => p.id === projectId);
+              if (idx === -1) return;
+              setPlanning({ idx, view: "hierarchy", activityId });
+            }}
           />
-        )}
-        {view === "engineer-report" && (
-          <EngineerReportView engineers={engineers} projects={projects} />
         )}
         {view === "dashboard" && (
           <Dashboard
@@ -788,6 +789,7 @@ export default function App() {
         engineerCatalog={engineers}
         externalContacts={externalContacts}
         StatusBoard={TaskStatusSelector}
+        initialActivityId={planning?.activityId}
       />
 
       {saveConflict && (

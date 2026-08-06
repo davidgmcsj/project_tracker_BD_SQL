@@ -7,7 +7,7 @@
 // los handlers de edición para que ambos puntos de entrada compartan el mismo
 // comportamiento sin duplicar lógica.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createActivity, visibleActivities } from "../utils/formulas";
 import FullscreenOverlay from "./FullscreenOverlay";
 import GanttChart from "./GanttChart";
@@ -34,8 +34,15 @@ export default function ProjectPlanningOverlays({
   engineerCatalog,
   externalContacts,
   StatusBoard,      // TaskStatusSelector, inyectado para no duplicarlo aquí
+  initialActivityId, // abre la tarjeta de detalle de una vez (ej. desde EngineerHub)
 }) {
-  const [modalActId, setModalActId] = useState(null);
+  const [modalActId, setModalActId] = useState(initialActivityId || null);
+
+  // Sincroniza cuando el caller pide abrir OTRA actividad puntual (ej. clic
+  // en una fila distinta de "Mi semana") sin pasar por un remount del overlay.
+  useEffect(() => {
+    if (initialActivityId) setModalActId(initialActivityId);
+  }, [initialActivityId]);
 
   if (!project || !view) return null;
 

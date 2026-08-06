@@ -11,9 +11,8 @@ import {
   engineerWeekTasks,
   engineerNextWeekTasks,
 } from "../utils/engineers";
-import EngineerActivitiesTable from "./engineer/EngineerActivitiesTable";
-import AdditionalTasksTable from "./engineer/AdditionalTasksTable";
 import EngineerWeekTable from "./engineer/EngineerWeekTable";
+import EngineerReportBody from "./EngineerReportBody";
 
 // Calculada una vez al cargar el módulo (no en cada render): evita que el
 // React Compiler marque los useMemo de más abajo como impuros por depender
@@ -54,47 +53,12 @@ function engineerWorkload(engineerId, projects, tasks) {
   return { done, wip, pending, total, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
-function ProjectBlock({ project, engineerId }) {
-  const acts = getAllAssignedActivitiesInProject(engineerId, project);
-  return (
-    <div className="project-card" style={{ marginBottom: 16 }}>
-      <div className="project-card__header" style={{ marginBottom: 12 }}>
-        <h3 className="project-card__name">{project.project_name}</h3>
-        <span className="status-pill">{acts.length} actividad{acts.length !== 1 ? "es" : ""}</span>
-      </div>
-      {acts.length === 0 ? (
-        <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin actividades asignadas en este proyecto.</p>
-      ) : (
-        <EngineerActivitiesTable activities={acts} />
-      )}
-    </div>
-  );
-}
-
-function AdditionalTasksBlock({ tasks }) {
-  const list = tasks || [];
-  return (
-    <div className="project-card" style={{ marginBottom: 16 }}>
-      <div className="project-card__header" style={{ marginBottom: 12 }}>
-        <h3 className="project-card__name">Tareas adicionales</h3>
-        <span className="status-pill">{list.length} tarea{list.length !== 1 ? "s" : ""}</span>
-      </div>
-      {list.length === 0 ? (
-        <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin tareas adicionales registradas.</p>
-      ) : (
-        <AdditionalTasksTable tasks={list} mode="read" />
-      )}
-    </div>
-  );
-}
-
 export default function EngineerReportView({ engineers, projects }) {
   const list = (engineers || []).filter(e => e.active !== false);
   const [selectedId, setSelectedId] = useState(list[0]?.id || null);
   const [toast, setToast] = useState("");
 
   const eng = (engineers || []).find(e => e.id === selectedId) || null;
-  const projs = eng ? getProjectsForEngineer(eng.id, projects) : [];
 
   // El React Compiler marca estos dos useMemo como "Compilation Skipped": el
   // componente tiene un early return condicional MÁS ABAJO (if (!list.length)
@@ -194,17 +158,7 @@ export default function EngineerReportView({ engineers, projects }) {
           </h3>
           <EngineerWeekTable rows={nextWeekRows} />
 
-          <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
-            Actividades por proyecto ({projs.length})
-          </h3>
-          {projs.length === 0 ? (
-            <p style={{ color: "var(--text-2)" }}>Este ingeniero no está asignado a ningún proyecto.</p>
-          ) : (
-            projs.map(p => <ProjectBlock key={p.id} project={p} engineerId={eng.id} />)
-          )}
-
-          <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>Tareas adicionales</h3>
-          <AdditionalTasksBlock tasks={eng.tasks} />
+          <EngineerReportBody engineer={eng} projects={projects} />
         </>
       )}
     </div>

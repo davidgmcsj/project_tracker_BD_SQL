@@ -1,8 +1,8 @@
 // engineers.js — Agregación cross-proyecto para la vista por ingeniero.
 // Funciones puras: no tocan React ni el DOM, solo leen projects/engineers ya cargados.
 
-import { buildActivityIndex } from "./formulas.js";
-import { activitiesForWeek, weekRange, nextWeekRange } from "./weekPlanning.js";
+import { buildActivityIndex, getActivityStatus } from "./formulas.js";
+import { activitiesForWeek, weekRange, nextWeekRange, SITUATION } from "./weekPlanning.js";
 
 // Actividades del ingeniero en ese proyecto que asignadas a él, fuente de
 // verdad (assigned_engineers), sin pasar por el snapshot weekly_detail.
@@ -165,6 +165,35 @@ export function engineerNextWeekTasks(engineerId, projects, today = new Date()) 
   return engineerActivitiesForRange(
     engineerId, projects, nextWeekRange(today.toISOString().slice(0, 10)), { includeOverdue: false }
   );
+}
+
+// ── KPIs accionables + "qué hacer ahora" (pantalla "mi semana", EngineerHub) ──
+// A partir de las filas de engineerWeekTasks (que SÍ incluyen completadas
+// on-time — activitiesForWeek solo excluye vencidas-ya-completadas), arma los
+// contadores de la franja de KPIs y la lista priorizada de trabajo pendiente:
+// vencidas primero, luego el resto por fecha de entrega ascendente.
+export function buildEngineerWeekKpis(rows, projects, today = new Date()) {
+  const todayIso = today.toISOString().slice(0, 10);
+  const projectById = new Map((projects || []).map(p => [p.id, p]));
+
+  const pendingRows = rows.filter(row => {
+    const project = projectById.get(row.projectId);
+    return getActivityStatus(project?.task_status, row.activity.id) !== "Completada";
+  });
+
+  const overdue = pendingRows.filter(r => r.situation === SITUATION.OVERDUE).length;
+  const dueToday = pendingRows.filter(r => r.activity.due_date === todayIso).length;
+
+  const todo = [...pendingRows].sort((a, b) => {
+    const aOverdue = a.situation === SITUATION.OVERDUE;
+    const bOverdue = b.situation === SITUATION.OVERDUE;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+    const da = a.activity.due_date || a.activity.start_date || "";
+    const db = b.activity.due_date || b.activity.start_date || "";
+    return da.localeCompare(db);
+  });
+
+  return { overdue, dueToday, thisWeek: rows.length, pending: pendingRows.length, todo };
 }
 
 // ── Reporte por ingeniero (texto plano para copiar) ───────────────────────────

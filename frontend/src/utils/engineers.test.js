@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   engineerWeekTasks, engineerNextWeekTasks,
   countLiveWeeklyTasks, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countActiveWeeklyTasks,
+  buildEngineerWeekKpis,
 } from "./engineers.js";
 
 // "Hoy" fijo para todos los tests: miércoles 2026-08-05.
@@ -182,4 +183,58 @@ test("countActiveWeeklyTasks (snapshot) sigue leyendo weekly_detail sin cambios 
   const p = project("p1", "Proyecto A", [act("a1", "2026-08-04", "2026-08-06", "e1")], {}, "e1");
   p.engineers[0].weekly_detail = ["a1", "a2"]; // snapshot congelado, aunque solo "a1" siga vigente
   assert.equal(countActiveWeeklyTasks("e1", p), 2);
+});
+
+// ── buildEngineerWeekKpis — KPIs accionables + lista "qué hacer ahora" ────────
+// Pantalla "mi semana" del ingeniero (EngineerHub, Fase 3): franja de KPIs
+// (vencidas/vence hoy/esta semana/pendientes) más una lista priorizada,
+// excluyendo lo ya completado (activitiesForWeek no filtra completadas
+// on-time, solo vencidas-completadas — buildEngineerWeekKpis sí debe excluir
+// TODA actividad ya completada de "qué hacer ahora").
+
+test("buildEngineerWeekKpis cuenta vencidas, vence-hoy, esta-semana y pendientes", () => {
+  const projects = [
+    project("p1", "Proyecto A", [
+      act("vencida", "2026-07-20", "2026-07-24", "e1"),
+      act("hoy",     "2026-08-03", "2026-08-05", "e1"), // vence hoy (TODAY=2026-08-05)
+      act("semana",  "2026-08-06", "2026-08-08", "e1"),
+    ], {}, "e1"),
+  ];
+  const rows = engineerWeekTasks("e1", projects, TODAY);
+  const kpis = buildEngineerWeekKpis(rows, projects, TODAY);
+  assert.equal(kpis.overdue, 1);
+  assert.equal(kpis.dueToday, 1);
+  assert.equal(kpis.thisWeek, 3);
+  assert.equal(kpis.pending, 3);
+});
+
+test("buildEngineerWeekKpis excluye actividades ya completadas de 'pending' y 'todo'", () => {
+  const projects = [
+    project("p1", "Proyecto A", [
+      act("hecha",     "2026-08-04", "2026-08-06", "e1"),
+      act("pendiente", "2026-08-04", "2026-08-06", "e1"),
+    ], { completed: ["hecha"] }, "e1"),
+  ];
+  const rows = engineerWeekTasks("e1", projects, TODAY);
+  const kpis = buildEngineerWeekKpis(rows, projects, TODAY);
+  assert.equal(kpis.pending, 1);
+  assert.deepEqual(kpis.todo.map(r => r.activity.id), ["pendiente"]);
+});
+
+test("buildEngineerWeekKpis ordena 'todo' con vencidas primero, luego por fecha de entrega", () => {
+  const projects = [
+    project("p1", "Proyecto A", [
+      act("tarde",   "2026-08-06", "2026-08-08", "e1"),
+      act("vencida", "2026-07-20", "2026-07-24", "e1"),
+      act("pronto",  "2026-08-03", "2026-08-04", "e1"),
+    ], {}, "e1"),
+  ];
+  const rows = engineerWeekTasks("e1", projects, TODAY);
+  const kpis = buildEngineerWeekKpis(rows, projects, TODAY);
+  assert.deepEqual(kpis.todo.map(r => r.activity.id), ["vencida", "pronto", "tarde"]);
+});
+
+test("buildEngineerWeekKpis sin actividades devuelve todo en cero", () => {
+  const kpis = buildEngineerWeekKpis([], [], TODAY);
+  assert.deepEqual(kpis, { overdue: 0, dueToday: 0, thisWeek: 0, pending: 0, todo: [] });
 });
