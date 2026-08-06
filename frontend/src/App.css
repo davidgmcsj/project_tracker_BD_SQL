@@ -5794,6 +5794,10 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .reportes-view { display: flex; flex-direction: column; gap: var(--s4); }
 .reportes-view__toolbar { justify-content: flex-start; }
 .reportes-view__export { display: flex; gap: var(--s2); margin-left: auto; }
+.reportes-view__consulta-hint {
+  color: var(--text-2); font-size: var(--t-sm); font-style: italic;
+  margin: -4px 0 var(--s3);
+}
 .reportes-view__error {
   color: var(--red); background: var(--red-bg); border: 1px solid var(--red);
   border-radius: var(--radius-sm); padding: var(--s3) var(--s4); margin: 0; font-size: var(--t-sm);

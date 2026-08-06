@@ -26,7 +26,7 @@ import { GlobalBoardView } from "./GlobalBoardView";
 import { WorkloadMatrix } from "./WorkloadMatrix";
 import {
   ESTADOS_PROYECTO, ESTADOS_INGENIERO_REPORTE, TIPOS_EVENTO_ACTIVIDAD,
-  ORIGENES_EVENTO, PRIORIDADES_PROYECTO, TIPOS_NOTA,
+  PRIORIDADES_PROYECTO, TIPOS_NOTA,
 } from "../utils/filtroOpciones";
 
 const MODOS = [
@@ -35,17 +35,36 @@ const MODOS = [
   { value: "carga",   label: "📊 Carga" },
 ];
 
+// "actividades" apunta a Actividad_Eventos: cada fila es UN cambio de UN
+// campo (Tipo = qué cambió: estado/progreso/fecha_inicio/fecha_fin/horas),
+// no una actividad completa — de ahí el nombre "Historial de cambios" en vez
+// de "Actividades", que sugería una lista de tareas.
 const NOMBRES_CONSULTA = {
-  actividades: "Actividades",
+  actividades: "Historial de cambios",
   ingenieros:  "Ingenieros",
   proyectos:   "Proyectos",
   vencidas:    "Vencidas",
   notas:       "Notas",
 };
 
-function humanizeFiltro(f) {
+const DESCRIPCION_CONSULTA = {
+  actividades: "Registro de auditoría: cada fila es un cambio puntual (estado, progreso, fechas u horas) de una actividad, con su valor anterior y nuevo.",
+};
+
+// Traduce un valor crudo (ej. el id interno de un proyecto) a su label legible
+// cuando el campo tiene opciones conocidas (opcionesPorCampo) — sin esto el
+// chip mostraba literalmente el id (p.ej. "mp1pu3nh4va") en vez del nombre.
+function humanizeValor(campo, valor, opcionesPorCampo) {
+  const opciones = opcionesPorCampo?.[campo];
+  if (!opciones) return valor;
+  return opciones.find(o => o.value === valor)?.label ?? valor;
+}
+
+function humanizeFiltro(f, opcionesPorCampo) {
   const campo = f.campo.replace(/_/g, " ");
-  const valor = Array.isArray(f.valor) ? f.valor.join(f.operador === "between" ? " – " : ", ") : f.valor;
+  const valor = Array.isArray(f.valor)
+    ? f.valor.map(v => humanizeValor(f.campo, v, opcionesPorCampo)).join(f.operador === "between" ? " – " : ", ")
+    : humanizeValor(f.campo, f.valor, opcionesPorCampo);
   return `${campo}: ${valor}`;
 }
 
@@ -95,7 +114,7 @@ export function ReportesView({ projects, engineers }) {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     const porConsulta = {
-      actividades: { proyecto_id: proyectoOpciones, tipo: TIPOS_EVENTO_ACTIVIDAD, origen: ORIGENES_EVENTO },
+      actividades: { proyecto_id: proyectoOpciones, tipo: TIPOS_EVENTO_ACTIVIDAD },
       ingenieros:  { ingeniero_id: ingenieroOpciones, proyecto_id: proyectoOpciones, estado: ESTADOS_INGENIERO_REPORTE },
       proyectos:   { proyecto_id: proyectoOpciones, estado: ESTADOS_PROYECTO, prioridad: PRIORIDADES_PROYECTO },
       notas:       { proyecto_id: proyectoOpciones, tipo: TIPOS_NOTA },
@@ -209,6 +228,10 @@ export function ReportesView({ projects, engineers }) {
             </div>
           </div>
 
+          {DESCRIPCION_CONSULTA[consulta] && (
+            <p className="reportes-view__consulta-hint">{DESCRIPCION_CONSULTA[consulta]}</p>
+          )}
+
           <ReportesSavedPanel
             currentConfig={{ consulta, filtros, columnas: columnasVisibles }}
             onLoad={handleLoadSaved}
@@ -220,7 +243,7 @@ export function ReportesView({ projects, engineers }) {
             <div className="reportes-chips">
               {filtros.map(f => (
                 <span key={f.campo} className="reportes-chip">
-                  {humanizeFiltro(f)}
+                  {humanizeFiltro(f, opcionesPorCampo)}
                   <button type="button" className="reportes-chip__remove" onClick={() => handleRemoveFiltro(f.campo)}>✕</button>
                 </span>
               ))}

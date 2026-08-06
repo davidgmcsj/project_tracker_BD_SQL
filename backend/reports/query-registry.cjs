@@ -28,10 +28,8 @@ const REGISTRY = {
            LEFT JOIN Actividades_Detalle ad ON ad.AppActividadID = ae.AppActividadID
            LEFT JOIN Proyectos p            ON p.AppID = ae.AppProyectoID`,
     filtros: {
-      semana_iso:   { columna: "ae.SemanaISO",    tipo: "texto",       sqlType: sql.Char(8),      operador: ["="] },
       proyecto_id:  { columna: "ae.AppProyectoID", tipo: "lista",       sqlType: sql.NVarChar(60), operador: ["=", "in"] },
       tipo:         { columna: "ae.Tipo",          tipo: "lista",       sqlType: sql.NVarChar(30), operador: ["=", "in"] },
-      origen:       { columna: "ae.Origen",        tipo: "lista",       sqlType: sql.NVarChar(30), operador: ["=", "in"] },
       fecha_evento: { columna: "ae.FechaEvento",   tipo: "rango_fecha", sqlType: sql.Date,         operador: ["between", "=", ">=", "<="] },
     },
     columnasPermitidas: {
@@ -43,8 +41,6 @@ const REGISTRY = {
       valor_anterior: "ae.ValorAnterior",
       valor_nuevo:    "ae.ValorNuevo",
       fecha_evento:   "ae.FechaEvento",
-      semana_iso:     "ae.SemanaISO",
-      origen:         "ae.Origen",
     },
     columnasDefault: ["proyecto", "actividad", "tipo", "valor_anterior", "valor_nuevo", "fecha_evento"],
     ordenDefault: [{ campo: "fecha_evento", direccion: "desc" }],

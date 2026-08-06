@@ -11,6 +11,7 @@
 
 import { useState, useMemo } from "react";
 import StatusBadge from "./engineer/StatusBadge";
+import { ESTADOS_PROYECTO } from "../utils/filtroOpciones";
 
 function humanize(key) {
   return key.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
@@ -23,9 +24,17 @@ function humanize(key) {
 const STATUS_COLUMNS = new Set(["estado"]);
 const KNOWN_STATUSES = new Set(["not_started", "in_progress", "completed"]);
 
+// La consulta "proyectos" usa OTRO vocabulario de estado (on-track/at-risk/
+// blocked/completed/mejora-continua, EstadoProyecto en SQL) — distinto del de
+// actividad, así que no encaja en StatusBadge (sus colores son para
+// completada/en proceso/no iniciada). Se traduce a texto con el mismo enum
+// que ya usa el filtro (filtroOpciones.js), en vez de dejarlo en crudo.
+const ESTADO_PROYECTO_LABEL = Object.fromEntries(ESTADOS_PROYECTO.map(e => [e.value, e.label]));
+
 function formatCell(col, value) {
   if (value == null) return "—";
   if (STATUS_COLUMNS.has(col) && KNOWN_STATUSES.has(value)) return <StatusBadge status={value} />;
+  if (STATUS_COLUMNS.has(col) && ESTADO_PROYECTO_LABEL[value]) return ESTADO_PROYECTO_LABEL[value];
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
   if (typeof value === "boolean") return value ? "Sí" : "No";
   return String(value);

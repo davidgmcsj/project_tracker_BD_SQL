@@ -28,7 +28,7 @@ test("campo de filtro no permitido lanza ReportQueryError", () => {
 
 test("operador no permitido para el campo lanza ReportQueryError", () => {
   assert.throws(
-    () => buildQuery({ consulta: "actividades", filtros: [{ campo: "semana_iso", operador: "in", valor: ["2026-W01"] }] }),
+    () => buildQuery({ consulta: "actividades", filtros: [{ campo: "tipo", operador: "between", valor: ["a", "b"] }] }),
     ReportQueryError
   );
 });
@@ -63,18 +63,18 @@ test("sin filtros usa columnas y orden por defecto de la consulta", () => {
 
 test("acumulatividad: agregar un filtro nunca amplía el WHERE, solo lo reduce con AND", () => {
   const sinFiltro = buildQuery({ consulta: "actividades" });
-  const conUnFiltro = buildQuery({ consulta: "actividades", filtros: [{ campo: "semana_iso", operador: "=", valor: "2026-W32" }] });
+  const conUnFiltro = buildQuery({ consulta: "actividades", filtros: [{ campo: "tipo", operador: "=", valor: "estado" }] });
   const conDosFiltros = buildQuery({
     consulta: "actividades",
     filtros: [
-      { campo: "semana_iso", operador: "=", valor: "2026-W32" },
       { campo: "tipo", operador: "=", valor: "estado" },
+      { campo: "proyecto_id", operador: "=", valor: "abc123" },
     ],
   });
 
   assert.doesNotMatch(sinFiltro.dataSql, /WHERE/);
-  assert.match(conUnFiltro.dataSql, /WHERE ae\.SemanaISO = @f0/);
-  assert.match(conDosFiltros.dataSql, /WHERE ae\.SemanaISO = @f0 AND ae\.Tipo = @f1/);
+  assert.match(conUnFiltro.dataSql, /WHERE ae\.Tipo = @f0/);
+  assert.match(conDosFiltros.dataSql, /WHERE ae\.Tipo = @f0 AND ae\.AppProyectoID = @f1/);
 });
 
 test("filtro 'in' liga un parámetro por valor y arma IN (...)", () => {
