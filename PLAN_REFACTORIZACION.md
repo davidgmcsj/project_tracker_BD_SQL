@@ -32,7 +32,15 @@ El proyecto tiene **~26.400 líneas** repartidas así:
 
 **Esto es ~6 % del total, no el 50 % que sugiere la intuición.** Las otras ~24.900 líneas son funcionalidad legítima: 40 componentes React, 24 rutas HTTP, 19 migraciones, exportación a PDF/Excel, integración con 3 proveedores de IA, importación de Planner, Gantt, control de acceso por roles.
 
-**La conclusión honesta: el problema no es el número total de líneas, es su distribución.** Un archivo de 2.244 líneas es difícil de mantener aunque cada línea esté justificada. El objetivo de esta refactorización debe ser **reducir el tamaño del archivo más grande de 2.244 a ~250**, no reducir el total de 13.000 a 8.000 — ese segundo objetivo solo se lograría borrando funcionalidad.
+**La conclusión honesta: el problema no es el número total de líneas, es su distribución.** Un archivo de 2.244 líneas es difícil de mantener aunque cada línea esté justificada.
+
+### Objetivo acordado
+
+> **Ningún archivo del proyecto puede superar las 1.000 líneas.**
+
+Ese es el criterio de éxito, no el total. Hoy hay **3 archivos que lo incumplen** (`App.css` 6.082, `EditView.jsx` 2.244, `server.cjs` 1.303) y 4 más entre 800 y 1.000. Al terminar las 7 fases: **cero archivos por encima de 600 líneas**.
+
+Reducir el total de 13.000 a 8.000 solo se lograría borrando funcionalidad que hoy se usa.
 
 ### El riesgo que condiciona todo el plan
 
@@ -373,6 +381,164 @@ Independiente del resto — se puede hacer en paralelo a las Fases 2–4 sin con
 
 ---
 
+## 8bis. Fase 7 — Cerrar el techo de 1.000 líneas (obligatoria)
+
+> **Requisito del proyecto: ningún archivo puede superar las 1.000 líneas.**
+> Las Fases 1–6 dejan tres archivos que incumplen o rozan ese techo. Esta fase
+> los cierra. Sin ella, la respuesta a "¿todos los archivos quedan bajo 1.000?"
+> es **no**.
+
+### Estado tras las Fases 1–6 (antes de esta fase)
+
+| Archivo | Líneas | ¿Cumple? |
+|---|---:|---|
+| `App.css` | **~5.089** (tras quitar el CSS muerto) | 🔴 **No — 5× el límite** |
+| `App.jsx` | **889** | 🟡 Cumple, pero sin margen |
+| `utils/formulas.js` | **853** | 🟡 Cumple, pero sin margen |
+
+### 7.1 — `App.css`: 6.082 → 14 archivos de ~200–600 líneas
+
+**Buena noticia medida:** el archivo **ya está seccionado** con ~60 comentarios de bloque (`/* ═══ NOMBRE ═══ */`). La división consiste en cortar por esas fronteras existentes, no en reorganizar reglas. Eso reduce mucho el riesgo.
+
+```
+frontend/src/styles/
+├── index.css              ~40   Solo @import en ORDEN ESTRICTO (ver abajo)
+├── tokens.css             ~90   :root (línea 8) + tema oscuro (línea 72)
+├── base.css              ~120   App shell, tipografía, reset
+├── layout.css            ~180   Header, footer, navegación, NavGroup
+├── components/
+│   ├── buttons.css       ~130   Botones, add-item, export dropdown
+│   ├── forms.css         ~250   Form fields, list-field draft, combobox
+│   ├── tables.css        ~200   Metrics table, engineer table, jerarquía
+│   ├── modals.css        ~280   Delete confirm, quarter reset, planner import
+│   ├── cards.css         ~240   KPI cards, stat cards, project card, add card
+│   └── badges.css        ~150   Status pills, indicator badge, progress ring, minibar
+├── views/
+│   ├── dashboard.css     ~280   Summary, grid, search, panel de asignaciones
+│   ├── edit.css          ~600   EditView, activities list, task status board
+│   ├── report.css        ~450   Report, bullets, global status, milestones
+│   ├── engineers.css     ~380   Engineer cards, week cards, hub, selected list
+│   ├── activity-modal.css ~500  ACTIVITY DETAIL MODAL (adm-*, líneas 3887–4748)
+│   ├── bulk-assign.css   ~300   BULK ASSIGN PANEL (líneas 3573–3868)
+│   ├── gantt.css         ~180   Diagrama de Gantt (líneas 5136–5309)
+│   └── reportes.css      ~420   Módulo de reportería (líneas 5424–6082)
+└── responsive.css        ~120   Las 7 @media queries agrupadas al final
+```
+
+Ninguno supera 600. El mayor (`edit.css`) queda al 60 % del límite.
+
+#### 🔴 El riesgo real de esta subfase: el orden de las reglas
+
+**En CSS, ante igual especificidad gana la regla que aparece después.** Al repartir en archivos, el orden de los `@import` **debe reproducir exactamente el orden original**. Si se altera, hay reglas que dejan de aplicarse y la app se rompe visualmente — sin ningún error en consola.
+
+Reglas de ejecución obligatorias:
+
+1. **`index.css` importa en el mismo orden en que aparecían las secciones en `App.css`.** No reordenar por "lógica" ni por orden alfabético.
+2. **Las 7 `@media` van al final**, en su orden original entre sí (líneas 638, 1470, 1652, 1806, 2707, 3225, 5582). Hoy están dispersas; agruparlas al final **es seguro** porque las media queries solo se aplican a su breakpoint, pero solo si mantienen su orden relativo.
+3. **`tokens.css` va siempre primero.** Todo lo demás depende de las variables `--text`, `--green`, etc.
+
+#### Método de verificación (obligatorio en esta subfase)
+
+Como no hay tests visuales, la única red es la comparación byte a byte:
+
+```bash
+# 1. ANTES de dividir — huella del CSS compilado
+cd frontend && npm run build
+cp dist/assets/*.css /tmp/css-antes.css
+
+# 2. Dividir el archivo
+
+# 3. DESPUÉS — comparar el resultado compilado
+npm run build
+cp dist/assets/*.css /tmp/css-despues.css
+
+# 4. La comparación debe ser IDÉNTICA salvo orden de líneas
+diff <(sort /tmp/css-antes.css) <(sort /tmp/css-despues.css)
+```
+
+Si `diff` sale vacío, **ninguna regla se perdió**. Si el `diff` ordenado está vacío pero el sin ordenar no, el contenido es el mismo pero cambió el orden → revisar el punto 1.
+
+**Además:** revisión visual en el navegador de las 6 vistas principales (Dashboard, Editar, Reporte, Ingenieros, Reportes, Gantt) en claro y oscuro. **Esto lo tiene que hacer una persona** — el entorno de agente no puede verificar visualmente.
+
+### 7.2 — `utils/formulas.js`: 853 → 6 archivos
+
+Los 53 exports agrupan de forma natural por dominio:
+
+```
+frontend/src/utils/
+├── formulas.js          ~30   Fachada: re-exporta todo (no rompe los imports existentes)
+├── dates.js            ~110   getWeekLabel, getToday, formatDateDMY, getMondayOf,
+│                              isSameWeek, getNextFriday, getWeekRangeLabel,
+│                              businessDaysBetween, suggestedWorkHours  (líneas 17–70, 210–230)
+├── progress.js          ~90   projectProgress, globalProgress, globalStats,
+│                              totalPlannedHours, avgActivityProgress, aggregatedProgress
+├── activities.js       ~230   createActivity, visibleActivities, buildActivityIndex,
+│                              activityText/Label, buildActivityTree, flattenTree,
+│                              formatHierarchyNumber, wouldCreateCycle  (líneas 133–397)
+├── factories.js        ~120   createDefaultProject, createDefault*, createChecklistItem,
+│                              createKeyDate, gen*Id  (líneas 100–132, 398–442)
+├── engineerTasks.js    ~180   createEngineerTask, normalizeEngineerTask,
+│                              applyEngineerTaskStatus, buildEngineerIndex,
+│                              engineerName, shortEngineerName  (líneas 443–702)
+└── reportText.js       ~150   generateReportText, generateSingleProjectReportText,
+                               generateAssignments*  (líneas 703–853)
+```
+
+**Clave para no romper nada:** `formulas.js` queda como **fachada que re-exporta todo**. Los ~20 archivos que hoy hacen `import { formatDateDMY } from "../utils/formulas"` **no cambian ni una línea**. La migración de imports a los módulos concretos es opcional y posterior.
+
+`formulas.js` ya tiene 93 líneas de test (`formulas.test.js`) — hay que repartirlos en paralelo a la división.
+
+### 7.3 — `App.jsx`: 889 → ~380
+
+En el análisis de §2.5 argumenté no introducir Context ni router, y eso **sigue en pie**: el prop drilling es de 2 niveles, no justifica el cambio de arquitectura.
+
+**Pero partir el archivo no requiere cambiar la arquitectura.** Se extraen los handlers y efectos a hooks propios, y las props siguen fluyendo exactamente igual:
+
+```
+frontend/src/
+├── App.jsx                    ~380  Composición + render. Sin lógica de negocio.
+├── hooks/
+│   ├── useProjects.js         ~150  Carga, guardado, handleSaveEditedProject,
+│   │                                handleGoToProject, control de versión
+│   ├── useReport.js           ~130  handleSaveReport, handleReportDateChange,
+│   │                                handleGenerateGlobalStatus  (líneas 346–593)
+│   └── useAppNavigation.js     ~60  buildTabs, tabContainsView, el efecto que
+│                                    fuerza la vista de no-admin
+└── constants/
+    └── tabs.js                 ~70  BASE_TABS, LOCKED_TABS, STAT_CARDS,
+                                     getStatValue, countByStatus  (líneas 38–109)
+```
+
+Riesgo bajo: es mover funciones a hooks sin cambiar qué hacen. El único cuidado es que los `useCallback` conserven sus arrays de dependencias exactos.
+
+### Resultado final tras la Fase 7
+
+| Archivo mayor por capa | Antes | Después |
+|---|---:|---:|
+| Backend | 1.303 | ~200 |
+| Frontend JSX | 2.244 | ~330 |
+| Frontend utils | 853 | ~230 |
+| **CSS** | **6.082** | **~600** |
+| `App.jsx` | 889 | ~380 |
+
+| Métrica | Antes | Después |
+|---|---:|---:|
+| Archivos > 1.000 líneas | **3** | **0** |
+| Archivos > 800 líneas | 4 | **0** |
+| Archivos > 600 líneas | 7 | **0** |
+
+**Respuesta a "¿todos los archivos quedan bajo 1.000 líneas?": sí, sin excepciones.** El mayor de todo el proyecto rondará las 600.
+
+### Esfuerzo
+
+| Subfase | Esfuerzo | Riesgo |
+|---|---|---|
+| 7.1 `App.css` → 14 archivos | 2–3 días | 🔴 Medio-alto (visual, sin tests) |
+| 7.2 `formulas.js` → 6 archivos | 1 día | 🟢 Bajo (fachada protege los imports) |
+| 7.3 `App.jsx` → hooks | 1 día | 🟢 Bajo |
+
+---
+
 ## 9. Riesgos críticos
 
 ### 🔴 CRÍTICO — Orden de middlewares en `server.cjs`
@@ -442,21 +608,35 @@ Es una inconsistencia **preexistente**. No la introduzcas ni la "arregles" duran
 | **4** | `EditView.jsx` → 14 archivos | Medio | 2–3 días |
 | **5** | `gemini-report.cjs` → 6 archivos | Bajo | 1 día |
 | **6** | Los otros 4 componentes grandes | Medio | 2–3 días |
+| **7** | **`App.css`, `formulas.js`, `App.jsx`** — cierra el techo de 1.000 | Medio-alto | 4–5 días |
 
-**Total: ~3 semanas de trabajo enfocado.**
+**Total: ~4 semanas de trabajo enfocado.**
 
 ### Antes / después
 
 | Métrica | Antes | Después |
 |---|---:|---:|
-| Archivo más grande (backend) | 1.303 | ~200 |
-| Archivo más grande (frontend) | 2.244 | ~330 |
+| **Archivos > 1.000 líneas** | **3** | **0** |
 | Archivos > 800 líneas | 4 | **0** |
+| Archivos > 600 líneas | 7 | **0** |
+| Archivo más grande (backend) | 1.303 | ~200 |
+| Archivo más grande (frontend JSX) | 2.244 | ~330 |
+| Archivo más grande (CSS) | 6.082 | ~600 |
 | CSS muerto | ~993 | 0 |
 | Cobertura de rutas HTTP | 0 % | ~100 % |
-| Total de líneas | ~26.400 | **~25.300** |
+| Total de líneas | ~26.400 | **~25.500** |
 
-**El total baja solo un 4 %.** Ese es el punto honesto de todo este documento: la refactorización no va de escribir menos código, va de que ningún archivo sea inabarcable y de que exista una red de tests. Reducir 13.000 líneas de frontend a 8.000 solo sería posible eliminando funcionalidad que hoy se usa.
+**El total baja solo un 3–4 %, pero el archivo más grande del proyecto pasa de 6.082 a ~600 líneas: una reducción de 10×.** Ese es el punto honesto de todo este documento. La refactorización no va de escribir menos código, va de que ningún archivo sea inabarcable y de que exista una red de tests.
+
+### Verificación del objetivo
+
+Al terminar, este comando debe devolver **cero resultados**:
+
+```bash
+# Ningún archivo de código por encima de 1.000 líneas
+find frontend/src backend -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.cjs" -o -name "*.css" \) \
+  -not -path "*/node_modules/*" | xargs wc -l | awk '$1 > 1000 && $2 != "total"'
+```
 
 ---
 
