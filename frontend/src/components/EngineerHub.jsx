@@ -15,7 +15,7 @@
 //                     EngineerReportView, insumo para reuniones e informe
 //                     trimestral.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getProjectsForEngineer,
   engineerWeekTasks,
@@ -118,10 +118,19 @@ export default function EngineerHub({
   engineers, projects,
   onAdd, onUpdate, onToggleActive, onUpdateTasks,
   onOpenActivity, // (projectId, activityId) => void — abre la tarjeta de detalle
+  initialSubtab,  // sub-pestaña con la que abrir al navegar desde fuera (NavGroup)
 }) {
-  const [subtab, setSubtab] = useState("mi-semana");
+  const [subtab, setSubtab] = useState(initialSubtab || "mi-semana");
   const [selectedId, setSelectedId] = useState(null);
   const [toast, setToast] = useState("");
+
+  // App.jsx sigue montando este mismo componente al pasar de "Equipo y mi
+  // semana" a "Historial por ingeniero" (misma posición en el árbol) — sin
+  // esto, la sub-pestaña interna quedaba pegada a la primera que se abrió,
+  // sin importar cuál opción del menú se hubiera clickeado después.
+  useEffect(() => {
+    if (initialSubtab) setSubtab(initialSubtab);
+  }, [initialSubtab]);
 
   const activeList = (engineers || []).filter(e => e.active !== false);
   const eng = (engineers || []).find(e => e.id === selectedId) || activeList[0] || null;

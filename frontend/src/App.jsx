@@ -729,6 +729,8 @@ export default function App() {
         )}
         {(view === "engineers" || view === "engineer-report") && (
           <EngineerHub
+            key={view}
+            initialSubtab={view === "engineer-report" ? "historial" : "mi-semana"}
             engineers={engineers}
             projects={projects}
             onAdd={addEngineer}
