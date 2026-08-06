@@ -55,12 +55,20 @@ const BASE_TABS = [
   },
 ];
 
+// Un usuario SIN rol admin (migración 019) solo ve un botón fijo a su propio
+// dashboard — nada de Dashboard general, Editar, Reportes ni Administración.
+// El botón oculto aquí es la primera capa (evita el clic normal); la guarda
+// real está en el useEffect de arriba (fuerza `view` aunque alguien navegue
+// directo por URL) y en el backend (requireApiKey/requireAdmin siguen
+// aplicando sin importar qué muestre esta nav).
+const LOCKED_TABS = [{ key: "engineers", label: "Mi dashboard" }];
+
 // "Administración" (usuarios) solo se agrega para admins — un usuario normal
 // ni siquiera ve el botón, no solo se le bloquea el endpoint (eso ya lo hace
 // requireAdmin en el backend; esto es además no confundir con una opción que
 // de todos modos le daría 403).
 function buildTabs(esAdmin) {
-  if (!esAdmin) return BASE_TABS;
+  if (!esAdmin) return LOCKED_TABS;
   return [...BASE_TABS, { key: "admin-users", label: "Administración" }];
 }
 
@@ -133,6 +141,18 @@ export default function App() {
     await logout();
     setCurrentUser(null);
   };
+
+  // ── Restricción de navegación para usuarios sin rol admin (migración 019) ──
+  // Sin esto, un usuario no-admin podía llegar a Dashboard/Editar/Reportes/
+  // Administración por el valor por defecto de useUrlState ("dashboard") o
+  // por un enlace compartido con ?view=algo — el botón oculto en la nav
+  // (buildTabs) no alcanza para bloquear eso, solo evita el clic normal.
+  // Corre cada vez que currentUser o view cambian: cubre tanto el estado
+  // inicial como cualquier intento de navegar directo por URL después.
+  useEffect(() => {
+    if (!currentUser || currentUser.esAdmin) return;
+    if (view !== "engineers" && view !== "engineer-report") setView("engineers");
+  }, [currentUser, view, setView]);
 
   // Aplica el tema al documento y lo persiste. data-theme en <html> activa los
   // tokens del tema oscuro definidos en App.css.
@@ -635,21 +655,26 @@ export default function App() {
           <div className="header__info">
             <h1 className="header__title">Seguimiento Semanal</h1>
             <span className="header__week-range">{getWeekRangeLabel(reportDate)}</span>
-            <div className="header__meta">
-              <div className="header__date-group">
-                <label className="header__date-label">Fecha del Reporte</label>
-                <input
-                  type="date" className="header__date-input"
-                  value={reportDate}
-                  onChange={e => handleReportDateChange(e.target.value)}
-                  title="Fecha del reporte — cambia dentro de la semana sin perder datos"
-                />
-                <button className="btn btn--save-report" onClick={handleSaveReport} title="Guardar snapshot en el historial">
-                  💾 Guardar reporte
-                </button>
+            {/* Fecha del reporte + "Guardar reporte" son acciones de cierre
+                semanal del PORTAFOLIO completo — no tienen sentido para un
+                usuario restringido a su propio dashboard de ingeniero. */}
+            {currentUser?.esAdmin && (
+              <div className="header__meta">
+                <div className="header__date-group">
+                  <label className="header__date-label">Fecha del Reporte</label>
+                  <input
+                    type="date" className="header__date-input"
+                    value={reportDate}
+                    onChange={e => handleReportDateChange(e.target.value)}
+                    title="Fecha del reporte — cambia dentro de la semana sin perder datos"
+                  />
+                  <button className="btn btn--save-report" onClick={handleSaveReport} title="Guardar snapshot en el historial">
+                    💾 Guardar reporte
+                  </button>
+                </div>
+                {saveToast && <span className="header__toast">{saveToast}</span>}
               </div>
-              {saveToast && <span className="header__toast">{saveToast}</span>}
-            </div>
+            )}
           </div>
         </div>
 
@@ -674,14 +699,24 @@ export default function App() {
               />
             ))}
           </nav>
-          <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
-          <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
+          {/* "Nueva semana" (borra campos semanales de TODOS los proyectos) y
+              "Restaurar respaldo" son acciones destructivas/globales de
+              administración del portafolio — solo para admins. */}
+          {currentUser?.esAdmin && (
+            <>
+              <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
+              <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
+            </>
+          )}
           <UserMenu user={currentUser} theme={theme} onToggleTheme={toggleTheme} onLogout={handleLogout} />
         </div>
       </header>
 
       <main className="main-content">
-        {view !== "edit" && view !== "reportes" && view !== "admin-users" && (
+        {/* Avance/KPIs del PORTAFOLIO completo — un no-admin ya queda forzado
+            a view==="engineers" (ver useEffect de arriba), pero esta franja
+            mostraría el avance de TODOS los proyectos, no solo los suyos. */}
+        {currentUser?.esAdmin && view !== "edit" && view !== "reportes" && view !== "admin-users" && (
           <section className="summary">
             <div className="summary__progress">
               <ProgressRing percent={stats.percent} color="var(--accent)" />
@@ -743,6 +778,7 @@ export default function App() {
             initialSubtab={view === "engineer-report" ? "historial" : "mi-semana"}
             engineers={engineers}
             projects={projects}
+            lockedEngineerId={currentUser?.esAdmin ? null : currentUser?.ingenieroId ?? null}
             onAdd={addEngineer}
             onUpdate={updateEngineer}
             onToggleActive={toggleEngineerActive}

@@ -119,6 +119,11 @@ export default function EngineerHub({
   onAdd, onUpdate, onToggleActive, onUpdateTasks,
   onOpenActivity, // (projectId, activityId) => void — abre la tarjeta de detalle
   initialSubtab,  // sub-pestaña con la que abrir al navegar desde fuera (NavGroup)
+  lockedEngineerId, // sql_id del ingeniero al que un usuario no-admin queda
+                    // restringido (migración 019) — oculta el selector y
+                    // "Equipo" (esa sub-pestaña ESCRIBE datos de cualquier
+                    // ingeniero, no solo el propio). null/undefined = sin
+                    // restricción, comportamiento de admin de siempre.
 }) {
   const [subtab, setSubtab] = useState(initialSubtab || "mi-semana");
   const [selectedId, setSelectedId] = useState(null);
@@ -132,8 +137,13 @@ export default function EngineerHub({
     if (initialSubtab) setSubtab(initialSubtab);
   }, [initialSubtab]);
 
+  const isLocked = lockedEngineerId != null;
   const activeList = (engineers || []).filter(e => e.active !== false);
-  const eng = (engineers || []).find(e => e.id === selectedId) || activeList[0] || null;
+  // lockedEngineerId es el sql_id (columna Usuarios.IngenieroID, viene de
+  // SQL) — distinto de e.id (el id local del catálogo que usa selectedId).
+  const eng = isLocked
+    ? (engineers || []).find(e => e.sql_id === lockedEngineerId) || null
+    : (engineers || []).find(e => e.id === selectedId) || activeList[0] || null;
 
   const handleCopy = () => {
     if (!eng) return;
@@ -142,9 +152,21 @@ export default function EngineerHub({
       .catch(() => { setToast("No se pudo copiar"); setTimeout(() => setToast(""), 2500); });
   };
 
-  if (!activeList.length) {
+  if (isLocked && !eng) {
+    return (
+      <p style={{ color: "var(--text-2)", marginTop: 16 }}>
+        Tu usuario no está vinculado a ningún ingeniero activo del catálogo. Contacta a un administrador.
+      </p>
+    );
+  }
+  if (!isLocked && !activeList.length) {
     return <p style={{ color: "var(--text-2)", marginTop: 16 }}>Sin ingenieros activos. Agrega el primero en la pestaña "Equipo".</p>;
   }
+
+  // "Equipo" ESCRIBE datos de CUALQUIER ingeniero (alta, edición, tareas de
+  // otros) — un usuario bloqueado a su propio ingeniero no debe verla, ni
+  // siquiera de solo lectura, para no exponer al resto del equipo.
+  const visibleSubtabs = isLocked ? SUBTABS.filter(t => t.key !== "equipo") : SUBTABS;
 
   return (
     <div className="report-panel">
@@ -152,14 +174,16 @@ export default function EngineerHub({
         <h2 className="report-panel__title">Ingenieros</h2>
         {(subtab === "mi-semana" || subtab === "historial") && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <select
-              className="field__input"
-              style={{ minWidth: 220 }}
-              value={eng?.id || ""}
-              onChange={e => setSelectedId(e.target.value)}
-            >
-              {activeList.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
+            {!isLocked && (
+              <select
+                className="field__input"
+                style={{ minWidth: 220 }}
+                value={eng?.id || ""}
+                onChange={e => setSelectedId(e.target.value)}
+              >
+                {activeList.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            )}
             {subtab === "historial" && (
               <button className="btn btn--accent" onClick={handleCopy} disabled={!eng}>📋 Copiar reporte</button>
             )}
@@ -170,7 +194,7 @@ export default function EngineerHub({
       {toast && <div className="toast">{toast}</div>}
 
       <div className="tab-btn-row" style={{ margin: "12px 0 20px" }}>
-        {SUBTABS.map(t => (
+        {visibleSubtabs.map(t => (
           <button
             key={t.key}
             className={`tab-btn ${subtab === t.key ? "tab-btn--active" : ""}`}
@@ -203,7 +227,7 @@ export default function EngineerHub({
         </>
       )}
 
-      {subtab === "equipo" && (
+      {subtab === "equipo" && !isLocked && (
         <EngineersView
           engineers={engineers} projects={projects}
           onAdd={onAdd} onUpdate={onUpdate} onToggleActive={onToggleActive} onUpdateTasks={onUpdateTasks}
