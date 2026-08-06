@@ -2,6 +2,8 @@ import { useState } from "react";
 import { getProjectsForEngineer, getAllAssignedActivitiesInProject, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countLiveWeeklyTasks, countTotalAssignedTasks } from "../utils/engineers";
 import { createEngineerTask } from "../utils/formulas";
 import EngineerTaskModal from "./EngineerTaskModal";
+import EngineerActivitiesTable from "./engineer/EngineerActivitiesTable";
+import AdditionalTasksTable from "./engineer/AdditionalTasksTable";
 
 const STATUS_LABELS = { "on-track": "En curso", "at-risk": "En riesgo", blocked: "Bloqueado", completed: "Completado", "mejora-continua": "Mejora Continua" };
 
@@ -131,56 +133,6 @@ function EngineerCard({ eng, projects, onUpdate, onToggleActive, onOpenDetail })
   );
 }
 
-// ── Tabla de actividades reutilizable (esta semana / todas las asignadas) ─────
-
-function ActivitiesTable({ activities, completedSet, inProgressSet }) {
-  return (
-    <div className="metrics-container" style={{ overflowX: "auto" }}>
-      <table className="metrics-table metrics-table--project">
-        <thead>
-          <tr>
-            <th style={{ width: "40px", textAlign: "center" }}>#</th>
-            <th>Actividad</th>
-            <th style={{ width: "120px" }}>Estado</th>
-            <th style={{ width: "110px" }}>Inscrita</th>
-            <th style={{ width: "110px" }}>En proceso</th>
-            <th style={{ width: "110px" }}>Completada</th>
-          </tr>
-        </thead>
-        <tbody>
-          {activities.map(a => {
-            const isCompleted = completedSet.has(a.id);
-            const isInProgress = inProgressSet.has(a.id);
-
-            let statusClass = "eng-badge--pending";
-            let statusLabelText = "No iniciada";
-            if (isCompleted) {
-              statusClass = "eng-badge--done";
-              statusLabelText = "Completada";
-            } else if (isInProgress) {
-              statusClass = "eng-badge--wip";
-              statusLabelText = "En proceso";
-            }
-
-            return (
-              <tr key={a.id}>
-                <td style={{ textAlign: "center", fontWeight: 700 }}>{a.position}</td>
-                <td>{a.text}</td>
-                <td>
-                  <span className={`eng-badge ${statusClass}`}>{statusLabelText}</span>
-                </td>
-                <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{a.history.added || "—"}</td>
-                <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{a.history.in_progress || "—"}</td>
-                <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{a.history.completed || "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 // ── Sub-tarjeta de proyecto dentro del detalle del ingeniero ─────────────────
 
 function ProjectActivitiesCard({ project, engineerId }) {
@@ -215,7 +167,7 @@ function ProjectActivitiesCard({ project, engineerId }) {
           Sin actividades asignadas esta semana en este proyecto.
         </p>
       ) : (
-        <ActivitiesTable activities={weeklyActivities} completedSet={completedSet} inProgressSet={inProgressSet} />
+        <EngineerActivitiesTable activities={weeklyActivities} completedSet={completedSet} inProgressSet={inProgressSet} />
       )}
 
       {/* Sección 2: todas las actividades asignadas al ingeniero en el proyecto */}
@@ -228,19 +180,13 @@ function ProjectActivitiesCard({ project, engineerId }) {
           Sin actividades asignadas a este ingeniero en el proyecto.
         </p>
       ) : (
-        <ActivitiesTable activities={allActivities} completedSet={completedSet} inProgressSet={inProgressSet} />
+        <EngineerActivitiesTable activities={allActivities} completedSet={completedSet} inProgressSet={inProgressSet} />
       )}
     </div>
   );
 }
 
 // ── Tareas sueltas (no asociadas a ningún proyecto) ───────────────────────────
-
-const TASK_STATUS_META = {
-  not_started: { label: "No iniciada", cls: "eng-badge--pending" },
-  in_progress: { label: "En proceso",  cls: "eng-badge--wip"     },
-  completed:   { label: "Completada",  cls: "eng-badge--done"    },
-};
 
 function LooseTasksSection({ tasks, onChange, engineerName }) {
   const [draft,   setDraft]   = useState("");
@@ -258,7 +204,6 @@ function LooseTasksSection({ tasks, onChange, engineerName }) {
   const saveTask = (updated) => onChange(list.map(t => t.id === updated.id ? updated : t));
   const remove   = (id)      => onChange(list.filter(t => t.id !== id));
 
-  const taskHistory = t => ({ added: t.date || "", in_progress: "", completed: "", ...(t.history || {}) });
   const editingTask = list.find(t => t.id === editingId) || null;
 
   return (
@@ -293,49 +238,7 @@ function LooseTasksSection({ tasks, onChange, engineerName }) {
       )}
 
       {list.length > 0 ? (
-        <div className="metrics-container" style={{ overflowX: "auto", marginTop: 8 }}>
-          <table className="metrics-table metrics-table--project">
-            <thead>
-              <tr>
-                <th>Tarea</th>
-                <th style={{ width: "120px" }}>Estado</th>
-                <th style={{ width: "80px", textAlign: "center" }}>Avance</th>
-                <th style={{ width: "110px" }}>Inscrita</th>
-                <th style={{ width: "110px" }}>En proceso</th>
-                <th style={{ width: "110px" }}>Completada</th>
-                <th style={{ width: "40px" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map(t => {
-                const h = taskHistory(t);
-                const meta = TASK_STATUS_META[t.status] || TASK_STATUS_META.not_started;
-                return (
-                  <tr
-                    key={t.id}
-                    onClick={() => setEditingId(t.id)}
-                    style={{ cursor: "pointer" }}
-                    title="Clic para editar el detalle de la tarea"
-                  >
-                    <td>{t.description}</td>
-                    <td><span className={`eng-badge ${meta.cls}`}>{meta.label}</span></td>
-                    <td style={{ textAlign: "center" }}>{Number(t.progress) ? `${t.progress}%` : "—"}</td>
-                    <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{h.added || "—"}</td>
-                    <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{h.in_progress || "—"}</td>
-                    <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{h.completed || "—"}</td>
-                    <td style={{ textAlign: "center" }}>
-                      <button
-                        type="button" className="act-list__remove"
-                        onClick={e => { e.stopPropagation(); remove(t.id); }}
-                        title="Eliminar"
-                      >✕</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <AdditionalTasksTable tasks={list} mode="edit" onEdit={setEditingId} onRemove={remove} />
       ) : (
         !adding && <p className="act-list__empty">Sin tareas adicionales registradas.</p>
       )}

@@ -11,8 +11,9 @@ import {
   engineerWeekTasks,
   engineerNextWeekTasks,
 } from "../utils/engineers";
-import { SITUATION_LABEL } from "../utils/weekPlanning";
-import { formatDateDMY } from "../utils/formulas";
+import EngineerActivitiesTable from "./engineer/EngineerActivitiesTable";
+import AdditionalTasksTable from "./engineer/AdditionalTasksTable";
+import EngineerWeekTable from "./engineer/EngineerWeekTable";
 
 // Calculada una vez al cargar el módulo (no en cada render): evita que el
 // React Compiler marque los useMemo de más abajo como impuros por depender
@@ -53,28 +54,6 @@ function engineerWorkload(engineerId, projects, tasks) {
   return { done, wip, pending, total, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
-const STATUS_META = {
-  completed:   { label: "Completada", cls: "eng-badge--done"    },
-  in_progress: { label: "En proceso", cls: "eng-badge--wip"     },
-  not_started: { label: "No iniciada", cls: "eng-badge--pending" },
-};
-
-function DatesCell({ history }) {
-  const h = history || {};
-  return (
-    <>
-      <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{h.added || "—"}</td>
-      <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{h.in_progress || "—"}</td>
-      <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{h.completed || "—"}</td>
-    </>
-  );
-}
-
-function StatusBadge({ status }) {
-  const meta = STATUS_META[status] || STATUS_META.not_started;
-  return <span className={`eng-badge ${meta.cls}`}>{meta.label}</span>;
-}
-
 function ProjectBlock({ project, engineerId }) {
   const acts = getAllAssignedActivitiesInProject(engineerId, project);
   return (
@@ -86,30 +65,7 @@ function ProjectBlock({ project, engineerId }) {
       {acts.length === 0 ? (
         <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin actividades asignadas en este proyecto.</p>
       ) : (
-        <div className="metrics-container" style={{ overflowX: "auto" }}>
-          <table className="metrics-table metrics-table--project">
-            <thead>
-              <tr>
-                <th style={{ width: "40px", textAlign: "center" }}>#</th>
-                <th>Actividad</th>
-                <th style={{ width: "120px" }}>Estado</th>
-                <th style={{ width: "110px" }}>Inscrita</th>
-                <th style={{ width: "110px" }}>En proceso</th>
-                <th style={{ width: "110px" }}>Completada</th>
-              </tr>
-            </thead>
-            <tbody>
-              {acts.map(a => (
-                <tr key={a.id}>
-                  <td style={{ textAlign: "center", fontWeight: 700 }}>{a.position}</td>
-                  <td>{a.text}</td>
-                  <td><StatusBadge status={a.status} /></td>
-                  <DatesCell history={a.history} />
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <EngineerActivitiesTable activities={acts} />
       )}
     </div>
   );
@@ -126,69 +82,8 @@ function AdditionalTasksBlock({ tasks }) {
       {list.length === 0 ? (
         <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin tareas adicionales registradas.</p>
       ) : (
-        <div className="metrics-container" style={{ overflowX: "auto" }}>
-          <table className="metrics-table metrics-table--project">
-            <thead>
-              <tr>
-                <th>Tarea</th>
-                <th style={{ width: "120px" }}>Estado</th>
-                <th style={{ width: "70px", textAlign: "center" }}>Avance</th>
-                <th style={{ width: "110px" }}>Inscrita</th>
-                <th style={{ width: "110px" }}>En proceso</th>
-                <th style={{ width: "110px" }}>Completada</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map(t => {
-                const h = { added: t.date || "", in_progress: "", completed: "", ...(t.history || {}) };
-                return (
-                  <tr key={t.id}>
-                    <td>{t.description}</td>
-                    <td><StatusBadge status={t.status} /></td>
-                    <td style={{ textAlign: "center" }}>{Number(t.progress) ? `${t.progress}%` : "—"}</td>
-                    <DatesCell history={h} />
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <AdditionalTasksTable tasks={list} mode="read" />
       )}
-    </div>
-  );
-}
-
-// Tabla "mi semana" / "próxima semana": actividad + proyecto de origen +
-// fechas + situación, cruzando TODOS los proyectos del ingeniero. Distinta de
-// la de EditView (que ya sabe en qué proyecto está, no necesita esa columna).
-function EngineerWeekTable({ rows }) {
-  if (rows.length === 0) {
-    return <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin actividades en este rango.</p>;
-  }
-  return (
-    <div className="metrics-container" style={{ overflowX: "auto" }}>
-      <table className="metrics-table metrics-table--project">
-        <thead>
-          <tr>
-            <th>Actividad</th>
-            <th style={{ width: "160px" }}>Proyecto</th>
-            <th style={{ width: "100px" }}>Inicio</th>
-            <th style={{ width: "100px" }}>Fin</th>
-            <th style={{ width: "140px" }}>Situación</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ activity, situation, projectName, projectId }) => (
-            <tr key={`${projectId}-${activity.id}`}>
-              <td>{activity.text || "(sin nombre)"}</td>
-              <td style={{ color: "var(--text-2)", fontSize: "12px" }}>{projectName}</td>
-              <td style={{ fontSize: "12px" }}>{formatDateDMY(activity.start_date)}</td>
-              <td style={{ fontSize: "12px" }}>{formatDateDMY(activity.due_date)}</td>
-              <td><span className={`week-auto-table__situation week-auto-table__situation--${situation}`}>{SITUATION_LABEL[situation]}</span></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
