@@ -6,15 +6,16 @@
 // que ya se vieron en pantalla, porque recibe exactamente las mismas filas.
 
 const ExcelJS = require("exceljs");
+const { translateEstado } = require("./estado-labels.cjs");
 
 function humanize(key) {
   return String(key).replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
 }
 
-function formatCell(value) {
+function formatCell(columna, value) {
   if (value == null) return "";
   if (value instanceof Date) return value;
-  return value;
+  return translateEstado(columna, value);
 }
 
 // { titulo, consulta, columnas: string[], filas: object[], filtrosAplicados, total }
@@ -28,7 +29,7 @@ async function toXlsxBuffer({ titulo, consulta, columnas, filas, filtrosAplicado
   hoja.columns = columnas.map(c => ({ header: humanize(c), key: c, width: Math.max(14, humanize(c).length + 4) }));
   filas.forEach(fila => {
     const row = {};
-    columnas.forEach(c => { row[c] = formatCell(fila[c]); });
+    columnas.forEach(c => { row[c] = formatCell(c, fila[c]); });
     hoja.addRow(row);
   });
   hoja.getRow(1).font = { bold: true };

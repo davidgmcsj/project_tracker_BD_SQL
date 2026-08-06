@@ -8,6 +8,7 @@
 
 const path    = require("path");
 const pdfmake = require("pdfmake");
+const { translateEstado } = require("./estado-labels.cjs");
 
 const PKG_DIR  = path.dirname(require.resolve("pdfmake/package.json"));
 const FONT_DIR = path.join(PKG_DIR, "fonts", "Roboto");
@@ -30,11 +31,11 @@ function humanize(key) {
   return String(key).replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
 }
 
-function formatCell(value) {
+function formatCell(columna, value) {
   if (value == null) return "—";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
-  return String(value);
+  return String(translateEstado(columna, value));
 }
 
 // { titulo, consulta, columnas: string[], filas: object[], filtrosAplicados, total }
@@ -45,7 +46,7 @@ async function toPdfBuffer({ titulo, consulta, columnas, filas, filtrosAplicados
 
   const tableBody = [
     columnas.map(c => ({ text: humanize(c), bold: true, color: "#ffffff", fillColor: "#003399" })),
-    ...filas.map(fila => columnas.map(c => formatCell(fila[c]))),
+    ...filas.map(fila => columnas.map(c => formatCell(c, fila[c]))),
   ];
 
   const docDefinition = {

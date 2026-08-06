@@ -7,6 +7,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const ExcelJS = require("exceljs");
 const { toXlsxBuffer } = require("../reports/export-excel.cjs");
 const { toPdfBuffer } = require("../reports/export-pdf.cjs");
 
@@ -49,4 +50,19 @@ test("toPdfBuffer con cero filas no revienta", async () => {
 test("toPdfBuffer sin filtros aplicados no revienta (texto por defecto)", async () => {
   const buffer = await toPdfBuffer({ ...payload, filtrosAplicados: [] });
   assert.equal(buffer.slice(0, 5).toString(), "%PDF-");
+});
+
+// El Excel/PDF se genera en el backend consultando SQL directo — nunca pasa
+// por ReportesTable.jsx (que traduce el estado en la vista previa). Sin
+// traducción propia en el exportador, la columna Estado salía en crudo
+// (not_started/in_progress/completed) en el archivo descargado, aunque la
+// vista previa en pantalla ya se viera bien.
+test("toXlsxBuffer traduce la columna 'estado' (not_started/in_progress/completed → español)", async () => {
+  const buffer = await toXlsxBuffer(payload);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const hoja = wb.getWorksheet(1);
+  const valores = [];
+  hoja.eachRow((row, rowNumber) => { if (rowNumber > 1) valores.push(row.getCell(3).value); });
+  assert.deepEqual(valores, ["En proceso", "Completada", "No iniciada"]);
 });
