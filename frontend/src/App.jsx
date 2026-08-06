@@ -12,6 +12,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import ProgressRing  from "./components/ProgressRing";
 import NavGroup from "./components/NavGroup";
 import UserMenu from "./components/UserMenu";
+import UsersAdminView from "./components/UsersAdminView";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
@@ -34,7 +35,7 @@ import "./App.css";
 // Las claves internas de `view` NO cambian — solo se agrupa cómo se navegan —
 // así que enlaces existentes con ?view="engineer-report" siguen abriendo lo
 // mismo que antes sin necesitar alias.
-const TABS = [
+const BASE_TABS = [
   { key: "dashboard", label: "Dashboard" },
   { key: "edit",       label: "Editar" },
   {
@@ -53,6 +54,15 @@ const TABS = [
     ],
   },
 ];
+
+// "Administración" (usuarios) solo se agrega para admins — un usuario normal
+// ni siquiera ve el botón, no solo se le bloquea el endpoint (eso ya lo hace
+// requireAdmin en el backend; esto es además no confundir con una opción que
+// de todos modos le daría 403).
+function buildTabs(esAdmin) {
+  if (!esAdmin) return BASE_TABS;
+  return [...BASE_TABS, { key: "admin-users", label: "Administración" }];
+}
 
 // Todas las claves de `view` que agrupa cada botón, para saber cuál grupo
 // resaltar como activo aunque `view` apunte a una de sus opciones internas.
@@ -645,7 +655,7 @@ export default function App() {
 
         <div className="header__actions">
           <nav className="header__nav">
-            {TABS.map(tab => tab.key ? (
+            {buildTabs(currentUser?.esAdmin).map(tab => tab.key ? (
               <button
                 key={tab.key}
                 className={`tab-btn ${view === tab.key ? "tab-btn--active" : ""}`}
@@ -671,7 +681,7 @@ export default function App() {
       </header>
 
       <main className="main-content">
-        {view !== "edit" && view !== "reportes" && (
+        {view !== "edit" && view !== "reportes" && view !== "admin-users" && (
           <section className="summary">
             <div className="summary__progress">
               <ProgressRing percent={stats.percent} color="var(--accent)" />
@@ -778,6 +788,9 @@ export default function App() {
           />
         )}
         {view === "reportes" && <ReportesView projects={projects} engineers={engineers} />}
+        {view === "admin-users" && currentUser?.esAdmin && (
+          <UsersAdminView engineers={engineers} />
+        )}
         {view === "edit" && (
           <EditView
             projects={projects} editingIdx={editingIdx}

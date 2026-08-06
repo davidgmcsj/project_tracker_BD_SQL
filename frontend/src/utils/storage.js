@@ -319,6 +319,35 @@ export async function exportReport(body, formato) {
   URL.revokeObjectURL(url);
 }
 
+// ── Administración de usuarios (solo admins — ver requireAdmin en server.cjs) ─
+// A diferencia de syncEngineerToSQL (que traga errores porque el guardado
+// local ya ocurrió antes de llamarlo), aquí NO hay guardado local previo —
+// si la petición falla, quien usa la pantalla de administración necesita
+// saberlo (usuario duplicado, contraseña corta, sin permiso), así que se
+// lanza el error con el mensaje del backend en vez de devolver null/[].
+async function usersFetch(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...(options.headers || {}) },
+    credentials: "include",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+export async function loadUsers() {
+  return usersFetch("/api/users");
+}
+
+export async function createUser(user) {
+  return usersFetch("/api/users", { method: "POST", body: JSON.stringify(user) });
+}
+
+export async function updateUser(userId, patch) {
+  return usersFetch(`/api/users/${userId}`, { method: "POST", body: JSON.stringify(patch) });
+}
+
 // ── Login por base de datos (Fase 9 revisada) ───────────────────────────────
 // Sesión en cookie httpOnly (el backend la pone/lee, el frontend nunca toca
 // el token directamente) — por eso ninguna de estas funciones lo maneja.
