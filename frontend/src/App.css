@@ -162,6 +162,27 @@
   border-radius: var(--radius-pill);
   padding: 3px;
 }
+
+/* ── Botón de navegación con desplegable (Fase 4: agrupa varias claves de
+   `view` bajo un solo botón, ej. "Ingenieros" → Equipo / Historial) ── */
+.nav-group { position: relative; }
+.nav-group__trigger { display: inline-flex; align-items: center; gap: 4px; }
+.nav-group__caret { font-size: 9px; opacity: .8; }
+.nav-group__menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+  min-width: 200px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg); padding: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.nav-group__item {
+  display: block; width: 100%; text-align: left;
+  border: none; background: none; padding: 8px 10px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: var(--t-sm); font-weight: 600; color: var(--text);
+  white-space: nowrap;
+}
+.nav-group__item:hover { background: var(--surface-2); }
+.nav-group__item--active { background: var(--accent-bg); color: var(--azul-oscuro); }
 .btn--theme {
   background: var(--surface-2);
   border: 1px solid var(--border);

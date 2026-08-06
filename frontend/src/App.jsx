@@ -10,6 +10,7 @@ import SaveConflictModal from "./components/SaveConflictModal";
 import { LoginScreen } from "./components/LoginScreen";
 import { CommandPalette } from "./components/CommandPalette";
 import ProgressRing  from "./components/ProgressRing";
+import NavGroup from "./components/NavGroup";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
@@ -25,6 +26,39 @@ import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import { recomputeWeeklyFields } from "./utils/weekPlanning";
 import { useUrlState } from "./hooks/useUrlState";
 import "./App.css";
+
+// Navegación principal (Fase 4 — de 7 pestañas planas a 4 grupos): "Ingenieros"
+// y "Reportes" agrupan varias claves de `view` que antes eran pestañas propias
+// y respondían la misma pregunta con datos que podían no coincidir (ver Fase 1).
+// Las claves internas de `view` NO cambian — solo se agrupa cómo se navegan —
+// así que enlaces existentes con ?view="engineer-report" siguen abriendo lo
+// mismo que antes sin necesitar alias.
+const TABS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "edit",       label: "Editar" },
+  {
+    label: "Ingenieros",
+    options: [
+      { key: "engineers",       label: "Equipo y mi semana" },
+      { key: "engineer-report", label: "Historial por ingeniero" },
+    ],
+  },
+  {
+    label: "Reportes",
+    options: [
+      { key: "report",   label: "Reporte semanal" },
+      { key: "reportes", label: "Consultas" },
+      { key: "quarters", label: "Trimestres" },
+    ],
+  },
+];
+
+// Todas las claves de `view` que agrupa cada botón, para saber cuál grupo
+// resaltar como activo aunque `view` apunte a una de sus opciones internas.
+function tabContainsView(tab, view) {
+  if (tab.key) return tab.key === view;
+  return tab.options.some(o => o.key === view);
+}
 
 const STAT_CARDS = [
   { dot: "done",     label: "Completadas"  },
@@ -610,20 +644,23 @@ export default function App() {
 
         <div className="header__actions">
           <nav className="header__nav">
-            {["dashboard", "edit", "report", "engineers", "engineer-report", "quarters", "reportes"].map(v => (
+            {TABS.map(tab => tab.key ? (
               <button
-                key={v}
-                className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
-                onClick={() => navigateTo(v)}
+                key={tab.key}
+                className={`tab-btn ${view === tab.key ? "tab-btn--active" : ""}`}
+                onClick={() => navigateTo(tab.key)}
               >
-                {v === "dashboard" ? "Dashboard"
-                  : v === "edit"            ? "Editar"
-                  : v === "report"          ? "Reporte"
-                  : v === "engineers"       ? "Ingenieros"
-                  : v === "engineer-report" ? "Rep. Ingenieros"
-                  : v === "quarters"        ? "Trimestres"
-                  :                           "Reportes"}
+                {tab.label}
               </button>
+            ) : (
+              <NavGroup
+                key={tab.label}
+                label={tab.label}
+                options={tab.options}
+                activeKey={view}
+                active={tabContainsView(tab, view)}
+                onSelect={navigateTo}
+              />
             ))}
           </nav>
           <button className="btn btn--theme" onClick={toggleTheme} title="Alternar modo claro / oscuro">
