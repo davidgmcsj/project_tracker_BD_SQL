@@ -3,6 +3,7 @@
 
 import { buildActivityIndex, getActivityStatus } from "./formulas.js";
 import { activitiesForWeek, weekRange, nextWeekRange, SITUATION } from "./weekPlanning.js";
+import { ESTADO_ACTIVIDAD_LABEL } from "./filtroOpciones.js";
 
 // Actividades del ingeniero en ese proyecto que asignadas a él, fuente de
 // verdad (assigned_engineers), sin pasar por el snapshot weekly_detail.
@@ -227,7 +228,7 @@ export function buildEngineerTotals(engineerId, projects, today = new Date()) {
 
 // ── Reporte por ingeniero (texto plano para copiar) ───────────────────────────
 
-const STATUS_TXT = { completed: "Completada", in_progress: "En proceso", not_started: "No iniciada" };
+const STATUS_TXT = ESTADO_ACTIVIDAD_LABEL;
 const fmt = d => d || "—";
 
 // Genera un reporte de texto plano para un ingeniero: sus actividades por proyecto

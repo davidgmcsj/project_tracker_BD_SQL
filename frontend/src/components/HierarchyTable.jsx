@@ -18,23 +18,14 @@ import {
   aggregatedProgress, getActivityStatus, shortEngineerName,
 } from "../utils/formulas";
 import { rescheduleAfterChange } from "../utils/scheduling";
+import { ESTADO_ACTIVIDAD_LABEL, estadoActividadKey } from "../utils/filtroOpciones";
 
 // getActivityStatus (formulas.js) devuelve labels en ESPAÑOL ("Completada",
 // "En proceso", "No iniciada") porque así los consumen los reportes de texto.
 // Este componente necesita las claves internas en inglés (not_started/
-// in_progress/completed) para sus propios estilos y filtros — este mapa es
-// la única traducción, evita el bug de comparar español contra inglés.
-const STATUS_LABEL_TO_KEY = {
-  "No iniciada": "not_started",
-  "En proceso":  "in_progress",
-  "Completada":  "completed",
-};
-
-const STATUS_LABEL = {
-  not_started: "No iniciada",
-  in_progress: "En proceso",
-  completed:   "Completada",
-};
+// in_progress/completed) para sus propios estilos y filtros — la traducción
+// vive en utils/filtroOpciones.js (estadoActividadKey), fuente única para
+// toda la app, y evita el bug de comparar español contra inglés.
 
 // Filtro de la vista (no toca el dato, solo qué filas se muestran).
 const STATUS_FILTERS = [
@@ -51,7 +42,7 @@ const STATUS_CLASS = {
 };
 
 function statusKey(taskStatus, actId) {
-  return STATUS_LABEL_TO_KEY[getActivityStatus(taskStatus, actId)] || "not_started";
+  return estadoActividadKey(getActivityStatus(taskStatus, actId));
 }
 
 // ── Helpers de presentación ───────────────────────────────────────────────────
@@ -134,7 +125,7 @@ function Row({
         <span className="htable__readonly-text">{hasChildren ? aggProgress : (a.progress || 0)}%</span>
       </td>
       <td className="htable__cell htable__cell--status">
-        <span className={`htable__status-pill ${STATUS_CLASS[status]}`}>{STATUS_LABEL[status]}</span>
+        <span className={`htable__status-pill ${STATUS_CLASS[status]}`}>{ESTADO_ACTIVIDAD_LABEL[status]}</span>
       </td>
       <td className="htable__cell htable__cell--actions">
         <button type="button" className="htable__icon-btn htable__icon-btn--danger" onClick={() => onDeleteActivity(a.id)} title="Eliminar">🗑</button>

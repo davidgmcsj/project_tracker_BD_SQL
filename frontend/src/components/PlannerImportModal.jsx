@@ -11,7 +11,8 @@ import { createActivity } from "../utils/formulas";
 // El modal NO crea ingenieros ni persiste: al confirmar llama onConfirm(payload)
 // y el padre (EditView) crea los ingenieros faltantes y guarda.
 
-const STATUS_LABEL = { completed: "Completada", in_progress: "En proceso", not_started: "No iniciada" };
+import { ESTADO_ACTIVIDAD_LABEL } from "../utils/filtroOpciones";
+
 const STATUS_CLASS = { completed: "done", in_progress: "wip", not_started: "pending" };
 
 export default function PlannerImportModal({
@@ -144,7 +145,7 @@ export default function PlannerImportModal({
                       <td title={r.assigneeNames.join(", ")}>{r.assigneeNames.join(", ") || "—"}</td>
                       <td>
                         <span className={`eng-badge eng-badge--${STATUS_CLASS[r.status]}`}>
-                          {STATUS_LABEL[r.status]}
+                          {ESTADO_ACTIVIDAD_LABEL[r.status]}
                         </span>
                       </td>
                       <td>{r.start_date || "—"}</td>

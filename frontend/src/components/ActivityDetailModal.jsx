@@ -2,14 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
 import { uploadAttachment, deleteAttachment, downloadAttachment } from "../utils/storage";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection, SubtasksSection } from "./ActivityFormSections";
+import { ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const STATUS_OPTIONS = [
-  { value: "not_started", label: "No iniciada" },
-  { value: "in_progress", label: "En proceso"  },
-  { value: "completed",   label: "Completada"  },
-];
+// Fuente única del vocabulario de estados (utils/filtroOpciones.js).
+const STATUS_OPTIONS = ESTADOS_ACTIVIDAD_OPERACIONAL;
 
 // Lista de horas planeadas: 0 (sin definir), 0.5, y luego de 1 en 1 hasta 40.
 const HOURS_OPTIONS = [0, 0.5, ...Array.from({ length: 40 }, (_, i) => i + 1)];

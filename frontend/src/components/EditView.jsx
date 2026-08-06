@@ -15,6 +15,7 @@ import ActivityDetailModal from "./ActivityDetailModal";
 import PlannerImportModal from "./PlannerImportModal";
 import { ProjectNotesPanel } from "./ProjectNotesPanel";
 import ProjectPlanningOverlays from "./ProjectPlanningOverlays";
+import { estadoActividadLabel } from "../utils/filtroOpciones";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -1282,7 +1283,7 @@ function BulkAssignPanel({ activities, engineerCatalog, externalContacts, taskSt
               const isChecked  = checked.has(a.id);
               const assignedEngs = a.assigned_engineers || [];
               const actStatus  = getActStatus(a.id);
-              const statusLabel = actStatus === "completed" ? "Completada" : actStatus === "in_progress" ? "En proceso" : "No iniciada";
+              const statusLabel = estadoActividadLabel(actStatus);
               const statusMod   = actStatus === "completed" ? "bulk-assign-row__status--done" : actStatus === "in_progress" ? "bulk-assign-row__status--progress" : "bulk-assign-row__status--pending";
               return (
                 <label

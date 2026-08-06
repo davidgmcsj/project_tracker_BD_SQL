@@ -1,10 +1,14 @@
 // StatusBadge.jsx — pastilla de estado (completada/en proceso/no iniciada)
 // reutilizada por las tablas de actividades del ingeniero.
 
-const STATUS_META = {
-  completed:   { label: "Completada",  cls: "eng-badge--done"    },
-  in_progress: { label: "En proceso",  cls: "eng-badge--wip"     },
-  not_started: { label: "No iniciada", cls: "eng-badge--pending" },
+import { ESTADO_ACTIVIDAD_LABEL } from "../../utils/filtroOpciones";
+
+// Solo la clase CSS vive aquí; la etiqueta viene de la fuente única
+// (utils/filtroOpciones.js) para no volver a tener el vocabulario duplicado.
+const STATUS_CLASS = {
+  completed:   "eng-badge--done",
+  in_progress: "eng-badge--wip",
+  not_started: "eng-badge--pending",
 };
 
 export function statusFromSets(id, completedSet, inProgressSet) {
@@ -14,6 +18,6 @@ export function statusFromSets(id, completedSet, inProgressSet) {
 }
 
 export default function StatusBadge({ status }) {
-  const meta = STATUS_META[status] || STATUS_META.not_started;
-  return <span className={`eng-badge ${meta.cls}`}>{meta.label}</span>;
+  const key = STATUS_CLASS[status] ? status : "not_started";
+  return <span className={`eng-badge ${STATUS_CLASS[key]}`}>{ESTADO_ACTIVIDAD_LABEL[key]}</span>;
 }

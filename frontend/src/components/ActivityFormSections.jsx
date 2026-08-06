@@ -4,6 +4,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createChecklistItem, createKeyDate, formatDateDMY } from "../utils/formulas";
+import { ESTADO_ACTIVIDAD_LABEL } from "../utils/filtroOpciones";
 
 // Fechas de transición de estado: Inscrita (added) / En proceso (in_progress) /
 // Completada (completed). Se auto-registran al cambiar de estado en la app, PERO
@@ -231,7 +232,6 @@ export function ChecklistSection({ items, onChange }) {
 // Distinta de "Subactividades" (ChecklistSection, arriba): esto son actividades
 // hijas reales (parent_id) con su propia tarjeta completa, fechas y estado,
 // visibles también en HierarchyTable/Gantt — no un checklist de texto plano.
-const SUBTASK_STATUS_LABEL = { not_started: "No iniciada", in_progress: "En proceso", completed: "Completada" };
 const SUBTASK_STATUS_CLASS = { not_started: "adm-subtask-status--not-started", in_progress: "adm-subtask-status--in-progress", completed: "adm-subtask-status--completed" };
 
 function subtaskStatusOf(taskStatus, actId) {
@@ -264,7 +264,7 @@ export function SubtasksSection({ subtasks, taskStatus, onCreate, onOpen, onRemo
                 <button type="button" className="adm-subtask-item__name" onClick={() => onOpen(s.id)} title="Abrir tarjeta completa">
                   {s.text || "(sin nombre)"}
                 </button>
-                <span className={`adm-subtask-status ${SUBTASK_STATUS_CLASS[st]}`}>{SUBTASK_STATUS_LABEL[st]}</span>
+                <span className={`adm-subtask-status ${SUBTASK_STATUS_CLASS[st]}`}>{ESTADO_ACTIVIDAD_LABEL[st]}</span>
                 {(s.start_date || s.due_date) && (
                   <span className="adm-subtask-item__dates">{s.start_date || "—"} → {s.due_date || "—"}</span>
                 )}

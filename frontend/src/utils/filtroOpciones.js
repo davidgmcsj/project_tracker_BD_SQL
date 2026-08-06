@@ -63,3 +63,43 @@ export const ESTADOS_ACTIVIDAD_OPERACIONAL = [
   { value: "in_progress", label: "En proceso" },
   { value: "completed",   label: "Completada" },
 ];
+
+// ── Derivados de ESTADOS_ACTIVIDAD_OPERACIONAL ───────────────────────────────
+// Este vocabulario estaba redefinido a mano en 10 componentes distintos, con
+// dos versiones del mapa inverso (label → clave) escritas por separado. Se
+// derivan todos de la lista de arriba para que exista UNA sola definición:
+// cambiar una etiqueta ahí la cambia en toda la app, incluido el mapa inverso.
+
+/** Clave → etiqueta. Ej: ESTADO_ACTIVIDAD_LABEL.in_progress === "En proceso" */
+export const ESTADO_ACTIVIDAD_LABEL = Object.fromEntries(
+  ESTADOS_ACTIVIDAD_OPERACIONAL.map(e => [e.value, e.label])
+);
+
+/**
+ * Etiqueta → clave. Necesario porque algunas fuentes (RawDataJSON, tablas
+ * jerárquicas) traen el estado ya traducido al español y hay que volver a la
+ * clave interna para comparar y aplicar estilos.
+ */
+export const ESTADO_ACTIVIDAD_KEY = Object.fromEntries(
+  ESTADOS_ACTIVIDAD_OPERACIONAL.map(e => [e.label, e.value])
+);
+
+/**
+ * Devuelve la etiqueta en español de un estado de actividad. Acepta tanto la
+ * clave interna ("in_progress") como una etiqueta ya traducida ("En proceso"),
+ * porque los datos llegan en ambos formatos según la fuente.
+ * Cae en "No iniciada" ante un valor desconocido o nulo — mismo criterio que
+ * ya aplicaban StatusBadge y las tablas.
+ */
+export function estadoActividadLabel(estado) {
+  if (!estado) return ESTADO_ACTIVIDAD_LABEL.not_started;
+  return ESTADO_ACTIVIDAD_LABEL[estado]
+    ?? (ESTADO_ACTIVIDAD_KEY[estado] ? estado : ESTADO_ACTIVIDAD_LABEL.not_started);
+}
+
+/** Normaliza a clave interna, venga como clave o como etiqueta en español. */
+export function estadoActividadKey(estado) {
+  if (!estado) return "not_started";
+  if (ESTADO_ACTIVIDAD_LABEL[estado]) return estado;
+  return ESTADO_ACTIVIDAD_KEY[estado] ?? "not_started";
+}

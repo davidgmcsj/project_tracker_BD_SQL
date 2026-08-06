@@ -6,12 +6,10 @@
 import { useState, useRef, useEffect } from "react";
 import { normalizeEngineerTask, applyEngineerTaskStatus, suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
+import { ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
 
-const STATUS_OPTIONS = [
-  { value: "not_started", label: "No iniciada" },
-  { value: "in_progress", label: "En proceso"  },
-  { value: "completed",   label: "Completada"  },
-];
+// Fuente única del vocabulario de estados (utils/filtroOpciones.js).
+const STATUS_OPTIONS = ESTADOS_ACTIVIDAD_OPERACIONAL;
 
 const HOURS_OPTIONS = [0, 0.5, ...Array.from({ length: 40 }, (_, i) => i + 1)];
 

@@ -12,6 +12,7 @@
 
 import { useState, useMemo } from "react";
 import { visibleActivities, getActivityStatus, getToday } from "../utils/formulas";
+import { estadoActividadKey, ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
 
 const AGRUPACIONES = [
   { value: "estado",      label: "Estado" },
@@ -20,11 +21,9 @@ const AGRUPACIONES = [
   { value: "vencimiento", label: "Vencimiento" },
 ];
 
-const ESTADO_COLS = [
-  { key: "not_started", label: "No iniciada" },
-  { key: "in_progress", label: "En proceso" },
-  { key: "completed",   label: "Completada" },
-];
+// Columnas del tablero cuando se agrupa por estado — derivadas de la fuente
+// única para que el orden y las etiquetas no se desincronicen.
+const ESTADO_COLS = ESTADOS_ACTIVIDAD_OPERACIONAL.map(e => ({ key: e.value, label: e.label }));
 
 function diasHasta(fecha, hoy) {
   if (!fecha) return null;
@@ -71,8 +70,6 @@ function flattenActivities(projects) {
   return out;
 }
 
-const STATUS_LABEL_TO_KEY = { "Completada": "completed", "En proceso": "in_progress", "No iniciada": "not_started" };
-
 // Agrupa una lista de actividades ya filtrada en las columnas dadas y renderiza
 // el tablero. Extraído para reutilizarse dos veces cuando agrupar === "estado"
 // (depósito de tareas principales + depósito de todas las actividades).
@@ -81,7 +78,7 @@ function BoardColumns({ columnas, actividades, agrupar, hoy }) {
     const map = new Map(columnas.map(c => [c.key, []]));
     actividades.forEach(act => {
       let keys = [];
-      if (agrupar === "estado") keys = [STATUS_LABEL_TO_KEY[act.status] || "not_started"];
+      if (agrupar === "estado") keys = [estadoActividadKey(act.status)];
       else if (agrupar === "vencimiento") keys = [venceCol(act.dueDate, hoy)];
       else if (agrupar === "proyecto") keys = [act.projectId];
       else keys = act.assigned.length ? act.assigned.map(e => e.id) : ["__sin_asignar"];
