@@ -549,8 +549,37 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
 
 const toDateOrNull = (v) => (v && typeof v === "string" && v.trim() ? new Date(v) : null);
 
+// Mantiene Proyectos.NombreProyecto/URLPlanner al día en CADA guardado
+// normal, no solo al "Guardar reporte" semanal (que es lo único que corría
+// resolveProject antes). Sin esto, renombrar un proyecto en EditView nunca
+// se reflejaba en Reportes/Ingenieros hasta la próxima vez que se cerrara
+// la semana — esas vistas hacen JOIN Proyectos y proyectan NombreProyecto.
+// MERGE en vez de SELECT-then-decide: evita la carrera de insertar dos
+// filas para el mismo AppID si dos guardados llegan casi al mismo tiempo.
+async function syncProjectMeta(pool, project) {
+  const appId = project.id || "";
+  if (!appId) return;
+  const name = project.project_name || "Sin nombre";
+  const url  = project.planner_url  || "";
+
+  await pool.request()
+    .input("appId", sql.NVarChar, appId)
+    .input("name",  sql.NVarChar, name)
+    .input("url",   sql.NVarChar, url)
+    .query(`
+      MERGE Proyectos AS t
+      USING (SELECT @appId AS AppID) AS s ON t.AppID = s.AppID
+      WHEN MATCHED AND (t.NombreProyecto <> @name OR t.URLPlanner <> @url) THEN
+        UPDATE SET NombreProyecto = @name, URLPlanner = @url
+      WHEN NOT MATCHED THEN
+        INSERT (AppID, NombreProyecto, URLPlanner) VALUES (@appId, @name, @url);
+    `);
+}
+
 async function syncActividadesDetalle(project) {
   const pool = await getPool();
+
+  await syncProjectMeta(pool, project);
 
   const proyectoAppID = project.id || "";
 

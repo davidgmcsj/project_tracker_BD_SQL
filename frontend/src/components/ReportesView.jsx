@@ -110,12 +110,19 @@ export function ReportesView({ projects, engineers }) {
   // Sin setState síncrono en el cuerpo del efecto (mismo patrón que
   // QuartersView.jsx y ProjectNotesPanel.jsx): "Cargando…" solo se ve en la
   // carga inicial, no en cada refetch por filtro — cambio de datos sin parpadeo.
+  //
+  // `vigente` descarta la respuesta si ya se disparó una consulta más nueva:
+  // sin esto, agregar un filtro mientras la consulta anterior (sin ese
+  // filtro) sigue en vuelo podía terminar mostrando el resultado viejo si
+  // llegaba después — el filtro se aplicaba pero la tabla no lo reflejaba.
   useEffect(() => {
     if (!registryEntry) return;
+    let vigente = true;
     runReportQuery({ consulta, filtros, columnas: registryEntry.columnas, limite: 500 })
-      .then(data => { setResultado(data); setError(""); })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+      .then(data => { if (vigente) { setResultado(data); setError(""); } })
+      .catch(e => { if (vigente) setError(e.message); })
+      .finally(() => { if (vigente) setLoading(false); });
+    return () => { vigente = false; };
   }, [consulta, filtros, registryEntry]);
 
   const handleSelectConsulta = (nueva) => {
