@@ -121,3 +121,32 @@ export function completedInWeek(activities, range, taskStatus) {
     return done && done >= range.start && done <= range.end;
   });
 }
+
+// ── Recálculo explícito para el snapshot de "Nueva semana" ────────────────────
+// EditView y EngineerReportView recalculan estos mismos campos con un
+// useEffect que solo corre si el usuario abrió ese proyecto durante la
+// semana — si un proyecto nunca se abrió, sus campos quedarían con el valor
+// de la semana anterior (o vacíos) en el momento del snapshot. Esta función
+// hace el mismo cálculo de forma pura y explícita, para TODOS los proyectos,
+// sin depender de qué se montó en pantalla — así el snapshot que se archiva
+// al pulsar "Nueva semana" siempre es correcto.
+export function recomputeWeeklyFields(project, todayDate = new Date()) {
+  const activities = Array.isArray(project.activities_identified) ? project.activities_identified : [];
+  const taskStatus = project.task_status || {};
+  const today = todayDate.toISOString().slice(0, 10);
+  const thisWeek = weekRange(today);
+  const nextWeek = nextWeekRange(today);
+
+  const weekly_achievements = completedInWeek(activities, thisWeek, taskStatus).map(a => a.id);
+  const next_week_plan = activitiesForWeek(activities, nextWeek, taskStatus, { includeOverdue: false })
+    .map(r => r.activity.id);
+
+  const engineers = (project.engineers || []).map(eng => {
+    if (!eng.engineer_id) return eng;
+    const rows = activitiesForEngineerWeek(activities, thisWeek, taskStatus, eng.engineer_id);
+    const ids = rows.map(r => r.activity.id);
+    return { ...eng, weekly_detail: ids, weekly_total: ids.length };
+  });
+
+  return { ...project, weekly_achievements, next_week_plan, engineers };
+}

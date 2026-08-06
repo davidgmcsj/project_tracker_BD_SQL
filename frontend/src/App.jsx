@@ -23,6 +23,7 @@ import {
   authHeaders, getCurrentUser, logout,
 } from "./utils/storage";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
+import { recomputeWeeklyFields } from "./utils/weekPlanning";
 import { useUrlState } from "./hooks/useUrlState";
 import "./App.css";
 
@@ -195,8 +196,16 @@ export default function App() {
 
   // ── Limpiado de campos semanales ───────────────────────────────────────────
   const applyWeekReset = async (newDate, newLabel) => {
-    await saveWeekReport(projects, weekLabel);
-    const next = projects.map(p => ({
+    // weekly_achievements/next_week_plan/weekly_detail se recalculan en vivo
+    // con un useEffect en EditView/EngineerReportView, pero ese efecto solo
+    // corre si alguien abrió ese proyecto durante la semana — uno que nadie
+    // tocó llegaría al snapshot con datos de la semana anterior (o vacío).
+    // Se recalculan aquí de forma explícita, para TODOS los proyectos, ANTES
+    // de archivar el snapshot — así el historial siempre queda correcto sin
+    // depender de qué se vio en pantalla.
+    const projectsWithFreshWeekly = projects.map(p => recomputeWeeklyFields(p));
+    await saveWeekReport(projectsWithFreshWeekly, weekLabel);
+    const next = projectsWithFreshWeekly.map(p => ({
       ...p,
       report_date:         newDate,
       weekly_achievements: [],

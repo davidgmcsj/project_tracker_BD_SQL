@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import {
   weekRange, nextWeekRange, activityRange, overlapsWeek,
   situationInWeek, activitiesForWeek, activitiesForEngineerWeek,
-  completedInWeek, SITUATION,
+  completedInWeek, recomputeWeeklyFields, SITUATION,
 } from "./weekPlanning.js";
 
 // Semana de referencia en todos los tests: lunes 2026-08-03 a domingo 2026-08-09.
@@ -176,4 +176,67 @@ test("completedInWeek toma solo las completadas dentro del rango", () => {
 
 test("completedInWeek sin completed_dates devuelve vacío", () => {
   assert.deepEqual(completedInWeek([act("a", "", "2026-08-04")], WEEK, {}), []);
+});
+
+// ── recomputeWeeklyFields — snapshot explícito para "Nueva semana" ────────────
+// TODAY fijo: miércoles 2026-08-05 (misma semana que WEEK arriba).
+
+const TODAY = new Date("2026-08-05T12:00:00");
+
+test("recomputeWeeklyFields llena weekly_achievements/next_week_plan aunque el proyecto NUNCA se haya abierto en pantalla", () => {
+  const project = {
+    activities_identified: [
+      act("hecha",  "", "2026-08-04"),
+      act("futura", "2026-08-11", "2026-08-13"),
+    ],
+    task_status: { completed_dates: { hecha: "2026-08-04" } },
+    engineers: [],
+    // Campos "viejos" que un useEffect nunca tuvo oportunidad de actualizar:
+    weekly_achievements: ["algo-de-la-semana-pasada"],
+    next_week_plan: [],
+  };
+  const result = recomputeWeeklyFields(project, TODAY);
+  assert.deepEqual(result.weekly_achievements, ["hecha"]);
+  assert.deepEqual(result.next_week_plan, ["futura"]);
+});
+
+test("recomputeWeeklyFields recalcula weekly_detail/weekly_total por ingeniero", () => {
+  const project = {
+    activities_identified: [
+      act("mia", "2026-08-04", "2026-08-06", { assigned_engineers: [{ id: "e1", name: "Ana" }] }),
+    ],
+    task_status: {},
+    engineers: [{ engineer_id: "e1", weekly_detail: [], weekly_total: 0 }],
+  };
+  const result = recomputeWeeklyFields(project, TODAY);
+  assert.deepEqual(result.engineers[0].weekly_detail, ["mia"]);
+  assert.equal(result.engineers[0].weekly_total, 1);
+});
+
+test("recomputeWeeklyFields deja intacta la fila de un ingeniero sin engineer_id (placeholder vacío)", () => {
+  const project = {
+    activities_identified: [],
+    task_status: {},
+    engineers: [{ engineer_id: "", weekly_detail: [], weekly_total: 0 }],
+  };
+  const result = recomputeWeeklyFields(project, TODAY);
+  assert.deepEqual(result.engineers[0], { engineer_id: "", weekly_detail: [], weekly_total: 0 });
+});
+
+test("recomputeWeeklyFields no muta el proyecto original", () => {
+  const project = {
+    activities_identified: [act("a", "", "2026-08-04")],
+    task_status: { completed_dates: { a: "2026-08-04" } },
+    engineers: [],
+    weekly_achievements: [],
+  };
+  recomputeWeeklyFields(project, TODAY);
+  assert.deepEqual(project.weekly_achievements, []);
+});
+
+test("recomputeWeeklyFields con proyecto sin actividades no falla", () => {
+  const project = { activities_identified: [], task_status: {}, engineers: [] };
+  const result = recomputeWeeklyFields(project, TODAY);
+  assert.deepEqual(result.weekly_achievements, []);
+  assert.deepEqual(result.next_week_plan, []);
 });
