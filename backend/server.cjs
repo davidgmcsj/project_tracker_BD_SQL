@@ -495,7 +495,7 @@ app.post("/api/auth/login", jsonParser, async (req, res) => {
     const pool = await getPool();
     const result = await pool.request()
       .input("usuario", require("mssql").NVarChar(100), String(username).trim())
-      .query("SELECT UsuarioID, NombreCompleto, Email, PasswordHash, PasswordSalt, Activo FROM Usuarios WHERE NombreUsuario = @usuario");
+      .query("SELECT UsuarioID, NombreCompleto, Email, PasswordHash, PasswordSalt, Activo, IngenieroID, EsAdmin FROM Usuarios WHERE NombreUsuario = @usuario");
     const row = result.recordset[0];
 
     if (!row || !row.Activo || !verifyPassword(password, row.PasswordSalt, row.PasswordHash)) {
@@ -507,7 +507,13 @@ app.post("/api/auth/login", jsonParser, async (req, res) => {
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true, secure: isProduction, sameSite: "lax", expires: expiraEn, path: "/",
     });
-    res.json({ ok: true, user: { name: row.NombreCompleto, email: row.Email || "" } });
+    // Mismos campos que getSessionUser (auth.cjs) — así App.jsx no depende
+    // de un segundo round-trip a /api/auth/me para saber si es admin y
+    // decidir qué navegación mostrar.
+    res.json({
+      ok: true,
+      user: { name: row.NombreCompleto, email: row.Email || "", ingenieroId: row.IngenieroID ?? null, esAdmin: !!row.EsAdmin },
+    });
   } catch (e) {
     console.error("[AUTH] Error en login:", e.message);
     res.status(500).json(errorBody("Error iniciando sesión", e));

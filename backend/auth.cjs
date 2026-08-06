@@ -60,14 +60,16 @@ async function createSession(pool, usuarioId) {
   return { token, expiraEn };
 }
 
-// Devuelve { id, username, name, email } o null si el token falta, no
-// existe, expiró, o el usuario fue desactivado.
+// Devuelve { id, username, name, email, ingenieroId, esAdmin } o null si el
+// token falta, no existe, expiró, o el usuario fue desactivado.
+// ingenieroId/esAdmin vienen de la migración 019 — un usuario sin ingeniero
+// vinculado devuelve ingenieroId: null (ej. un admin puro).
 async function getSessionUser(pool, token) {
   if (!token) return null;
   const res = await pool.request()
     .input("token", sql.Char(64), token)
     .query(`
-      SELECT u.UsuarioID, u.NombreUsuario, u.NombreCompleto, u.Email, u.Activo, s.ExpiraEn
+      SELECT u.UsuarioID, u.NombreUsuario, u.NombreCompleto, u.Email, u.Activo, u.IngenieroID, u.EsAdmin, s.ExpiraEn
       FROM Sesiones s
       JOIN Usuarios u ON u.UsuarioID = s.UsuarioID
       WHERE s.Token = @token
@@ -75,7 +77,10 @@ async function getSessionUser(pool, token) {
   const row = res.recordset[0];
   if (!row || !row.Activo) return null;
   if (new Date(row.ExpiraEn) < new Date()) return null;
-  return { id: row.UsuarioID, username: row.NombreUsuario, name: row.NombreCompleto, email: row.Email || "" };
+  return {
+    id: row.UsuarioID, username: row.NombreUsuario, name: row.NombreCompleto, email: row.Email || "",
+    ingenieroId: row.IngenieroID ?? null, esAdmin: !!row.EsAdmin,
+  };
 }
 
 async function deleteSession(pool, token) {

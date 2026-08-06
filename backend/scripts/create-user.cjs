@@ -27,6 +27,11 @@ async function main() {
   const nombre   = (await ask(rl, "Nombre completo: ")).trim();
   const email    = (await ask(rl, "Correo (opcional, Enter para omitir): ")).trim();
   const password = await ask(rl, "Contraseña (se muestra en pantalla, no hay entrada oculta en este script): ");
+  // Migración 019 — necesario para el primer admin: la pantalla de
+  // administración de usuarios (Fase 3) solo es accesible para EsAdmin=1,
+  // así que ese primer usuario tiene que crearse por aquí antes de existir
+  // ninguno. El resto de usuarios normalmente se crean desde esa pantalla.
+  const esAdminRaw = (await ask(rl, "¿Es administrador? (s/N): ")).trim().toLowerCase();
   rl.close();
 
   if (!username || !nombre || !password) {
@@ -38,6 +43,7 @@ async function main() {
     process.exit(1);
   }
 
+  const esAdmin = esAdminRaw === "s" || esAdminRaw === "si" || esAdminRaw === "sí";
   const { hash, salt } = hashPassword(password);
   const pool = await getPool();
 
@@ -52,12 +58,14 @@ async function main() {
       .input("email",   sql.NVarChar(200), email || null)
       .input("hash",    sql.Char(128), hash)
       .input("salt",    sql.Char(32),  salt)
+      .input("esAdmin", sql.Bit, esAdmin)
       .query(`
         UPDATE Usuarios
-        SET NombreCompleto = @nombre, Email = @email, PasswordHash = @hash, PasswordSalt = @salt, Activo = 1
+        SET NombreCompleto = @nombre, Email = @email, PasswordHash = @hash, PasswordSalt = @salt,
+            Activo = 1, EsAdmin = @esAdmin
         WHERE NombreUsuario = @usuario
       `);
-    console.log(`✓ Usuario "${username}" actualizado (contraseña reseteada).`);
+    console.log(`✓ Usuario "${username}" actualizado (contraseña reseteada${esAdmin ? ", admin" : ""}).`);
   } else {
     await pool.request()
       .input("usuario", sql.NVarChar(100), username)
@@ -65,11 +73,12 @@ async function main() {
       .input("email",   sql.NVarChar(200), email || null)
       .input("hash",    sql.Char(128), hash)
       .input("salt",    sql.Char(32),  salt)
+      .input("esAdmin", sql.Bit, esAdmin)
       .query(`
-        INSERT INTO Usuarios (NombreUsuario, NombreCompleto, Email, PasswordHash, PasswordSalt)
-        VALUES (@usuario, @nombre, @email, @hash, @salt)
+        INSERT INTO Usuarios (NombreUsuario, NombreCompleto, Email, PasswordHash, PasswordSalt, EsAdmin)
+        VALUES (@usuario, @nombre, @email, @hash, @salt, @esAdmin)
       `);
-    console.log(`✓ Usuario "${username}" creado.`);
+    console.log(`✓ Usuario "${username}" creado${esAdmin ? " (admin)" : ""}.`);
   }
 
   process.exit(0);
