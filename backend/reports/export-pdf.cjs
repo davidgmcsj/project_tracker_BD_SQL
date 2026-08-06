@@ -39,11 +39,12 @@ function formatCell(columna, value) {
 }
 
 // { titulo, consulta, columnas: string[], filas: object[], filtrosAplicados, total }
-async function toPdfBuffer({ titulo, consulta, columnas, filas, filtrosAplicados, total }) {
-  const filtrosTexto = (filtrosAplicados || []).length
-    ? filtrosAplicados.map(f => `${f.campo} ${f.operador} ${Array.isArray(f.valor) ? f.valor.join(", ") : f.valor}`).join("  •  ")
-    : "Sin filtros aplicados";
-
+// filtrosAplicados NO se imprime: son campo/operador/valor crudos tal cual
+// los arma el frontend (ej. "proyecto_id = mp1pu3nh8h", el id interno, no el
+// nombre) — sin el catálogo de proyectos/ingenieros a mano, el backend no
+// puede traducirlos a texto legible, y mostrarlos en crudo no aportaba nada
+// que el título/tabla ya no dijeran.
+async function toPdfBuffer({ titulo, consulta, columnas, filas, total }) {
   const tableBody = [
     columnas.map(c => ({ text: humanize(c), bold: true, color: "#ffffff", fillColor: "#003399" })),
     ...filas.map(fila => columnas.map(c => formatCell(c, fila[c]))),
@@ -57,8 +58,7 @@ async function toPdfBuffer({ titulo, consulta, columnas, filas, filtrosAplicados
     footer: (page, pages) => ({ text: `Página ${page} de ${pages}`, alignment: "center", fontSize: 8, color: "#7d8aa3" }),
     content: [
       { text: titulo || `Reporte — ${consulta}`, style: "titulo" },
-      { text: `Generado: ${new Date().toLocaleString("es-CO")}   ·   ${filas.length} de ${total} registro${total !== 1 ? "s" : ""}`, style: "meta" },
-      { text: filtrosTexto, style: "meta", margin: [0, 0, 0, 12] },
+      { text: `Generado: ${new Date().toLocaleString("es-CO")}   ·   ${filas.length} de ${total} registro${total !== 1 ? "s" : ""}`, style: "meta", margin: [0, 0, 0, 12] },
       {
         table: { headerRows: 1, widths: columnas.map(() => "*"), body: tableBody },
         layout: {

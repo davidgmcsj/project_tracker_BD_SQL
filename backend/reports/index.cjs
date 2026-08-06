@@ -95,7 +95,11 @@ router.post("/export", async (req, res) => {
     const dataRes = await dataReq.query(built.dataSql);
 
     const payload = {
-      titulo: consultaNombre, consulta: consultaNombre,
+      // El backend solo conoce la CLAVE interna de la consulta
+      // ("actividades_estado") — el nombre legible ("Actividades por
+      // estado") vive en el frontend (NOMBRES_CONSULTA), así que se usa si
+      // el caller lo manda; si no, cae a la clave cruda como antes.
+      titulo: req.body.titulo || consultaNombre, consulta: consultaNombre,
       columnas: built.columnas, filas: dataRes.recordset,
       filtrosAplicados: req.body.filtros || [], total,
     };

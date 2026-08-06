@@ -178,11 +178,14 @@ export function ReportesView({ projects, engineers }) {
 
   // Mismo consulta+filtros que la vista previa — el backend vuelve a correr
   // buildQuery, así que el archivo nunca puede mostrar datos distintos.
+  // titulo: el backend solo conoce la CLAVE interna ("actividades_estado"),
+  // no el nombre legible — sin esto el PDF/Excel salía titulado con la
+  // clave cruda en vez de "Actividades por estado".
   const handleExport = async (formato) => {
     setExporting(formato);
     setError("");
     try {
-      await exportReport({ consulta, filtros, columnas: columnasVisibles }, formato);
+      await exportReport({ consulta, filtros, columnas: columnasVisibles, titulo: NOMBRES_CONSULTA[consulta] }, formato);
     } catch (e) {
       setError(e.message);
     } finally {

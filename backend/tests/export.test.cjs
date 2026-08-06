@@ -47,9 +47,16 @@ test("toPdfBuffer con cero filas no revienta", async () => {
   assert.equal(buffer.slice(0, 5).toString(), "%PDF-");
 });
 
-test("toPdfBuffer sin filtros aplicados no revienta (texto por defecto)", async () => {
-  const buffer = await toPdfBuffer({ ...payload, filtrosAplicados: [] });
-  assert.equal(buffer.slice(0, 5).toString(), "%PDF-");
+// filtrosAplicados no se imprime en el PDF (ver comentario en export-pdf.cjs):
+// son campo/operador/valor crudos (ej. el id interno de un proyecto, no su
+// nombre) que el backend no puede traducir sin el catálogo — no aportaban
+// nada que el título/tabla no dijeran ya. toPdfBuffer ni siquiera lee esa
+// prop del payload, así que pasarla o no pasarla debe dar el mismo resultado.
+test("toPdfBuffer ignora filtrosAplicados si viene en el payload (ya no se imprime)", async () => {
+  const conFiltros = await toPdfBuffer(payload);
+  const { filtrosAplicados, ...sinFiltrosProp } = payload;
+  const sinFiltros = await toPdfBuffer(sinFiltrosProp);
+  assert.equal(conFiltros.length, sinFiltros.length);
 });
 
 // El Excel/PDF se genera en el backend consultando SQL directo — nunca pasa
@@ -65,4 +72,15 @@ test("toXlsxBuffer traduce la columna 'estado' (not_started/in_progress/complete
   const valores = [];
   hoja.eachRow((row, rowNumber) => { if (rowNumber > 1) valores.push(row.getCell(3).value); });
   assert.deepEqual(valores, ["En proceso", "Completada", "No iniciada"]);
+});
+
+// El backend solo conoce la CLAVE interna de la consulta ("actividades_estado"),
+// no el nombre legible ("Actividades por estado") — eso vive en
+// NOMBRES_CONSULTA del frontend. reports/index.cjs ahora reenvía el título
+// que mande el caller (req.body.titulo) en vez de siempre usar la clave cruda.
+test("toXlsxBuffer usa el 'titulo' recibido como nombre de la hoja de datos", async () => {
+  const buffer = await toXlsxBuffer({ ...payload, titulo: "Actividades por estado" });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  assert.equal(wb.getWorksheet(1).name, "Actividades por estado");
 });
