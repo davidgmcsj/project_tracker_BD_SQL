@@ -1,7 +1,8 @@
 // engineers.js — Agregación cross-proyecto para la vista por ingeniero.
 // Funciones puras: no tocan React ni el DOM, solo leen projects/engineers ya cargados.
 
-import { buildActivityIndex } from "./formulas";
+import { buildActivityIndex } from "./formulas.js";
+import { activitiesForWeek, weekRange, nextWeekRange } from "./weekPlanning.js";
 
 // Proyectos donde el ingeniero aparece en engineers[].
 export function getProjectsForEngineer(engineerId, projects) {
@@ -75,6 +76,43 @@ export function getAllAssignedActivitiesInProject(engineerId, project) {
       history: history[a.id] || {},
       status: activityStatusIn(project, a.id),
     }));
+}
+
+// ── Agregación semanal cross-proyecto (pantalla "mi semana" del ingeniero) ────
+// Junta las tareas de un ingeniero de TODOS sus proyectos y las clasifica por
+// semana (mismo motor de solapamiento de utils/weekPlanning.js), con el
+// nombre del proyecto agregado a cada fila para distinguir el origen.
+
+// { activity, situation, projectName, projectId } por cada actividad del
+// ingeniero, en cualquier proyecto, que caiga en `range`.
+function engineerActivitiesForRange(engineerId, projects, range, opts) {
+  const rows = [];
+  getProjectsForEngineer(engineerId, projects).forEach(project => {
+    const mine = (project.activities_identified || []).filter(a =>
+      (a.assigned_engineers || []).some(e => e.id === engineerId || e.engineer_id === engineerId)
+    );
+    activitiesForWeek(mine, range, project.task_status, opts).forEach(row => {
+      rows.push({ ...row, projectName: project.project_name || "Proyecto", projectId: project.id });
+    });
+  });
+  return rows.sort((a, b) => {
+    const da = a.activity.due_date || a.activity.start_date || "";
+    const db = b.activity.due_date || b.activity.start_date || "";
+    return da.localeCompare(db);
+  });
+}
+
+// Tareas de esta semana, de todos los proyectos del ingeniero.
+export function engineerWeekTasks(engineerId, projects, today = new Date()) {
+  return engineerActivitiesForRange(engineerId, projects, weekRange(today.toISOString().slice(0, 10)));
+}
+
+// Tareas de la próxima semana (sin arrastre de vencidas de esta semana, que
+// ya se ven en engineerWeekTasks).
+export function engineerNextWeekTasks(engineerId, projects, today = new Date()) {
+  return engineerActivitiesForRange(
+    engineerId, projects, nextWeekRange(today.toISOString().slice(0, 10)), { includeOverdue: false }
+  );
 }
 
 // ── Reporte por ingeniero (texto plano para copiar) ───────────────────────────

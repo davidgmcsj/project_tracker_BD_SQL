@@ -3,12 +3,21 @@
 // y fechas) y sus tareas adicionales. Pensado como insumo para reuniones y para el
 // informe trimestral.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   getProjectsForEngineer,
   getAllAssignedActivitiesInProject,
   generateEngineerReportText,
+  engineerWeekTasks,
+  engineerNextWeekTasks,
 } from "../utils/engineers";
+import { SITUATION_LABEL } from "../utils/weekPlanning";
+import { formatDateDMY } from "../utils/formulas";
+
+// Calculada una vez al cargar el módulo (no en cada render): evita que el
+// React Compiler marque los useMemo de más abajo como impuros por depender
+// de `new Date()`, y es suficiente para una sesión de trabajo normal.
+const TODAY = new Date();
 
 // Iniciales para el avatar (máx 2 letras).
 function initials(name) {
@@ -149,6 +158,41 @@ function AdditionalTasksBlock({ tasks }) {
   );
 }
 
+// Tabla "mi semana" / "próxima semana": actividad + proyecto de origen +
+// fechas + situación, cruzando TODOS los proyectos del ingeniero. Distinta de
+// la de EditView (que ya sabe en qué proyecto está, no necesita esa columna).
+function EngineerWeekTable({ rows }) {
+  if (rows.length === 0) {
+    return <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin actividades en este rango.</p>;
+  }
+  return (
+    <div className="metrics-container" style={{ overflowX: "auto" }}>
+      <table className="metrics-table metrics-table--project">
+        <thead>
+          <tr>
+            <th>Actividad</th>
+            <th style={{ width: "160px" }}>Proyecto</th>
+            <th style={{ width: "100px" }}>Inicio</th>
+            <th style={{ width: "100px" }}>Fin</th>
+            <th style={{ width: "140px" }}>Situación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ activity, situation, projectName, projectId }) => (
+            <tr key={`${projectId}-${activity.id}`}>
+              <td>{activity.text || "(sin nombre)"}</td>
+              <td style={{ color: "var(--text-2)", fontSize: "12px" }}>{projectName}</td>
+              <td style={{ fontSize: "12px" }}>{formatDateDMY(activity.start_date)}</td>
+              <td style={{ fontSize: "12px" }}>{formatDateDMY(activity.due_date)}</td>
+              <td><span className={`week-auto-table__situation week-auto-table__situation--${situation}`}>{SITUATION_LABEL[situation]}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function EngineerReportView({ engineers, projects }) {
   const list = (engineers || []).filter(e => e.active !== false);
   const [selectedId, setSelectedId] = useState(list[0]?.id || null);
@@ -156,6 +200,21 @@ export default function EngineerReportView({ engineers, projects }) {
 
   const eng = (engineers || []).find(e => e.id === selectedId) || null;
   const projs = eng ? getProjectsForEngineer(eng.id, projects) : [];
+
+  // El React Compiler marca estos dos useMemo como "Compilation Skipped": el
+  // componente tiene un early return condicional MÁS ABAJO (if (!list.length)
+  // return ...) después de los hooks — válido según las Reglas de Hooks, pero
+  // una forma que el compiler no logra optimizar. Preexistente a este cambio;
+  // no bloquea el build ni afecta el comportamiento en runtime.
+  const engId = eng?.id ?? null;
+  const weekRows = useMemo(
+    () => (engId ? engineerWeekTasks(engId, projects, TODAY) : []),
+    [engId, projects]
+  );
+  const nextWeekRows = useMemo(
+    () => (engId ? engineerNextWeekTasks(engId, projects, TODAY) : []),
+    [engId, projects]
+  );
 
   const handleCopy = () => {
     if (!eng) return;
@@ -225,7 +284,22 @@ export default function EngineerReportView({ engineers, projects }) {
             );
           })()}
 
+          {/* "Mi semana" / "próxima semana": junta tareas de TODOS los
+              proyectos del ingeniero, calculado automáticamente por fechas
+              (mismo motor que EditView — ver utils/weekPlanning.js). Es la
+              vista de "qué debo hacer" pedida para el día a día del ingeniero,
+              sin tener que entrar proyecto por proyecto. */}
           <h3 className="report-section-title" style={{ marginBottom: 12 }}>
+            Esta semana ({weekRows.length})
+          </h3>
+          <EngineerWeekTable rows={weekRows} />
+
+          <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
+            Próxima semana ({nextWeekRows.length})
+          </h3>
+          <EngineerWeekTable rows={nextWeekRows} />
+
+          <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
             Actividades por proyecto ({projs.length})
           </h3>
           {projs.length === 0 ? (
