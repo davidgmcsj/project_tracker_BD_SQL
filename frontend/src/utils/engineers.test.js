@@ -5,7 +5,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { engineerWeekTasks, engineerNextWeekTasks } from "./engineers.js";
+import {
+  engineerWeekTasks, engineerNextWeekTasks,
+  countLiveWeeklyTasks, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countActiveWeeklyTasks,
+} from "./engineers.js";
 
 // "Hoy" fijo para todos los tests: miércoles 2026-08-05.
 // Semana actual: 2026-08-03 a 2026-08-09. Próxima: 2026-08-10 a 2026-08-16.
@@ -106,4 +109,77 @@ test("engineerNextWeekTasks NO arrastra vencidas de esta semana (includeOverdue:
 test("sin proyectos asignados devuelve lista vacía", () => {
   assert.deepEqual(engineerWeekTasks("e1", [], TODAY), []);
   assert.deepEqual(engineerNextWeekTasks("e1", [], TODAY), []);
+});
+
+// ── countLiveWeeklyTasks / getLiveWeekActivitiesInProject ─────────────────────
+// Variante EN VIVO de countActiveWeeklyTasks/getEngineerActivitiesInProject:
+// esas leen el campo almacenado weekly_detail (solo se refresca si alguien
+// abrió el proyecto en EditView esa semana); estas calculan desde las fechas,
+// igual que engineerWeekTasks, para que EngineersView y la vista por
+// ingeniero nunca muestren números distintos el mismo día.
+
+test("countLiveWeeklyTasks cuenta en vivo aunque weekly_detail esté vacío", () => {
+  const p = project("p1", "Proyecto A", [act("a1", "2026-08-04", "2026-08-06", "e1")], {}, "e1");
+  p.engineers[0].weekly_detail = []; // snapshot desactualizado a propósito
+  assert.equal(countLiveWeeklyTasks("e1", p, TODAY), 1);
+});
+
+test("countLiveWeeklyTasks respeta el criterio multi-semana", () => {
+  const p = project("p1", "Larga", [act("a1", "2026-07-27", "2026-08-14", "e1")], {}, "e1");
+  assert.equal(countLiveWeeklyTasks("e1", p, TODAY), 1);
+});
+
+test("countLiveWeeklyTasks solo cuenta actividades de ESE ingeniero en el proyecto", () => {
+  const p = project("p1", "Compartido", [
+    act("mia",  "2026-08-04", "2026-08-06", "e1"),
+    act("suya", "2026-08-04", "2026-08-06", "e2"),
+  ], {}, "e1");
+  assert.equal(countLiveWeeklyTasks("e1", p, TODAY), 1);
+});
+
+test("countLiveWeeklyTasks coincide con engineerWeekTasks para el mismo ingeniero/proyecto", () => {
+  const p = project("p1", "Proyecto A", [
+    act("a1", "2026-08-04", "2026-08-06", "e1"),
+    act("a2", "2026-07-20", "2026-07-24", "e1"), // vencida, arrastra
+  ], {}, "e1");
+  const live = countLiveWeeklyTasks("e1", p, TODAY);
+  const fromWeekTasks = engineerWeekTasks("e1", [p], TODAY).length;
+  assert.equal(live, fromWeekTasks);
+});
+
+test("getLiveWeekActivitiesInProject devuelve las mismas actividades que cuenta countLiveWeeklyTasks", () => {
+  const p = project("p1", "Proyecto A", [act("a1", "2026-08-04", "2026-08-06", "e1")], {}, "e1");
+  const rows = getLiveWeekActivitiesInProject("e1", p, TODAY);
+  assert.deepEqual(rows.map(r => r.id), ["a1"]);
+  assert.equal(rows.length, countLiveWeeklyTasks("e1", p, TODAY));
+});
+
+test("getLiveWeekActivitiesInProject devuelve el mismo shape que getEngineerActivitiesInProject (id, text, position, history)", () => {
+  const p = project("p1", "Proyecto A", [act("a1", "2026-08-04", "2026-08-06", "e1")], {
+    status_history: { a1: { added: "2026-08-01" } },
+  }, "e1");
+  const [row] = getLiveWeekActivitiesInProject("e1", p, TODAY);
+  assert.deepEqual(row, { id: "a1", text: "a1", position: 1, history: { added: "2026-08-01" } });
+});
+
+test("getLiveWeekActivitiesInProject sin actividades esta semana devuelve vacío", () => {
+  const p = project("p1", "Proyecto A", [act("futura", "2026-08-17", "2026-08-21", "e1")], {}, "e1");
+  assert.deepEqual(getLiveWeekActivitiesInProject("e1", p, TODAY), []);
+});
+
+test("hasLiveWeeklyTasks es true cuando hay al menos una actividad en vivo esta semana", () => {
+  const p = project("p1", "Proyecto A", [act("a1", "2026-08-04", "2026-08-06", "e1")], {}, "e1");
+  p.engineers[0].weekly_detail = []; // snapshot desactualizado, no debe importar
+  assert.equal(hasLiveWeeklyTasks("e1", p, TODAY), true);
+});
+
+test("hasLiveWeeklyTasks es false sin actividades esta semana", () => {
+  const p = project("p1", "Proyecto A", [act("futura", "2026-08-17", "2026-08-21", "e1")], {}, "e1");
+  assert.equal(hasLiveWeeklyTasks("e1", p, TODAY), false);
+});
+
+test("countActiveWeeklyTasks (snapshot) sigue leyendo weekly_detail sin cambios — no se rompió el reporte archivado", () => {
+  const p = project("p1", "Proyecto A", [act("a1", "2026-08-04", "2026-08-06", "e1")], {}, "e1");
+  p.engineers[0].weekly_detail = ["a1", "a2"]; // snapshot congelado, aunque solo "a1" siga vigente
+  assert.equal(countActiveWeeklyTasks("e1", p), 2);
 });

@@ -144,7 +144,7 @@
 }
 .header__week-range {
   font-size: var(--t-cap);
-  color: var(--text-3);
+  color: var(--text-2);
   font-weight: 600;
   display: block;
 }
@@ -459,7 +459,7 @@
 }
 .summary__hint {
   font-size: var(--t-cap);
-  color: var(--text-3);
+  color: var(--text-2);
   font-weight: 600;
   margin-top: 2px;
 }
@@ -510,7 +510,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-3);
+  color: var(--text-2);
   margin-top: var(--s2);
 }
 
@@ -543,7 +543,7 @@
 }
 .stat-card__label {
   font-size: 13px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-weight: 600;
 }
 
@@ -1194,7 +1194,7 @@
   align-items: center;
   gap: 6px;
   font-size: 0.72rem;
-  color: var(--text-3, #999);
+  color: var(--text-2, #999);
   cursor: pointer;
   user-select: none;
   margin: 4px 0 8px;
@@ -1284,7 +1284,7 @@
   font-size: 12px;
 }
 .eng-stat {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 11px;
 }
 .eng-badge {
@@ -1296,7 +1296,7 @@
 }
 .eng-badge--done    { background: var(--green-bg);   color: var(--green); }
 .eng-badge--wip     { background: var(--amber-bg);   color: var(--amber); }
-.eng-badge--pending { background: var(--surface-2);  color: var(--text-3); }
+.eng-badge--pending { background: var(--surface-2);  color: var(--text-2); }
 .eng-badge--info    { background: rgba(91, 141, 239, 0.14); color: var(--azul-claro); }
 
 .eng-section-title {
@@ -1470,11 +1470,13 @@
 
 .week-auto-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .week-auto-table th {
-  text-align: left; font-size: 10px; font-weight: 700; color: var(--text-3);
+  text-align: left; font-size: 10px; font-weight: 700; color: var(--text-2);
   text-transform: uppercase; letter-spacing: 0.03em; padding: 4px 6px;
   border-bottom: 1px solid var(--border);
 }
-.week-auto-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+/* Color explícito (no heredado): las fechas quedaban en gris claro
+   (--text-3), casi ilegibles sobre fondo blanco. */
+.week-auto-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text); }
 .week-auto-table tr:last-child td { border-bottom: none; }
 .week-auto-table__name { max-width: 0; width: 40%; }
 .week-auto-table__name-link {
@@ -1490,7 +1492,7 @@
 .week-auto-table__situation--overdue   { background: var(--red-bg);   color: var(--red); }
 .week-auto-table__situation--due       { background: var(--amber-bg); color: var(--amber); }
 .week-auto-table__situation--starts    { background: var(--info-bg);  color: var(--info); }
-.week-auto-table__situation--continues { background: var(--surface);  color: var(--text-3); border-color: var(--border); }
+.week-auto-table__situation--continues { background: var(--surface);  color: var(--text-2); border-color: var(--border); }
 .week-auto-table__situation--completed { background: var(--green-bg); color: var(--green); }
 .engineer-section {
   background: var(--surface-2);
@@ -1515,7 +1517,7 @@
   gap: 6px;
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-3);
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2072,7 +2074,7 @@
 .act-count {
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-3);
+  color: var(--text-2);
   margin-left: auto;
 }
 
@@ -2187,7 +2189,7 @@
 .act-selector__selected-label {
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-3);
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-right: 4px;
@@ -2336,7 +2338,7 @@
 .act-assign-search__clear:hover { color: var(--red); }
 .act-assign-search__count {
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   white-space: nowrap;
 }
 
@@ -2373,7 +2375,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-3);
+  color: var(--text-2);
   background: var(--surface-2);
   padding: 5px 12px;
   border-top: 1px solid var(--border);
@@ -2912,7 +2914,7 @@
   border: 1px solid rgba(0,0,0,0.08);
   border-radius: 4px;
   padding: 1px 5px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .status-date-badge__label {
   font-weight: 600;
@@ -2924,7 +2926,7 @@
   padding: 0;
   cursor: pointer;
   font-size: 10px;
-  color: var(--text-3);
+  color: var(--text-2);
   text-decoration: underline dotted;
   line-height: 1;
 }
@@ -3283,7 +3285,7 @@
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--text-3);
+  color: var(--text-2);
   border-bottom: 1px solid var(--border);
 }
 .export-dropdown-item {
@@ -3459,7 +3461,7 @@
 }
 .act-list__select--status-pending {
   border-color: var(--border) !important;
-  color: var(--text-3) !important;
+  color: var(--text-2) !important;
 }
 .act-list__select--status-progress {
   border-color: rgba(255, 176, 32, 0.8) !important;
@@ -3795,7 +3797,7 @@
 .bulk-assign-row__unassigned {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   background: var(--surface-2);
   padding: 2px 8px;
   border-radius: 20px;
@@ -3821,7 +3823,7 @@
 }
 .bulk-assign-row__status--pending {
   background: var(--surface-2);
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* Footer con conteo */
@@ -3921,7 +3923,7 @@
 .adm-header__project {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-3);
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -3989,7 +3991,7 @@
 }
 .adm-status-pill--completed   { background: var(--green-bg); color: var(--green); }
 .adm-status-pill--inprogress  { background: var(--amber-bg); color: var(--amber); }
-.adm-status-pill--notstarted  { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border); }
+.adm-status-pill--notstarted  { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
 
 /* ── Badges de fechas de depósito ── */
 .adm-dates-row {
@@ -4116,7 +4118,7 @@
 .adm-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-3);
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -4220,7 +4222,7 @@
 .adm-attach-item__size {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .adm-attach-item__remove {
   flex-shrink: 0;
@@ -4262,7 +4264,7 @@
 }
 .adm-assignee-date {
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   margin-left: 4px;
 }
 .adm-assignee-chip__remove {
@@ -4351,7 +4353,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-weight: 500;
 }
 .adm-checklist-bar {
@@ -4473,7 +4475,7 @@
 .adm-subtask-item__num {
   flex-shrink: 0;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .adm-subtask-item__name {
   flex: 1;
@@ -4492,7 +4494,7 @@
 .adm-subtask-item__dates {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .adm-subtask-status {
   flex-shrink: 0;
@@ -5149,7 +5151,7 @@
   border-radius: 10px 10px 0 0;
 }
 .gantt-filterbar__row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.gantt-filterbar__label { font-size: 12px; color: var(--text-3); font-weight: 600; margin-right: 2px; }
+.gantt-filterbar__label { font-size: 12px; color: var(--text-2); font-weight: 600; margin-right: 2px; }
 
 .gantt__toolbar-sep { width: 1px; height: 18px; background: var(--border-strong); margin: 0 4px; }
 .gantt__filter-chip {
@@ -5166,10 +5168,10 @@
   background: var(--surface); color: var(--text-2); cursor: pointer;
 }
 .gantt__week-nav-btn:hover { border-color: var(--azul-oscuro); color: var(--azul-oscuro); }
-.gantt__week-nav-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.gantt__week-nav-label { font-size: 11px; color: var(--text-2); white-space: nowrap; }
 
 .gantt-date-filter__label {
-  display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-3); font-weight: 600;
+  display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-2); font-weight: 600;
 }
 .gantt-date-filter__input {
   border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
@@ -5225,7 +5227,7 @@
   font-size: var(--t-sm); box-sizing: border-box; overflow: hidden;
 }
 thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2); }
-.gantt-cal__row-num { color: var(--text-3); font-weight: 700; margin-right: 4px; }
+.gantt-cal__row-num { color: var(--text-2); font-weight: 700; margin-right: 4px; }
 .gantt-cal__row-text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Redimensionable desde CUALQUIER fila — cada <td>/<th> de esta columna
@@ -5237,7 +5239,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .gantt-cal__label-col--resizable:hover { border-right-color: var(--inst-azul); }
 
 .gantt-cal__col-head {
-  position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--text-3);
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--text-2);
   font-size: 10px; font-weight: 600; text-align: center; padding: 6px 2px; min-width: 34px;
   border-bottom: 2px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap;
 }
@@ -5284,7 +5286,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
   border-top: 1px solid var(--border);
   background: var(--bg-2, #f7f8fa);
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
   border-radius: 0 0 10px 10px;
 }
 .gantt__legend-item { display: flex; align-items: center; gap: 5px; }
@@ -5334,7 +5336,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .planner-modal__file:hover { background: var(--accent-bg); }
 .planner-modal__filename {
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--text-2);
   margin: 2px 0 10px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5439,7 +5441,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .pulse__status-label { font-size: var(--t-lg); font-weight: 800; color: var(--text); letter-spacing: -.01em; }
 .pulse__eyebrow {
   font-size: var(--t-cap); font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--text-3); margin-top: 1px;
+  letter-spacing: .06em; color: var(--text-2); margin-top: 1px;
 }
 .pulse__edit {
   font-size: var(--t-sm); font-weight: 600; padding: 6px 14px; cursor: pointer;
@@ -5520,7 +5522,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
   font-size: var(--t-sm); color: var(--text-2); margin-bottom: var(--s1);
 }
 .notes-panel__item-type   { font-weight: 600; color: var(--text); }
-.notes-panel__item-author { color: var(--text-3); }
+.notes-panel__item-author { color: var(--text-2); }
 .notes-panel__item-include {
   display: flex; align-items: center; gap: 4px; margin-left: auto;
   font-size: var(--t-cap); color: var(--text-3); cursor: pointer;
@@ -5550,7 +5552,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .eng-hero__body { flex: 1; display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
 .eng-hero__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
 .eng-hero__name { font-size: var(--t-lg); font-weight: 800; color: var(--text); letter-spacing: -.01em; }
-.eng-hero__role { font-size: var(--t-sm); color: var(--text-3); margin-top: 2px; }
+.eng-hero__role { font-size: var(--t-sm); color: var(--text-2); margin-top: 2px; }
 .eng-hero__load { display: flex; align-items: center; gap: var(--s3); }
 .eng-hero__bar {
   flex: 1; height: 10px; background: var(--surface-2);
@@ -5627,7 +5629,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
   background: var(--accent-bg); border-color: var(--dorado); color: var(--dorado);
 }
 .report-filters__count {
-  font-size: var(--t-cap); font-weight: 700; color: var(--text-3);
+  font-size: var(--t-cap); font-weight: 700; color: var(--text-2);
   margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .report-filters__clear {
@@ -5662,7 +5664,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .cmdk-item--active { background: var(--accent-bg); }
 .cmdk-item__icon { font-size: var(--t-lg); }
 .cmdk-item__label { flex: 1; }
-.cmdk-item__type { font-size: var(--t-cap); color: var(--text-3); text-transform: uppercase; }
+.cmdk-item__type { font-size: var(--t-cap); color: var(--text-2); text-transform: uppercase; }
 .cmdk-footer {
   display: flex; gap: var(--s4); padding: var(--s2) var(--s4); border-top: 1px solid var(--border);
   font-size: var(--t-cap); color: var(--text-3);
@@ -5682,7 +5684,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 }
 .login-screen__logo { width: 64px; height: 64px; object-fit: contain; margin-bottom: var(--s2); }
 .login-screen__title { font-size: var(--t-xl); color: var(--azul-oscuro); margin: 0; text-align: center; }
-.login-screen__subtitle { font-size: var(--t-sm); color: var(--text-3); margin: 0 0 var(--s3); text-align: center; }
+.login-screen__subtitle { font-size: var(--t-sm); color: var(--text-2); margin: 0 0 var(--s3); text-align: center; }
 .login-screen__label {
   width: 100%; display: flex; flex-direction: column; gap: 4px;
   font-size: var(--t-sm); font-weight: 600; color: var(--text-2);
@@ -5731,12 +5733,12 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .reportes-template-card:hover { border-color: var(--dorado); box-shadow: var(--shadow-lg); transform: translateY(-1px); }
 .reportes-template-card__icon { font-size: 1.5rem; }
 .reportes-template-card__title { font-weight: 700; color: var(--text); font-size: var(--t-body); }
-.reportes-template-card__desc { font-size: var(--t-cap); color: var(--text-3); }
+.reportes-template-card__desc { font-size: var(--t-cap); color: var(--text-2); }
 
 /* ── Reportes guardados ── */
 .reportes-saved { display: flex; flex-direction: column; gap: var(--s2); }
 .reportes-saved__row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
-.reportes-saved__label { font-size: var(--t-cap); font-weight: 700; color: var(--text-3); }
+.reportes-saved__label { font-size: var(--t-cap); font-weight: 700; color: var(--text-2); }
 .reportes-saved__empty { font-size: var(--t-cap); color: var(--text-3); font-style: italic; }
 .reportes-saved-chip {
   display: inline-flex; align-items: center; gap: 4px;
@@ -5812,9 +5814,9 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
   padding: var(--s3) var(--s4); border-bottom: 1px solid var(--border); flex-wrap: wrap;
 }
 .reportes-table__columns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.reportes-table__columns-label { font-size: var(--t-cap); color: var(--text-3); font-weight: 600; margin-right: 4px; }
+.reportes-table__columns-label { font-size: var(--t-cap); color: var(--text-2); font-weight: 600; margin-right: 4px; }
 .reportes-col-chip {
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-3);
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-2);
   border-radius: var(--radius-pill); padding: 3px 10px; font-size: var(--t-cap); cursor: pointer; transition: .15s;
 }
 .reportes-col-chip--on { background: var(--info-bg); border-color: var(--info); color: var(--info); font-weight: 600; }
@@ -5859,7 +5861,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 }
 .global-board__card-project { font-size: var(--t-cap); font-weight: 700; color: var(--azul-claro); margin-bottom: 2px; }
 .global-board__card-text { color: var(--text); }
-.global-board__card-due { font-size: var(--t-cap); color: var(--text-3); margin-top: 4px; }
+.global-board__card-due { font-size: var(--t-cap); color: var(--text-2); margin-top: 4px; }
 
 /* Doble depósito (raíz vs. todas) cuando se agrupa por Estado */
 .global-board__deposito-title {
@@ -5877,9 +5879,9 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .workload-matrix th, .workload-matrix td { padding: var(--s2) var(--s3); text-align: center; border-bottom: 1px solid var(--border); }
 .workload-matrix th { background: var(--surface-2); font-weight: 700; color: var(--text-2); white-space: nowrap; }
 .workload-matrix__eng-col { text-align: left !important; font-weight: 600; white-space: nowrap; }
-.workload-matrix__week-range { font-weight: 400; color: var(--text-3); font-size: var(--t-cap); }
+.workload-matrix__week-range { font-weight: 400; color: var(--text-2); font-size: var(--t-cap); }
 .workload-matrix__cell--over { background: var(--red-bg); color: var(--red); font-weight: 700; }
-.workload-matrix__legend { display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-3); margin: var(--s3) 0 0; }
+.workload-matrix__legend { display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-2); margin: var(--s3) 0 0; }
 .workload-matrix__legend-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--red-bg); border: 1px solid var(--red); display: inline-block; }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -5918,7 +5920,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 }
 .htable-toolbar__chip:hover { border-color: var(--border-strong); }
 .htable-toolbar__chip--on { background: var(--inst-azul); border-color: var(--inst-azul); color: #fff; font-weight: 600; }
-.htable-toolbar__count { margin-left: auto; font-size: var(--t-cap); color: var(--text-3); }
+.htable-toolbar__count { margin-left: auto; font-size: var(--t-cap); color: var(--text-2); }
 
 .htable-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .htable { width: 100%; border-collapse: collapse; font-size: var(--t-sm); table-layout: fixed; }
@@ -5927,7 +5929,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
   text-align: left; padding: var(--s2) var(--s3); border-bottom: 2px solid var(--border); white-space: nowrap; z-index: 1;
 }
 .htable__cell { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); vertical-align: middle; }
-.htable__cell--num { text-align: center; color: var(--text-3); font-variant-numeric: tabular-nums; width: 44px; white-space: nowrap; }
+.htable__cell--num { text-align: center; color: var(--text-2); font-variant-numeric: tabular-nums; width: 44px; white-space: nowrap; }
 .htable__cell--name { width: auto; }
 .htable__cell--assignee { width: 130px; }
 .htable__cell--date { width: 108px; }
@@ -5960,7 +5962,7 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
   color: var(--text); font-size: var(--t-sm); padding: 3px 5px;
 }
 .htable__readonly {
-  color: var(--text-3); font-style: italic; font-size: var(--t-cap); white-space: nowrap;
+  color: var(--text-2); font-style: italic; font-size: var(--t-cap); white-space: nowrap;
 }
 .htable__readonly-text {
   color: var(--text); font-size: var(--t-sm); white-space: nowrap;

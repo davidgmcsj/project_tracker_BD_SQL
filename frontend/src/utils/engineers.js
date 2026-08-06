@@ -4,6 +4,14 @@
 import { buildActivityIndex } from "./formulas.js";
 import { activitiesForWeek, weekRange, nextWeekRange } from "./weekPlanning.js";
 
+// Actividades del ingeniero en ese proyecto que asignadas a él, fuente de
+// verdad (assigned_engineers), sin pasar por el snapshot weekly_detail.
+function engineerActivitiesInProject(engineerId, project) {
+  return (project.activities_identified || []).filter(a =>
+    (a.assigned_engineers || []).some(e => e.id === engineerId || e.engineer_id === engineerId)
+  );
+}
+
 // Proyectos donde el ingeniero aparece en engineers[].
 export function getProjectsForEngineer(engineerId, projects) {
   return (projects || []).filter(p => (p.engineers || []).some(e => e.engineer_id === engineerId));
@@ -28,6 +36,50 @@ export function countTotalAssignedTasks(engineerId, project) {
 // en ese proyecto. Se usa para resaltar el proyecto como "activo esta semana".
 export function hasActiveWeeklyTasks(engineerId, project) {
   return countActiveWeeklyTasks(engineerId, project) > 0;
+}
+
+// ── Variante EN VIVO de "esta semana" (vistas vivas, no reportes archivados) ──
+// countActiveWeeklyTasks/getEngineerActivitiesInProject (arriba) leen el campo
+// almacenado weekly_detail, que solo se refresca cuando alguien abre ese
+// proyecto en EditView esa semana — dos vistas podían mostrar números
+// distintos el mismo día. Estas calculan desde las fechas con el mismo motor
+// de utils/weekPlanning.js que usa engineerWeekTasks más abajo.
+//
+// countActiveWeeklyTasks/getEngineerActivitiesInProject NO se eliminan: el
+// reporte semanal archivado (MetricsTable.jsx, ReportView.jsx) debe leer el
+// snapshot congelado al cerrar la semana, no recalcular en vivo.
+
+// Cantidad de actividades del ingeniero que caen en la semana actual en ese
+// proyecto, calculado en vivo desde las fechas.
+export function countLiveWeeklyTasks(engineerId, project, today = new Date()) {
+  return getLiveWeekActivitiesInProject(engineerId, project, today).length;
+}
+
+// True si el ingeniero tiene al menos una actividad esta semana en ese
+// proyecto, calculado en vivo. Variante de hasActiveWeeklyTasks para vistas
+// vivas — ver nota arriba.
+export function hasLiveWeeklyTasks(engineerId, project, today = new Date()) {
+  return countLiveWeeklyTasks(engineerId, project, today) > 0;
+}
+
+// Actividades del ingeniero que caen en la semana actual en ese proyecto.
+// Mismo shape que getEngineerActivitiesInProject ({ id, text, position, history })
+// para que sea un reemplazo directo en las vistas vivas (ActivitiesTable, etc.).
+export function getLiveWeekActivitiesInProject(engineerId, project, today = new Date()) {
+  const mine = engineerActivitiesInProject(engineerId, project);
+  const range = weekRange(today.toISOString().slice(0, 10));
+  const actIndex = buildActivityIndex(project.activities_identified);
+  const history = project.task_status?.status_history || {};
+
+  return activitiesForWeek(mine, range, project.task_status).map(({ activity }) => {
+    const entry = actIndex.get(activity.id);
+    return {
+      id: activity.id,
+      text: activity.text || "",
+      position: entry?.position,
+      history: history[activity.id] || {},
+    };
+  });
 }
 
 // Para un ingeniero y un proyecto donde participa, resuelve su weekly_detail

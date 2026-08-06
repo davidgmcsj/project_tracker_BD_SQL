@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getProjectsForEngineer, getEngineerActivitiesInProject, getAllAssignedActivitiesInProject, hasActiveWeeklyTasks, countActiveWeeklyTasks, countTotalAssignedTasks } from "../utils/engineers";
+import { getProjectsForEngineer, getAllAssignedActivitiesInProject, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countLiveWeeklyTasks, countTotalAssignedTasks } from "../utils/engineers";
 import { createEngineerTask } from "../utils/formulas";
 import EngineerTaskModal from "./EngineerTaskModal";
 
@@ -51,7 +51,7 @@ function EngineerProjectsTable({ eng, projects }) {
   const projectsForEngineer = getProjectsForEngineer(eng.id, projects);
   if (!projectsForEngineer.length) return null;
 
-  const activeCount = projectsForEngineer.filter(p => hasActiveWeeklyTasks(eng.id, p)).length;
+  const activeCount = projectsForEngineer.filter(p => hasLiveWeeklyTasks(eng.id, p)).length;
 
   return (
     <div className="metrics-container">
@@ -65,7 +65,7 @@ function EngineerProjectsTable({ eng, projects }) {
         </thead>
         <tbody>
           {projectsForEngineer.map(p => {
-            const count = countActiveWeeklyTasks(eng.id, p);
+            const count = countLiveWeeklyTasks(eng.id, p);
             const totalAssigned = countTotalAssignedTasks(eng.id, p);
             return (
               <tr key={p.id}>
@@ -184,10 +184,10 @@ function ActivitiesTable({ activities, completedSet, inProgressSet }) {
 // ── Sub-tarjeta de proyecto dentro del detalle del ingeniero ─────────────────
 
 function ProjectActivitiesCard({ project, engineerId }) {
-  const weeklyActivities = getEngineerActivitiesInProject(engineerId, project);
+  const weeklyActivities = getLiveWeekActivitiesInProject(engineerId, project);
   const allActivities = getAllAssignedActivitiesInProject(engineerId, project);
   const statusLabel = STATUS_LABELS[project.status] || project.status;
-  const active = hasActiveWeeklyTasks(engineerId, project);
+  const active = hasLiveWeeklyTasks(engineerId, project);
 
   const completedSet = new Set(project.task_status?.completed || []);
   const inProgressSet = new Set(project.task_status?.in_progress || []);
