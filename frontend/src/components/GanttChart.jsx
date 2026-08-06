@@ -11,15 +11,16 @@ const STATUS_COLOR = {
 
 const MONTHS_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 
-// Hasta este número de días, cada columna es un día suelto; por encima se
-// agrupa en semanas (y más arriba, en meses). 35 permite ver un mes completo
-// día a día sin que el navegador tenga que dibujar columnas ilegibles.
-const DAY_UNIT_MAX_DAYS = 35;
+// Ventana del rango automático: días a mostrar HACIA ATRÁS desde la ÚLTIMA
+// fecha de entrega — el calendario termina justo en esa fecha (columna más a
+// la derecha), sin días posteriores.
+const AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE = 35;
 
-// Ventana del rango automático: días a mostrar alrededor de la ÚLTIMA fecha de
-// entrega, tantos hacia atrás como hacia adelante. Con 15 la vista abarca 31
-// días, que cae bajo DAY_UNIT_MAX_DAYS y por tanto se ve día a día.
-const AUTO_RANGE_DAYS_AROUND_LAST_DUE = 15;
+// Hasta este número de días, cada columna es un día suelto; por encima se
+// agrupa en semanas (y más arriba, en meses). El rango automático abarca
+// AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE + 1 días (incluye ambos extremos) — debe
+// caber aquí para seguir viéndose día a día, que es el caso por defecto.
+const DAY_UNIT_MAX_DAYS = AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE + 1;
 
 const LABEL_COL_MIN = 160;
 const LABEL_COL_MAX = 640;
@@ -118,12 +119,11 @@ function rangeForMonths(year, [startMonth, endMonth]) {
   return { start: new Date(year, startMonth, 1), end: lastDayOfMonth(year, endMonth) };
 }
 
-// Rango automático por defecto al abrir la vista: una ventana centrada en la
-// ÚLTIMA fecha de entrega del proyecto (±AUTO_RANGE_DAYS_AROUND_LAST_DUE días),
-// no en hoy. Así la vista aterriza donde está el cierre del trabajo — el tramo
-// final y lo que lo rodea — en lugar de estirarse desde el primer mes con
-// actividad hasta la última entrega, que forzaba columnas agrupadas por
-// semana o mes cuando el proyecto abarcaba varios meses.
+// Rango automático por defecto al abrir la vista: termina exactamente en la
+// ÚLTIMA fecha de entrega del proyecto (columna más a la derecha) y muestra
+// AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE días hacia atrás desde ahí — no hacia
+// adelante. Así la vista aterriza donde está el cierre del trabajo, sin
+// columnas vacías después de la última entrega.
 function computeAutoRange(dated) {
   let lastDue = null;
   dated.forEach(a => {
@@ -131,8 +131,8 @@ function computeAutoRange(dated) {
     if (d && (!lastDue || d > lastDue)) lastDue = d;
   });
   if (!lastDue) return null;
-  const start = new Date(lastDue); start.setDate(start.getDate() - AUTO_RANGE_DAYS_AROUND_LAST_DUE);
-  const end   = new Date(lastDue); end.setDate(end.getDate() + AUTO_RANGE_DAYS_AROUND_LAST_DUE);
+  const start = new Date(lastDue); start.setDate(start.getDate() - AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE);
+  const end   = new Date(lastDue);
   return { start, end };
 }
 
