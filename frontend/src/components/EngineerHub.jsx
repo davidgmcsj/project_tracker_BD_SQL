@@ -263,11 +263,12 @@ export default function EngineerHub({
         <EngineersView
           engineers={engineers} projects={projects}
           onAdd={onAdd} onUpdate={onUpdate} onToggleActive={onToggleActive} onUpdateTasks={onUpdateTasks}
+          onOpenActivity={onOpenActivity}
         />
       )}
 
       {subtab === "historial" && eng && (
-        <EngineerReportBody engineer={eng} projects={projects} />
+        <EngineerReportBody engineer={eng} projects={projects} onOpenActivity={onOpenActivity} />
       )}
     </div>
   );

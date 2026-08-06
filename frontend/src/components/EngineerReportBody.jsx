@@ -8,7 +8,7 @@ import EngineerActivitiesTable from "./engineer/EngineerActivitiesTable";
 import AdditionalTasksTable from "./engineer/AdditionalTasksTable";
 import EngineerProjectNotes from "./engineer/EngineerProjectNotes";
 
-function ProjectBlock({ project, engineerId }) {
+function ProjectBlock({ project, engineerId, onOpenActivity }) {
   const acts = getAllAssignedActivitiesInProject(engineerId, project);
   return (
     <div className="project-card" style={{ marginBottom: 16 }}>
@@ -19,7 +19,10 @@ function ProjectBlock({ project, engineerId }) {
       {acts.length === 0 ? (
         <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin actividades asignadas en este proyecto.</p>
       ) : (
-        <EngineerActivitiesTable activities={acts} />
+        <EngineerActivitiesTable
+          activities={acts}
+          onOpenActivity={onOpenActivity ? (activityId) => onOpenActivity(project.id, activityId) : undefined}
+        />
       )}
       <h4 className="eng-section-title" style={{ marginTop: 16 }}>Notas del proyecto</h4>
       <EngineerProjectNotes proyectoAppID={project.id} />
@@ -44,7 +47,7 @@ function AdditionalTasksBlock({ tasks }) {
   );
 }
 
-export default function EngineerReportBody({ engineer, projects }) {
+export default function EngineerReportBody({ engineer, projects, onOpenActivity }) {
   const projs = getProjectsForEngineer(engineer.id, projects);
 
   return (
@@ -55,7 +58,7 @@ export default function EngineerReportBody({ engineer, projects }) {
       {projs.length === 0 ? (
         <p style={{ color: "var(--text-2)" }}>Este ingeniero no está asignado a ningún proyecto.</p>
       ) : (
-        projs.map(p => <ProjectBlock key={p.id} project={p} engineerId={engineer.id} />)
+        projs.map(p => <ProjectBlock key={p.id} project={p} engineerId={engineer.id} onOpenActivity={onOpenActivity} />)
       )}
 
       <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>Tareas adicionales</h3>

@@ -135,7 +135,7 @@ function EngineerCard({ eng, projects, onUpdate, onToggleActive, onOpenDetail })
 
 // ── Sub-tarjeta de proyecto dentro del detalle del ingeniero ─────────────────
 
-function ProjectActivitiesCard({ project, engineerId }) {
+function ProjectActivitiesCard({ project, engineerId, onOpenActivity }) {
   const weeklyActivities = getLiveWeekActivitiesInProject(engineerId, project);
   const allActivities = getAllAssignedActivitiesInProject(engineerId, project);
   const statusLabel = STATUS_LABELS[project.status] || project.status;
@@ -143,6 +143,7 @@ function ProjectActivitiesCard({ project, engineerId }) {
 
   const completedSet = new Set(project.task_status?.completed || []);
   const inProgressSet = new Set(project.task_status?.in_progress || []);
+  const openActivity = onOpenActivity ? (activityId) => onOpenActivity(project.id, activityId) : undefined;
 
   return (
     <div
@@ -167,7 +168,7 @@ function ProjectActivitiesCard({ project, engineerId }) {
           Sin actividades asignadas esta semana en este proyecto.
         </p>
       ) : (
-        <EngineerActivitiesTable activities={weeklyActivities} completedSet={completedSet} inProgressSet={inProgressSet} />
+        <EngineerActivitiesTable activities={weeklyActivities} completedSet={completedSet} inProgressSet={inProgressSet} onOpenActivity={openActivity} />
       )}
 
       {/* Sección 2: todas las actividades asignadas al ingeniero en el proyecto */}
@@ -180,7 +181,7 @@ function ProjectActivitiesCard({ project, engineerId }) {
           Sin actividades asignadas a este ingeniero en el proyecto.
         </p>
       ) : (
-        <EngineerActivitiesTable activities={allActivities} completedSet={completedSet} inProgressSet={inProgressSet} />
+        <EngineerActivitiesTable activities={allActivities} completedSet={completedSet} inProgressSet={inProgressSet} onOpenActivity={openActivity} />
       )}
     </div>
   );
@@ -258,7 +259,7 @@ function LooseTasksSection({ tasks, onChange, engineerName }) {
 
 // ── Panel de detalle de un ingeniero ──────────────────────────────────────────
 
-function EngineerDetail({ eng, projects, onUpdateTasks, onBack }) {
+function EngineerDetail({ eng, projects, onUpdateTasks, onBack, onOpenActivity }) {
   const projectsForEngineer = getProjectsForEngineer(eng.id, projects);
 
   return (
@@ -291,7 +292,7 @@ function EngineerDetail({ eng, projects, onUpdateTasks, onBack }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           {projectsForEngineer.map(p => (
-            <ProjectActivitiesCard key={p.id} project={p} engineerId={eng.id} />
+            <ProjectActivitiesCard key={p.id} project={p} engineerId={eng.id} onOpenActivity={onOpenActivity} />
           ))}
         </div>
       )}
@@ -303,7 +304,7 @@ function EngineerDetail({ eng, projects, onUpdateTasks, onBack }) {
 
 // ── Vista principal ───────────────────────────────────────────────────────────
 
-export default function EngineersView({ engineers, projects, onAdd, onUpdate, onToggleActive, onUpdateTasks }) {
+export default function EngineersView({ engineers, projects, onAdd, onUpdate, onToggleActive, onUpdateTasks, onOpenActivity }) {
   const [adding, setAdding] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [query, setQuery] = useState("");
@@ -312,7 +313,7 @@ export default function EngineersView({ engineers, projects, onAdd, onUpdate, on
   if (selectedId) {
     const eng = list.find(e => e.id === selectedId);
     if (eng) {
-      return <EngineerDetail eng={eng} projects={projects} onUpdateTasks={onUpdateTasks} onBack={() => setSelectedId(null)} />;
+      return <EngineerDetail eng={eng} projects={projects} onUpdateTasks={onUpdateTasks} onBack={() => setSelectedId(null)} onOpenActivity={onOpenActivity} />;
     }
   }
 
