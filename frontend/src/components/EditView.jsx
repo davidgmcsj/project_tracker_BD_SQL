@@ -10,7 +10,6 @@ import {
   activitiesForWeek, completedInWeek, SITUATION_LABEL,
 } from "../utils/weekPlanning";
 import { mergePlannerImport, normalizeName } from "../utils/plannerImport";
-import { matchesSearch } from "../utils/search";
 import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
 import PlannerImportModal from "./PlannerImportModal";
@@ -519,134 +518,6 @@ function ActivitiesList({
   );
 }
 
-// ── Selector de actividades (multi-select con límite) ─────────────────────────
-
-function getCurrentWeekKey() {
-  const now = new Date();
-  const day = now.getDay() || 7;
-  const mon = new Date(now);
-  mon.setDate(now.getDate() - day + 1);
-  return mon.toISOString().slice(0, 10);
-}
-
-function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted, excludeOldCompleted, completedDates, fixedAssigned }) {
-  const [query, setQuery] = useState("");
-  const acts   = safeActs(activities);
-  const selArr = safeArr(selected);
-  const actIndex = buildActivityIndex(acts);
-
-  const currentWeek = getCurrentWeekKey();
-
-  // excludeCompleted: oculta TODAS las completadas (para "próxima semana" e "ingeniero esta semana")
-  const completedSet = excludeCompleted ? new Set(safeArr(excludeCompleted)) : null;
-
-  // excludeOldCompleted: oculta solo las completadas en semanas ANTERIORES (para "qué se hizo esta semana")
-  const oldCompletedSet = excludeOldCompleted
-    ? new Set(
-        safeArr(excludeOldCompleted).filter(id => {
-          const dateKey = completedDates?.[id];
-          if (!dateKey) return false;
-          const itemWeek = new Date(dateKey + "T12:00:00");
-          const day = itemWeek.getDay() || 7;
-          itemWeek.setDate(itemWeek.getDate() - day + 1);
-          return itemWeek.toISOString().slice(0, 10) < currentWeek;
-        })
-      )
-    : null;
-
-  const deselect = (id) => onChange(selArr.filter(s => s !== id));
-  const select   = (id) => {
-    if (limit && selArr.length >= limit) return;
-    onChange([...selArr, id]);
-  };
-  const toggle = (id) => selArr.includes(id) ? deselect(id) : select(id);
-
-  const { onDragStart, onDrop } = useDragSort(selArr, onChange);
-
-  const fixedSet = fixedAssigned ? new Set(safeArr(fixedAssigned)) : null;
-
-  // Filtra según el modo y aplica búsqueda, preservando posición original
-  const visible = acts.reduce((acc, act, origIdx) => {
-    if (completedSet    && completedSet.has(act.id))    return acc;
-    if (oldCompletedSet && oldCompletedSet.has(act.id)) return acc;
-    if (!matchesSearch(act.text, query)) return acc;
-    acc.push({ act, origIdx });
-    return acc;
-  }, []);
-
-  return (
-    <div className="act-selector">
-      <div className="act-selector__header">
-        <span className="act-selector__label">{label}</span>
-        {limit && (
-          <span className={`act-selector__count ${selArr.length >= limit ? "act-selector__count--full" : ""}`}>
-            {selArr.length}/{limit} seleccionadas
-          </span>
-        )}
-      </div>
-
-      {acts.length > 0 ? (
-        <>
-          <div className="act-selector__search">
-            <input
-              className="act-selector__search-input"
-              type="text" placeholder="Buscar actividad…"
-              value={query} onChange={e => setQuery(e.target.value)}
-            />
-            {query && (
-              <button type="button" className="act-selector__search-clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
-            )}
-          </div>
-          <div className="act-selector__list">
-            {visible.length === 0 ? (
-              <p className="act-selector__empty">{query ? `Sin coincidencias para "${query}"` : "Sin actividades disponibles"}</p>
-            ) : visible.map(({ act, origIdx }) => {
-              const checked     = selArr.includes(act.id);
-              const isFixed     = fixedSet && fixedSet.has(act.id);
-              const disabled    = !checked && limit && selArr.length >= limit;
-              return (
-                <label
-                  key={act.id}
-                  className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""} ${isFixed ? "act-selector__item--fixed" : ""}`}
-                >
-                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(act.id)} />
-                  <span className="act-selector__num">{origIdx + 1}.</span>
-                  <span className="act-selector__text">{act.text}</span>
-                  {isFixed && <span className="act-selector__fixed-badge">Asignada</span>}
-                </label>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <p className="act-selector__empty">
-          Primero agrega actividades identificadas para poder seleccionarlas aquí.
-        </p>
-      )}
-
-      {selArr.length > 0 && (
-        <div className="act-selector__selected">
-          <span className="act-selector__selected-label">Seleccionadas:</span>
-          {selArr.map((id, i) => (
-            <span
-              key={id} className="act-selector__chip"
-              draggable
-              onDragStart={() => onDragStart(i)}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => onDrop(i)}
-              title="Arrastra para reordenar"
-            >
-              <span className="act-selector__chip-grip">⠿</span>
-              <span className="act-selector__chip-text">{activityLabel(actIndex, id)}</span>
-              <button type="button" className="act-selector__chip-remove" onClick={() => deselect(id)} title="Quitar selección">✕</button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Fila de impedimento ───────────────────────────────────────────────────────
 
 function ImpedimentRow({ item, index, onChange, onRemove }) {
@@ -745,31 +616,6 @@ function IndicatorRow({ ind, index, onChange, onRemove }) {
       </div>
       {isOver && <div style={{ color: "var(--red)", fontSize: "12px", fontWeight: 600 }}>⚠ Completadas + en proceso supera el total.</div>}
     </div>
-  );
-}
-
-// ── Lista de seleccionadas con drag-to-reorder ────────────────────────────────
-
-function SelectedList({ items, activities, onChange }) {
-  const { onDragStart, onDrop } = useDragSort(items, onChange);
-  const actIndex = buildActivityIndex(safeActs(activities));
-  return (
-    <ol className="engineer-selected__list">
-      {items.map((id, i) => (
-        <li
-          key={id} className="engineer-selected__item"
-          draggable
-          onDragStart={() => onDragStart(i)}
-          onDragOver={e => e.preventDefault()}
-          onDrop={() => onDrop(i)}
-          title="Arrastra para reordenar"
-        >
-          <span className="engineer-selected__grip">⠿</span>
-          <span className="engineer-selected__num">{i + 1}.</span>
-          <span className="engineer-selected__text">{activityText(actIndex, id)}</span>
-        </li>
-      ))}
-    </ol>
   );
 }
 

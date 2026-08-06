@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import MiniBar from "./MiniBar";
 import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
-import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText, generateAssignmentsByEngineer, visibleActivities } from "../utils/formulas";
-import { generateQuarterlyReport } from "../utils/generateQuarterlyReport";
+import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText, visibleActivities } from "../utils/formulas";
 import { getProjectsForEngineer } from "../utils/engineers";
 import { useClickOutside } from "../hooks/useClickOutside";
 import { authHeaders } from "../utils/storage";
@@ -528,7 +527,6 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
 
 export default function ReportView({ projects, weekLabel, engineers, singleProjectIdx, onClearSingle, generatingInforme, generatingName, onGenerateInforme, onCancelInforme }) {
   const [toast, setToast] = useState("");
-  const [showByEngineer, setShowByEngineer] = useState(false);
 
   // ── Filtros del reporte consolidado ──
   const [fSearch,   setFSearch]   = useState("");
@@ -717,32 +715,6 @@ export default function ReportView({ projects, weekLabel, engineers, singleProje
               setToast={setToast}
             />
           ))}
-
-          {!isSingle && projects.length > 0 && (
-            <div className="report-by-engineer">
-              <div className="report-by-engineer__header">
-                <h3 className="report-section-title">Actividades por Ingeniero</h3>
-                <button
-                  className="btn btn--secondary"
-                  onClick={() => setShowByEngineer(v => !v)}
-                >
-                  {showByEngineer ? "Ocultar" : "Ver listado"}
-                </button>
-              </div>
-              {showByEngineer && (
-                <>
-                  <p className="report-by-engineer__hint">
-                    Selecciona todo el texto y cópialo (Ctrl+A → Ctrl+C).
-                  </p>
-                  <textarea
-                    className="report-by-engineer__text"
-                    readOnly
-                    value={generateAssignmentsByEngineer(projects, engineers, weekLabel)}
-                  />
-                </>
-              )}
-            </div>
-          )}
         </>
       )}
     </div>
