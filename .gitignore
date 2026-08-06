@@ -28,6 +28,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ── Copia local del propio repo (tiene su propio .git) — nunca versionar ─────
+# Apareció al descomprimir un respaldo dentro del árbol de trabajo.
+project_tracker_BD/
+
+# ── Material de referencia externo, no forma parte de la app ─────────────────
+Contro O.T/
+Contro O.T.zip
+
 # ── Editor y herramientas locales ────────────────────────────────────────────
 .claude/
 markit/
