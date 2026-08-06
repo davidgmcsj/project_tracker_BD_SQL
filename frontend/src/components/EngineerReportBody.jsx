@@ -6,6 +6,7 @@
 import { getProjectsForEngineer, getAllAssignedActivitiesInProject } from "../utils/engineers";
 import EngineerActivitiesTable from "./engineer/EngineerActivitiesTable";
 import AdditionalTasksTable from "./engineer/AdditionalTasksTable";
+import EngineerProjectNotes from "./engineer/EngineerProjectNotes";
 
 function ProjectBlock({ project, engineerId }) {
   const acts = getAllAssignedActivitiesInProject(engineerId, project);
@@ -20,6 +21,8 @@ function ProjectBlock({ project, engineerId }) {
       ) : (
         <EngineerActivitiesTable activities={acts} />
       )}
+      <h4 className="eng-section-title" style={{ marginTop: 16 }}>Notas del proyecto</h4>
+      <EngineerProjectNotes proyectoAppID={project.id} />
     </div>
   );
 }
