@@ -465,11 +465,21 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
 
   const totalUnits = unitDiff(effectiveUnit, effectiveRange.start, effectiveRange.end) + 1;
 
+  // En modo semana, la columna 0 debe ser el LUNES real de la semana que
+  // contiene effectiveRange.start — no ese día exacto. unitDiff() ya usa
+  // mondayOf(from) como ancla para decidir en qué columna cae cada actividad
+  // (semanas calendario reales, lunes-domingo); si las columnas visuales
+  // arrancaran en un día suelto (ej. "Desde" = un sábado), cada bloque de 7
+  // días quedaría desalineado de la semana calendario real que unitDiff usa
+  // para ubicar las actividades — el bug exacto de la captura: una tarea del
+  // 6/jul (lunes) se ubicaba en la columna "11-17 jul" en vez de "6-12 jul".
+  const weekAnchorDate = effectiveUnit === "week" ? mondayOf(effectiveRange.start) : null;
+
   const columns = [];
   for (let i = 0; i < totalUnits; i++) {
     let d;
     if (effectiveUnit === "day") { d = new Date(effectiveRange.start); d.setDate(d.getDate() + i); }
-    else if (effectiveUnit === "week") { d = new Date(effectiveRange.start); d.setDate(d.getDate() + i * 7); }
+    else if (effectiveUnit === "week") { d = new Date(weekAnchorDate); d.setDate(d.getDate() + i * 7); }
     else { d = new Date(effectiveRange.start.getFullYear(), effectiveRange.start.getMonth() + i, 1); }
     const isWeekend = effectiveUnit === "day" && (d.getDay() === 0 || d.getDay() === 6);
     columns.push({
