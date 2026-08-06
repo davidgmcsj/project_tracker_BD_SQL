@@ -1491,6 +1491,7 @@
 .week-auto-table__situation--due       { background: var(--amber-bg); color: var(--amber); }
 .week-auto-table__situation--starts    { background: var(--info-bg);  color: var(--info); }
 .week-auto-table__situation--continues { background: var(--surface);  color: var(--text-3); border-color: var(--border); }
+.week-auto-table__situation--completed { background: var(--green-bg); color: var(--green); }
 .engineer-section {
   background: var(--surface-2);
   border: 1px solid var(--border);

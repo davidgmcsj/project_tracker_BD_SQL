@@ -5,7 +5,10 @@ import {
   createActivity, buildActivityIndex, activityText, activityLabel,
   visibleActivities, formatDateDMY, getToday,
 } from "../utils/formulas";
-import { activitiesForEngineerWeek, weekRange, SITUATION_LABEL } from "../utils/weekPlanning";
+import {
+  activitiesForEngineerWeek, weekRange, nextWeekRange,
+  activitiesForWeek, completedInWeek, SITUATION_LABEL,
+} from "../utils/weekPlanning";
 import { mergePlannerImport, normalizeName } from "../utils/plannerImport";
 import { matchesSearch } from "../utils/search";
 import { useClickOutside } from "../hooks/useClickOutside";
@@ -774,7 +777,7 @@ function SelectedList({ items, activities, onChange }) {
 
 const CREATE_ENGINEER_OPTION = "__create__";
 
-function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer }) {
+function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer, onOpenActivity }) {
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState("");
 
@@ -868,7 +871,7 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, e
           ) : weekRows.length === 0 ? (
             <p className="engineer-selected__empty">Sin actividades asignadas que crucen esta semana.</p>
           ) : (
-            <WeekActivitiesTable rows={weekRows} />
+            <WeekActivitiesTable rows={weekRows} onOpenActivity={onOpenActivity} />
           )}
         </div>
       </div>
@@ -876,8 +879,14 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, e
   );
 }
 
+// "completed" no es una situación del motor de clasificación (weekPlanning.js
+// solo describe pendientes) — es la vista de "esto ya se hizo" que usa
+// NextWeekPlanningSection para el bloque de logros de la semana.
+const ROW_STATUS_LABEL = { ...SITUATION_LABEL, completed: "Completada" };
+
 // Tabla de solo lectura: actividad, inicio, fin y su situación en la semana
-// (vence / inicia / continúa / en demora). Clic en el nombre abre su tarjeta.
+// (vence / inicia / continúa / en demora / completada). Clic en el nombre
+// abre su tarjeta.
 function WeekActivitiesTable({ rows, onOpenActivity }) {
   return (
     <table className="week-auto-table">
@@ -903,13 +912,86 @@ function WeekActivitiesTable({ rows, onOpenActivity }) {
             <td>{formatDateDMY(activity.due_date)}</td>
             <td>
               <span className={`week-auto-table__situation week-auto-table__situation--${situation}`}>
-                {SITUATION_LABEL[situation]}
+                {ROW_STATUS_LABEL[situation]}
               </span>
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+// ── Cierre semanal automático (reemplaza selección manual) ───────────────────
+// "Qué se hizo esta semana" y "plan próxima semana" ya no se seleccionan a
+// mano: se derivan de completed_dates y de las fechas de cada actividad
+// (mismo motor que EngineerRow — ver utils/weekPlanning.js). El resultado se
+// escribe en next_week_plan/weekly_achievements para que ReportView y el
+// resto de consumidores del reporte sigan funcionando sin cambios.
+
+const NEXT_WEEK = nextWeekRange(getToday());
+
+function NextWeekPlanningSection({ activities, taskStatus, project, onUpdateProject, onOpenActivity }) {
+  const completedRows = useMemo(
+    () => completedInWeek(activities, CURRENT_WEEK, taskStatus),
+    [activities, taskStatus]
+  );
+  const nextWeekRows = useMemo(
+    () => activitiesForWeek(activities, NEXT_WEEK, taskStatus, { includeOverdue: false }),
+    [activities, taskStatus]
+  );
+
+  const completedIds = completedRows.map(a => a.id);
+  const nextWeekIds  = nextWeekRows.map(r => r.activity.id);
+  const completedKey = completedIds.join(",");
+  const nextWeekKey  = nextWeekIds.join(",");
+
+  useEffect(() => {
+    const current = safeArr(project.weekly_achievements);
+    if (current.join(",") === completedKey) return;
+    onUpdateProject({ ...project, weekly_achievements: completedIds });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se recalcula por completedKey (contenido)
+  }, [completedKey]);
+
+  useEffect(() => {
+    const current = safeArr(project.next_week_plan);
+    if (current.join(",") === nextWeekKey) return;
+    onUpdateProject({ ...project, next_week_plan: nextWeekIds });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se recalcula por nextWeekKey (contenido)
+  }, [nextWeekKey]);
+
+  return (
+    <div className="field field--optional">
+      <div className="field__header">
+        <label className="field__label" style={{ marginBottom: 0 }}>
+          Cierre semanal
+          <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
+            Calculado automáticamente desde las fechas de cada actividad
+          </span>
+        </label>
+      </div>
+      <div className="edit-row edit-row--2col" style={{ marginTop: 12 }}>
+        <div className="field">
+          <label className="field__label">✓ Qué se hizo esta semana</label>
+          {completedRows.length === 0 ? (
+            <p className="engineer-selected__empty">Sin actividades completadas esta semana.</p>
+          ) : (
+            <WeekActivitiesTable
+              rows={completedRows.map(activity => ({ activity, situation: "completed" }))}
+              onOpenActivity={onOpenActivity}
+            />
+          )}
+        </div>
+        <div className="field">
+          <label className="field__label">→ Plan para la próxima semana</label>
+          {nextWeekRows.length === 0 ? (
+            <p className="engineer-selected__empty">Sin actividades planificadas para la próxima semana.</p>
+          ) : (
+            <WeekActivitiesTable rows={nextWeekRows} onOpenActivity={onOpenActivity} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2223,6 +2305,7 @@ export default function EditView({
                     taskStatus={p.task_status}
                     engineerCatalog={engineerCatalog}
                     onCreateEngineer={onCreateEngineer}
+                    onOpenActivity={setModalActId}
                   />
                 ))}
                 <div className="shared-tasks-row">
@@ -2247,48 +2330,18 @@ export default function EditView({
           {/* ══ 9b. Notas y comentarios fechados (Proyecto_Notas, independiente del pulso) ══ */}
           <ProjectNotesPanel proyectoAppID={p.id} />
 
-          {/* ══ 10. Cierre semanal ══ */}
-          <div className="field field--optional">
-            <div className="field__header">
-              <label className="field__label">Sección de Cierre</label>
-              <label className="field__checkbox-wrapper">
-                <input
-                  type="checkbox" checked={p.show_closing_fields}
-                  onChange={e => onUpdateProject(editingIdx, "show_closing_fields", e.target.checked)}
-                />
-                Habilitar campos
-              </label>
-            </div>
-            {p.show_closing_fields ? (
-              <div className="edit-row edit-row--2col" style={{ marginTop: "12px" }}>
-                <div className="field">
-                  <label className="field__label">→ Plan para la próxima semana</label>
-                  <ActivitySelector
-                    label="Selecciona las actividades planificadas"
-                    activities={activities}
-                    selected={safeArr(p.next_week_plan)}
-                    onChange={val => onUpdateProject(editingIdx, "next_week_plan", val)}
-                    excludeCompleted={p.task_status?.completed}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field__label">✓ ¿Qué se hizo esta semana?</label>
-                  <ActivitySelector
-                    label="Selecciona las actividades completadas"
-                    activities={activities}
-                    selected={safeArr(p.weekly_achievements)}
-                    onChange={val => onUpdateProject(editingIdx, "weekly_achievements", val)}
-                    excludeOldCompleted={p.task_status?.completed}
-                    completedDates={p.task_status?.completed_dates}
-                  />
-                </div>
-              </div>
-            ) : (
-              <p style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 8 }}>
-                Activa esta sección para registrar el cierre semanal.
-              </p>
-            )}
-          </div>
+          {/* ══ 10. Cierre semanal — automático ══
+                 Reemplaza la selección manual de "qué se hizo" y "plan próxima
+                 semana": ambos se deducen de las fechas de las actividades.
+                 Sigue escribiendo en next_week_plan/weekly_achievements para
+                 que ReportView y el resto de consumidores no cambien. */}
+          <NextWeekPlanningSection
+            activities={activities}
+            taskStatus={p.task_status}
+            onUpdateProject={updated => onUpdateProjectFull(editingIdx, updated)}
+            project={p}
+            onOpenActivity={setModalActId}
+          />
 
           <div className="edit-panel__footer">
             <button className="btn btn--accent"  onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>

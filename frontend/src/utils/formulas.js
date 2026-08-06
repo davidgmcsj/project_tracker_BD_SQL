@@ -664,7 +664,10 @@ function projectBlock(p, i, engineerIndex) {
     txt += "\n";
   }
 
-  if (p.show_closing_fields) {
+  // weekly_achievements/next_week_plan se calculan automáticamente (ver
+  // NextWeekPlanningSection en EditView.jsx) — ya no dependen del antiguo
+  // checkbox show_closing_fields, cada bloque se omite solo si queda vacío.
+  {
     const ach  = resolveIds(actIndex, p.weekly_achievements);
     const plan = resolveIds(actIndex, p.next_week_plan);
     if (ach.length)  txt += `✓ Qué se hizo esta semana:\n${arrToBullets(ach)}\n\n`;

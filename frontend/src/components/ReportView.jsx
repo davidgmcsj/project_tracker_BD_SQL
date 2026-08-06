@@ -496,12 +496,12 @@ function ProjectReport({ p, i, onGenerateInforme, onExportText, generating, gene
       <div className="rpt-sections-grid">
         <BulletSection fieldKey="activities_identified" value={visibleActivities(p.activities_identified).map(a => a.text)} />
         <ImpedimentSection impediments={p.impediments} />
-        {p.show_closing_fields && (
-          <>
-            <BulletSection fieldKey="weekly_achievements" value={(p.weekly_achievements || []).map(id => activityText(activitiesIndex, id))} />
-            <BulletSection fieldKey="next_week_plan"      value={(p.next_week_plan      || []).map(id => activityText(activitiesIndex, id))} />
-          </>
-        )}
+        {/* weekly_achievements/next_week_plan ya se calculan automáticamente
+            (ver NextWeekPlanningSection en EditView.jsx) — BulletSection ya
+            se oculta sola cuando el array queda vacío, sin necesitar el
+            antiguo checkbox "Habilitar campos". */}
+        <BulletSection fieldKey="weekly_achievements" value={(p.weekly_achievements || []).map(id => activityText(activitiesIndex, id))} />
+        <BulletSection fieldKey="next_week_plan"      value={(p.next_week_plan      || []).map(id => activityText(activitiesIndex, id))} />
       </div>
 
       <MilestoneSection milestones={p.milestones} activitiesIndex={activitiesIndex} />
