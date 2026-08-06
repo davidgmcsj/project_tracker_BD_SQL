@@ -145,6 +145,30 @@ const REGISTRY = {
     columnasDefault: ["proyecto", "actividad", "estado", "fecha_fin"],
     ordenDefault: [{ campo: "fecha_fin", direccion: "asc" }],
   },
+
+  // "¿Qué se está trabajando / qué falta por empezar en un proyecto?" — mismo
+  // estado operacional vivo que "vencidas" (Actividades_Detalle), pero sin
+  // el WHERE fijo de vencida: el estado es un filtro real, así que cubre
+  // "en proceso", "no iniciadas", o ambas a la vez, con o sin proyecto.
+  actividades_estado: {
+    from: `Actividades_Detalle ad
+           LEFT JOIN Proyectos p ON p.AppID = ad.ProyectoAppID`,
+    filtros: {
+      proyecto_id: { columna: "ad.ProyectoAppID", tipo: "lista", sqlType: sql.NVarChar(60), operador: ["=", "in"] },
+      estado:      { columna: "ad.Estado",        tipo: "lista", sqlType: sql.NVarChar(50), operador: ["=", "in"] },
+    },
+    columnasPermitidas: {
+      proyecto:     "p.NombreProyecto",
+      proyecto_id:  "ad.ProyectoAppID",
+      actividad:    "ad.TextoActividad",
+      estado:       "ad.Estado",
+      progreso:     "ad.Progreso",
+      fecha_inicio: "ad.FechaInicio",
+      fecha_fin:    "ad.FechaFin",
+    },
+    columnasDefault: ["proyecto", "actividad", "estado", "fecha_inicio", "fecha_fin"],
+    ordenDefault: [{ campo: "proyecto", direccion: "asc" }],
+  },
 };
 
 module.exports = { REGISTRY };

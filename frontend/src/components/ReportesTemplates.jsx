@@ -42,6 +42,14 @@ const PLANTILLAS = [
     consulta: "vencidas",
     filtros: [],
   },
+  {
+    id: "en-curso",
+    icon: "🚧",
+    title: "En curso y por iniciar",
+    desc: "Qué se está trabajando y qué falta por empezar",
+    consulta: "actividades_estado",
+    filtros: [{ campo: "estado", operador: "in", valor: ["in_progress", "not_started"] }],
+  },
 ];
 
 export function ReportesTemplates({ onSelect }) {

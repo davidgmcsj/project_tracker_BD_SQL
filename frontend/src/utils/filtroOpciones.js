@@ -7,6 +7,7 @@
 // enum cambia en el backend hay que actualizar esta lista junto con él:
 //   - ESTADOS_PROYECTO      → project.status en toda la app (EstadoProyecto)
 //   - ESTADOS_INGENIERO_REPORTE → backend/db-operations.cjs statusMap
+//   - ESTADOS_ACTIVIDAD_OPERACIONAL → Actividades_Detalle.Estado (utils/engineers.js activityStatusIn)
 //   - TIPOS_EVENTO_ACTIVIDAD    → backend/activity-events.cjs TIPOS
 //   - ORIGENES_EVENTO          → backend/db-operations.cjs y backfill-events.cjs
 //   - PRIORIDADES_PROYECTO     → backend/migrations/015_*.sql
@@ -52,4 +53,13 @@ export const TIPOS_NOTA = [
   { value: "decision",   label: "Decisión",   icon: "🧭" },
   { value: "riesgo",     label: "Riesgo",      icon: "⚠️" },
   { value: "compromiso", label: "Compromiso", icon: "🤝" },
+];
+
+// Estado operacional vivo de una actividad (Actividades_Detalle.Estado) —
+// distinto del vocabulario de ESTADOS_PROYECTO. Usado por la consulta
+// "actividades_estado" para filtrar en proceso / no iniciadas / completadas.
+export const ESTADOS_ACTIVIDAD_OPERACIONAL = [
+  { value: "not_started", label: "No iniciada" },
+  { value: "in_progress", label: "En proceso" },
+  { value: "completed",   label: "Completada" },
 ];

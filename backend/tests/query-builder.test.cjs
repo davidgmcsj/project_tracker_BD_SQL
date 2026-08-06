@@ -113,3 +113,28 @@ test("límite se acota al máximo permitido, aunque se pida más", () => {
   const built = buildQuery({ consulta: "vencidas", limite: 999999 }, { maxLimite: 5000 });
   assert.equal(built.limite, 5000);
 });
+
+// "actividades_estado": misma tabla operacional que "vencidas" pero SIN el
+// WHERE fijo de vencida — el estado es un filtro real, así que cubre
+// "en proceso"/"no iniciadas" (o ambas) con o sin proyecto.
+test("actividades_estado no trae el WHERE fijo de 'vencidas' (mismo FROM, sin condición de vencida)", () => {
+  const sinFiltro = buildQuery({ consulta: "actividades_estado" });
+  assert.doesNotMatch(sinFiltro.dataSql, /WHERE/);
+  assert.match(sinFiltro.dataSql, /FROM Actividades_Detalle ad/);
+});
+
+test("actividades_estado filtra por estado 'in' (en proceso + no iniciadas) y por proyecto", () => {
+  const built = buildQuery({
+    consulta: "actividades_estado",
+    filtros: [
+      { campo: "estado", operador: "in", valor: ["in_progress", "not_started"] },
+      { campo: "proyecto_id", operador: "=", valor: "abc123" },
+    ],
+  });
+  assert.match(built.dataSql, /WHERE ad\.Estado IN \(@f0_0,@f0_1\) AND ad\.ProyectoAppID = @f1/);
+  const req = fakeRequest();
+  built.bind(req);
+  assert.equal(req.inputs.f0_0, "in_progress");
+  assert.equal(req.inputs.f0_1, "not_started");
+  assert.equal(req.inputs.f1, "abc123");
+});

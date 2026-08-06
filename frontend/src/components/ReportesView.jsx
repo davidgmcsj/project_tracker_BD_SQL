@@ -26,7 +26,7 @@ import { GlobalBoardView } from "./GlobalBoardView";
 import { WorkloadMatrix } from "./WorkloadMatrix";
 import {
   ESTADOS_PROYECTO, ESTADOS_INGENIERO_REPORTE, TIPOS_EVENTO_ACTIVIDAD,
-  PRIORIDADES_PROYECTO, TIPOS_NOTA,
+  PRIORIDADES_PROYECTO, TIPOS_NOTA, ESTADOS_ACTIVIDAD_OPERACIONAL,
 } from "../utils/filtroOpciones";
 
 const MODOS = [
@@ -40,11 +40,12 @@ const MODOS = [
 // no una actividad completa — de ahí el nombre "Historial de cambios" en vez
 // de "Actividades", que sugería una lista de tareas.
 const NOMBRES_CONSULTA = {
-  actividades: "Historial de cambios",
-  ingenieros:  "Ingenieros",
-  proyectos:   "Proyectos",
-  vencidas:    "Vencidas",
-  notas:       "Notas",
+  actividades:        "Historial de cambios",
+  ingenieros:          "Ingenieros",
+  proyectos:           "Proyectos",
+  vencidas:            "Vencidas",
+  notas:               "Notas",
+  actividades_estado:  "Actividades por estado",
 };
 
 const DESCRIPCION_CONSULTA = {
@@ -114,11 +115,12 @@ export function ReportesView({ projects, engineers }) {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     const porConsulta = {
-      actividades: { proyecto_id: proyectoOpciones, tipo: TIPOS_EVENTO_ACTIVIDAD },
-      ingenieros:  { ingeniero_id: ingenieroOpciones, proyecto_id: proyectoOpciones, estado: ESTADOS_INGENIERO_REPORTE },
-      proyectos:   { proyecto_id: proyectoOpciones, estado: ESTADOS_PROYECTO, prioridad: PRIORIDADES_PROYECTO },
-      notas:       { proyecto_id: proyectoOpciones, tipo: TIPOS_NOTA },
-      vencidas:    { proyecto_id: proyectoOpciones },
+      actividades:         { proyecto_id: proyectoOpciones, tipo: TIPOS_EVENTO_ACTIVIDAD },
+      ingenieros:          { ingeniero_id: ingenieroOpciones, proyecto_id: proyectoOpciones, estado: ESTADOS_INGENIERO_REPORTE },
+      proyectos:           { proyecto_id: proyectoOpciones, estado: ESTADOS_PROYECTO, prioridad: PRIORIDADES_PROYECTO },
+      notas:               { proyecto_id: proyectoOpciones, tipo: TIPOS_NOTA },
+      vencidas:            { proyecto_id: proyectoOpciones },
+      actividades_estado:  { proyecto_id: proyectoOpciones, estado: ESTADOS_ACTIVIDAD_OPERACIONAL },
     };
     return porConsulta[consulta] || {};
   }, [projects, engineers, consulta]);
