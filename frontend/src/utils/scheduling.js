@@ -24,10 +24,10 @@
 //    aplicar — nunca muta el array de entrada. Es idempotente: correrlo dos
 //    veces seguidas sobre su propio resultado no produce cambios adicionales.
 
-import { buildActivityTree } from "./formulas.js";
+import { buildActivityTree, toISODate } from "./formulas.js";
 
 const toDate = (str) => (str ? new Date(str + "T12:00:00") : null);
-const toISO  = (d) => d.toISOString().slice(0, 10);
+const toISO  = toISODate;   // alias local histórico; el helper vive en formulas.js
 
 // Festivos de Colombia — mismo calendario que formulas.js (duplicado aquí
 // porque no está exportado desde allí; ver nota de mantenimiento al final).

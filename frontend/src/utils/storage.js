@@ -14,6 +14,7 @@
 // duplicados aquí y en otros 4 archivos. Se re-exporta authHeaders para no
 // romper los imports existentes que ya lo traen desde storage.js.
 import { API_BASE, authHeaders } from "./api.js";
+import { getToday } from "./formulas.js";
 export { authHeaders };
 
 const LS_PROJECTS = "wt-projects";
@@ -118,7 +119,7 @@ export async function saveWeekReport(projects, weekLabel) {
   } catch {
     // Si el servidor no está disponible, guardar el snapshot en localStorage
     const history    = JSON.parse(localStorage.getItem(LS_HISTORY) || "[]");
-    const reportDate = projects[0]?.report_date ?? new Date().toISOString().slice(0, 10);
+    const reportDate = projects[0]?.report_date ?? getToday();
     const entry      = { report_date: reportDate, ...payload };
     const idx        = history.findIndex(h => h.report_date === reportDate);
     if (idx >= 0) history[idx] = entry; else history.push(entry);

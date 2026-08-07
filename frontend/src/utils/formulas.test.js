@@ -4,7 +4,30 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours } from "./formulas.js";
+import { projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday } from "./formulas.js";
+
+// ── toISODate ─────────────────────────────────────────────────────────────────
+
+test("toISODate formatea un Date como YYYY-MM-DD", () => {
+  assert.equal(toISODate(new Date("2026-08-06T12:00:00Z")), "2026-08-06");
+});
+
+test("toISODate descarta la parte horaria", () => {
+  assert.equal(toISODate(new Date("2026-01-31T23:59:59Z")), "2026-01-31");
+});
+
+test("toISODate respeta el cambio de año", () => {
+  assert.equal(toISODate(new Date("2025-12-31T00:00:00Z")), "2025-12-31");
+});
+
+test("getToday devuelve el formato YYYY-MM-DD", () => {
+  assert.match(getToday(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("getToday coincide con toISODate aplicado a la fecha actual", () => {
+  // Fija el contrato entre ambos: getToday es toISODate(new Date()).
+  assert.equal(getToday(), toISODate(new Date()));
+});
 
 // ── projectProgress ───────────────────────────────────────────────────────────
 

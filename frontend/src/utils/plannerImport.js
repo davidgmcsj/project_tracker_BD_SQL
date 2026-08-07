@@ -18,6 +18,8 @@
 
 // ── Constantes de mapeo ───────────────────────────────────────────────────────
 
+import { getToday, toISODate } from "./formulas.js";
+
 const SHEET_NAME = "Tareas de proyecto";
 
 // Etiquetas de columna de Planner (en español) → clave interna. Se emparejan por
@@ -85,7 +87,7 @@ export function excelSerialToDate(serial) {
   const ms = Math.floor(serial - 25569) * 86400 * 1000;
   const d  = new Date(ms);
   if (isNaN(d)) return "";
-  return d.toISOString().slice(0, 10);
+  return toISODate(d);
 }
 
 // "24 horas" | "8 h" | "12,5 horas" | 24 → Number. Sin número reconocible → 0.
@@ -329,7 +331,7 @@ export function mergePlannerImport(
 
   // 2) Actividades existentes no tocadas: conservar manuales; archivar las de
   //    Planner que ya no aparecen.
-  const archivedReason = `No presente en la importación de Planner del ${new Date().toISOString().slice(0, 10)}`;
+  const archivedReason = `No presente en la importación de Planner del ${getToday()}`;
   existing.forEach(a => {
     if (usedIds.has(a.id)) return;                 // ya actualizada arriba
     const fromPlanner = a.planner_task_number != null;

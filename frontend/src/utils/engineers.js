@@ -1,7 +1,7 @@
 // engineers.js — Agregación cross-proyecto para la vista por ingeniero.
 // Funciones puras: no tocan React ni el DOM, solo leen projects/engineers ya cargados.
 
-import { buildActivityIndex, getActivityStatus } from "./formulas.js";
+import { buildActivityIndex, getActivityStatus, toISODate } from "./formulas.js";
 import { activitiesForWeek, weekRange, nextWeekRange, SITUATION } from "./weekPlanning.js";
 import { ESTADO_ACTIVIDAD_LABEL } from "./filtroOpciones.js";
 
@@ -68,7 +68,7 @@ export function hasLiveWeeklyTasks(engineerId, project, today = new Date()) {
 // para que sea un reemplazo directo en las vistas vivas (ActivitiesTable, etc.).
 export function getLiveWeekActivitiesInProject(engineerId, project, today = new Date()) {
   const mine = engineerActivitiesInProject(engineerId, project);
-  const range = weekRange(today.toISOString().slice(0, 10));
+  const range = weekRange(toISODate(today));
   const actIndex = buildActivityIndex(project.activities_identified);
   const history = project.task_status?.status_history || {};
 
@@ -157,14 +157,14 @@ function engineerActivitiesForRange(engineerId, projects, range, opts) {
 
 // Tareas de esta semana, de todos los proyectos del ingeniero.
 export function engineerWeekTasks(engineerId, projects, today = new Date()) {
-  return engineerActivitiesForRange(engineerId, projects, weekRange(today.toISOString().slice(0, 10)));
+  return engineerActivitiesForRange(engineerId, projects, weekRange(toISODate(today)));
 }
 
 // Tareas de la próxima semana (sin arrastre de vencidas de esta semana, que
 // ya se ven en engineerWeekTasks).
 export function engineerNextWeekTasks(engineerId, projects, today = new Date()) {
   return engineerActivitiesForRange(
-    engineerId, projects, nextWeekRange(today.toISOString().slice(0, 10)), { includeOverdue: false }
+    engineerId, projects, nextWeekRange(toISODate(today)), { includeOverdue: false }
   );
 }
 
@@ -174,7 +174,7 @@ export function engineerNextWeekTasks(engineerId, projects, today = new Date()) 
 // contadores de la franja de KPIs y la lista priorizada de trabajo pendiente:
 // vencidas primero, luego el resto por fecha de entrega ascendente.
 export function buildEngineerWeekKpis(rows, projects, today = new Date()) {
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = toISODate(today);
   const projectById = new Map((projects || []).map(p => [p.id, p]));
 
   const pendingRows = rows.filter(row => {
@@ -207,7 +207,7 @@ export function buildEngineerWeekKpis(rows, projects, today = new Date()) {
 // activityStatusIn), pero necesitan due_date/start_date, que ese shape no
 // expone — se recorren las actividades del proyecto directo.
 export function buildEngineerTotals(engineerId, projects, today = new Date()) {
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = toISODate(today);
   let completed = 0, inProgress = 0, notStarted = 0, overdue = 0;
 
   getProjectsForEngineer(engineerId, projects).forEach(project => {

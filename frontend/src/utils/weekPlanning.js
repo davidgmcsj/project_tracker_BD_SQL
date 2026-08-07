@@ -9,7 +9,7 @@
 //
 // Todas las funciones son puras y trabajan con fechas ISO "YYYY-MM-DD".
 
-import { getMondayOf, getActivityStatus } from "./formulas.js";
+import { getMondayOf, getActivityStatus, toISODate } from "./formulas.js";
 
 // Situación de una actividad DENTRO de una semana concreta. El orden importa:
 // se evalúa de más urgente a menos, y la primera que aplica es la que manda.
@@ -32,7 +32,7 @@ export const SITUATION_LABEL = {
 function addDaysISO(iso, days) {
   const d = new Date(iso + "T12:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toISODate(d);
 }
 
 // Rango lunes-domingo de la semana que contiene `dateStr`.
@@ -133,7 +133,7 @@ export function completedInWeek(activities, range, taskStatus) {
 export function recomputeWeeklyFields(project, todayDate = new Date()) {
   const activities = Array.isArray(project.activities_identified) ? project.activities_identified : [];
   const taskStatus = project.task_status || {};
-  const today = todayDate.toISOString().slice(0, 10);
+  const today = toISODate(todayDate);
   const thisWeek = weekRange(today);
   const nextWeek = nextWeekRange(today);
 

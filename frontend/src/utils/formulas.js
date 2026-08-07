@@ -20,8 +20,22 @@ export function getWeekLabel() {
   return `Semana ${week} — ${now.getDate()} ${MONTHS_SHORT[now.getMonth()]} ${now.getFullYear()}`;
 }
 
+/**
+ * Date → "YYYY-MM-DD". El patrón `toISOString().slice(0, 10)` estaba repetido
+ * 29 veces por toda la app; este helper le pone nombre y un único sitio donde
+ * corregirlo si algún día hace falta.
+ *
+ * OJO: toISOString() convierte a UTC, así que para una hora local de la noche
+ * puede devolver el día siguiente. Todo el código existente ya dependía de
+ * este comportamiento, así que se conserva tal cual — cambiarlo aquí movería
+ * fechas en toda la aplicación.
+ */
+export function toISODate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export function getToday() {
-  return new Date().toISOString().slice(0, 10);
+  return toISODate(new Date());
 }
 
 // Formatea "YYYY-MM-DD" a "DD/MM/YYYY". Vacío → "—".
@@ -35,7 +49,7 @@ export function getMondayOf(dateStr) {
   const d    = new Date(dateStr + "T12:00:00");
   const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return toISODate(d);
 }
 
 export function isSameWeek(dateA, dateB) {
@@ -49,7 +63,7 @@ export function getNextFriday() {
   const diff = day < 5 ? 5 - day + 7 : day === 5 ? 7 : 6;
   const fri  = new Date(now);
   fri.setDate(now.getDate() + diff);
-  return fri.toISOString().slice(0, 10);
+  return toISODate(fri);
 }
 
 export function getWeekRangeLabel(dateStr) {

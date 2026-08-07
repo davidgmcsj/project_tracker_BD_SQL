@@ -900,7 +900,7 @@ export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDet
     ...filterValid(ts.not_started),
   ]);
 
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => getToday();
 
   // Actualiza completed_dates (para filtrado semanal) y status_history (para mostrar fechas)
   const updateDates = (next, item, toKey, fromKey) => {
@@ -1357,7 +1357,7 @@ function ProjectPulseField({ project, value, onChange }) {
   const blockers = (project.impediments || []).filter(im => im.category === "blocker");
   const risks    = (project.impediments || []).filter(im => im.category === "risk");
   // Próxima fecha clave = due_date más cercana en el futuro entre las actividades.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getToday();
   const upcoming = acts
     .map(a => a.due_date).filter(d => d && d >= today).sort();
   const nextDate = upcoming[0] || null;
@@ -1599,7 +1599,7 @@ export default function EditView({
       let updatedEngs = a.assigned_engineers || [];
       let updatedDate = a.assigned_date;
       if (newEngId !== undefined) {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getToday();
         if (newEngId !== null && typeof newEngId === 'object') {
           // Multi-assign format: { action: 'add'|'remove', engId }
           if (newEngId.action === 'add') {
@@ -1644,7 +1644,7 @@ export default function EditView({
         next[newStatus] = [...next[newStatus], actId];
       }
       
-      const today = () => new Date().toISOString().slice(0, 10);
+      const today = () => getToday();
       const cDates = { ...(updatedTs.completed_dates || {}) };
       if (newStatus === "completed") cDates[actId] = today();
       else if (fromKey === "completed") delete cDates[actId];
@@ -1684,7 +1684,7 @@ export default function EditView({
     const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
     const eng = allContacts.find(e => e.id === engId);
     if (!eng) return;
-    const today  = new Date().toISOString().slice(0, 10);
+    const today  = getToday();
     const idSet  = new Set(actIds);
     const newActs = activities.map(a => {
       if (!idSet.has(a.id)) return a;
@@ -1706,7 +1706,7 @@ export default function EditView({
   const handleAddActivity = (text, engId, status) => {
     const newAct = createActivity(text);
     const actId = newAct.id;
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getToday();
 
     if (engId !== "") {
       const eng = (engineerCatalog || []).find(e => e.id === engId);
