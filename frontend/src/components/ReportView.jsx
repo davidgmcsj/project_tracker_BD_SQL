@@ -4,7 +4,7 @@ import { GlobalMetricsTable, ProjectMetricsTable } from "./MetricsTable";
 import { projectProgress, generateReportText, generateSingleProjectReportText, buildActivityIndex, activityText, activityLabel, buildEngineerIndex, engineerName, generateAssignmentsMarkdown, generateAssignmentsPlainText, visibleActivities } from "../utils/formulas";
 import { getProjectsForEngineer } from "../utils/engineers";
 import { useClickOutside } from "../hooks/useClickOutside";
-import { authHeaders } from "../utils/storage";
+import { API_BASE, authHeaders } from "../utils/api";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ function EngineerWeekCard({ eng, activitiesIndex, engineerIndex }) {
   );
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+// API_BASE viene de utils/api.js — fuente única (antes duplicado en 5 archivos).
 
 // ── Status IA ─────────────────────────────────────────────────────────────────
 

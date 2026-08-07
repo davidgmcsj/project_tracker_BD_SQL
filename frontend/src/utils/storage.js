@@ -10,29 +10,18 @@
 // Si el servidor devuelve datos válidos, los sobreescribe en localStorage
 // para que ambas fuentes queden sincronizadas.
 
+// API_BASE y authHeaders viven en utils/api.js — fuente única, antes estaban
+// duplicados aquí y en otros 4 archivos. Se re-exporta authHeaders para no
+// romper los imports existentes que ya lo traen desde storage.js.
+import { API_BASE, authHeaders } from "./api.js";
+export { authHeaders };
+
 const LS_PROJECTS = "wt-projects";
 const LS_WEEK     = "wt-week";
 const LS_HISTORY  = "wt-history";
 
-// VITE_API_URL define la dirección del backend (ej: http://localhost:3001).
-// En desarrollo local se configura en frontend/.env; en producción, en el servidor de despliegue.
-// Si no está definida, las llamadas usan rutas relativas (funciona cuando front y back están en el mismo host).
-const API_BASE = import.meta.env.VITE_API_URL || "";
-
-// VITE_API_KEY debe coincidir con API_KEY del backend — se envía en el header
-// X-API-Key de cada request. El backend la exige a partir de esta versión.
-const API_KEY = import.meta.env.VITE_API_KEY || "";
-
-// Para los pocos call-sites que hacen fetch() directo en vez de pasar por
-// apiFetch (necesitan su propio manejo de respuesta: AbortSignal, cuerpo de
-// error con detalle de IA, POST sin body). No expone apiFetch en sí — solo
-// el header de autenticación que todos necesitan.
-export function authHeaders() {
-  return API_KEY ? { "X-API-Key": API_KEY } : {};
-}
-
 async function apiFetch(path, options = {}) {
-  const headers = { ...(options.headers || {}), ...(API_KEY ? { "X-API-Key": API_KEY } : {}) };
+  const headers = { ...(options.headers || {}), ...authHeaders() };
   // credentials: "include" — manda/recibe la cookie de sesión (Fase 9) aunque
   // frontend y backend vivan en orígenes distintos.
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
@@ -420,8 +409,7 @@ export async function uploadAttachment(file, { appActividadID, proyectoAppID }) 
 // X-API-Key, así que la descarga ahora pasa por fetch (vía apiFetchBlob)
 // y se guarda con un <a> temporal apuntando a un blob: URL local.
 async function apiFetchBlob(path) {
-  const headers = API_KEY ? { "X-API-Key": API_KEY } : {};
-  const res = await fetch(`${API_BASE}${path}`, { headers, credentials: "include" });
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders(), credentials: "include" });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.blob();
 }

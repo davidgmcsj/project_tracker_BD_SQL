@@ -24,6 +24,7 @@ import {
   syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
   authHeaders, getCurrentUser, logout,
 } from "./utils/storage";
+import { apiUrl } from "./utils/api";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import { recomputeWeeklyFields } from "./utils/weekPlanning";
 import { useUrlState } from "./hooks/useUrlState";
@@ -495,8 +496,7 @@ export default function App() {
     setGlobalStatusOpen(true);
     setGlobalStatus(null);
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${API_BASE}/api/generate-global-status`, {
+      const res = await fetch(apiUrl("/api/generate-global-status"), {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body:    JSON.stringify({ projects: projectsToAnalyze, weekLabel, engineerCatalog: engineers, mode }),
@@ -600,8 +600,7 @@ export default function App() {
     );
     if (!ok) return;
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${API_BASE}/api/restore-from-db`, { method: "POST", headers: authHeaders() });
+      const res = await fetch(apiUrl("/api/restore-from-db"), { method: "POST", headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       alert(`✓ Restauración exitosa — ${data.restored} proyectos recuperados.\n\nEl aplicativo se recargará ahora.`);

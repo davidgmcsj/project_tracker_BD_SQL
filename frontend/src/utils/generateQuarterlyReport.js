@@ -7,12 +7,12 @@
 //   4. Se reempaqueta y descarga el .docx con formato institucional intacto
 
 import JSZip from "jszip";
-import { authHeaders } from "./storage";
+import { API_BASE, authHeaders } from "./api.js";
 
 const MONTHS     = ["enero","febrero","marzo","abril","mayo","junio","julio",
                     "agosto","septiembre","octubre","noviembre","diciembre"];
 const MONTHS_CAP = MONTHS.map(m => m.charAt(0).toUpperCase() + m.slice(1));
-const API_BASE   = import.meta.env.VITE_API_URL || "";
+// API_BASE viene de utils/api.js — fuente única (antes duplicado en 5 archivos).
 
 function fmtDateLong(dateStr) {
   if (!dateStr) return "—";
