@@ -7,32 +7,10 @@ const { snapshotFromRows, snapshotFromProject, diffSnapshots, insertEvents } = r
 const { hashPassword } = require("./auth.cjs");
 
 // ── Conexión ──────────────────────────────────────────────────────────────────
+// La configuración y el pool viven en db/pool.cjs — fuente única compartida
+// con run-migration.cjs, que antes tenía el mismo objeto copiado literal.
 
-const config = {
-  user:              process.env.DB_USER,
-  password:          process.env.DB_PASSWORD,
-  server:            process.env.DB_SERVER || "localhost",
-  port:              1433,
-  database:          process.env.DB_NAME,
-  connectionTimeout: 60000,
-  requestTimeout:    60000,
-  options:           { encrypt: true, trustServerCertificate: process.env.NODE_ENV !== "production" },
-  pool:              { max: 20, min: 0, idleTimeoutMillis: 60000 },
-};
-
-let _pool = null;
-
-async function getPool() {
-  if (_pool) return _pool;
-  try {
-    _pool = await sql.connect(config);
-    _pool.on("error", () => { _pool = null; });
-  } catch (e) {
-    _pool = null;
-    throw e;
-  }
-  return _pool;
-}
+const { getPool } = require("./db/pool.cjs");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // toArray, buildActivityIndexFlatFlat, buildEngineerIndex, resolveActText, resolveActArr

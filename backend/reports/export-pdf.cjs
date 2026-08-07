@@ -9,6 +9,7 @@
 const path    = require("path");
 const pdfmake = require("pdfmake");
 const { translateEstado } = require("./estado-labels.cjs");
+const { humanize } = require("./format-cell.cjs");
 
 const PKG_DIR  = path.dirname(require.resolve("pdfmake/package.json"));
 const FONT_DIR = path.join(PKG_DIR, "fonts", "Roboto");
@@ -27,10 +28,8 @@ pdfmake.fonts = {
 pdfmake.setUrlAccessPolicy(() => false);
 pdfmake.setLocalAccessPolicy(p => p.startsWith(FONT_DIR));
 
-function humanize(key) {
-  return String(key).replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
-}
-
+// formatCell no se comparte con export-excel.cjs: aquí todo debe salir como
+// string y los vacíos se marcan con "—", no con cadena vacía.
 function formatCell(columna, value) {
   if (value == null) return "—";
   if (value instanceof Date) return value.toISOString().slice(0, 10);

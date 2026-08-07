@@ -5,19 +5,15 @@ const fs     = require("fs");
 const path   = require("path");
 const crypto = require("crypto");
 const sql    = require("mssql");
+const { buildConfig } = require("./db/pool.cjs");
 
 const MIGRATIONS_DIR = path.join(__dirname, "migrations");
 
-const config = {
-  user:              process.env.DB_USER,
-  password:          process.env.DB_PASSWORD,
-  server:            process.env.DB_SERVER || "localhost",
-  port:              1433,
-  database:          process.env.DB_NAME,
-  connectionTimeout: 60000,
-  requestTimeout:    60000,
-  options:           { encrypt: true, trustServerCertificate: true },
-};
+// Configuración compartida con db-operations.cjs (db/pool.cjs). Sin sección
+// `pool`: el runner abre una conexión, aplica las migraciones y termina.
+// trustServerCertificate se fuerza a true — este script se ejecuta a mano
+// desde una máquina de operaciones, no dentro del servidor de producción.
+const config = buildConfig({ withPool: false, trustServerCertificate: true });
 
 function checksumOf(content) {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");

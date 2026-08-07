@@ -7,11 +7,10 @@
 
 const ExcelJS = require("exceljs");
 const { translateEstado } = require("./estado-labels.cjs");
+const { humanize } = require("./format-cell.cjs");
 
-function humanize(key) {
-  return String(key).replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
-}
-
+// formatCell no se comparte con export-pdf.cjs: aquí se devuelve el Date
+// nativo para que ExcelJS lo escriba como fecha real en la celda.
 function formatCell(columna, value) {
   if (value == null) return "";
   if (value instanceof Date) return value;
