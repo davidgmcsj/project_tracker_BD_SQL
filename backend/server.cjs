@@ -1293,11 +1293,29 @@ app.get("/api/quarters/:id", async (req, res) => {
   }
 });
 
-init().then(() => {
-  http.createServer(app).listen(PORT, "0.0.0.0", () => {
-    console.log(`Servidor en puerto ${PORT}`);
+// ── Arranque ──────────────────────────────────────────────────────────────────
+// Solo se abre el puerto cuando este archivo es el punto de entrada
+// (`node server.cjs`). Al importarlo con require() —como hacen los tests de
+// contrato de tests/routes/— se exportan `app` e `init` sin escuchar en ningún
+// puerto, que es lo que permite montar la app en un puerto efímero y probar
+// las rutas sin ocupar el 3002 de desarrollo.
+
+async function start() {
+  await init();
+  return new Promise(resolve => {
+    const server = http.createServer(app);
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Servidor en puerto ${PORT}`);
+      resolve(server);
+    });
   });
-}).catch(e => {
-  console.error("Error en inicialización:", e.message);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  start().catch(e => {
+    console.error("Error en inicialización:", e.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, init, start };

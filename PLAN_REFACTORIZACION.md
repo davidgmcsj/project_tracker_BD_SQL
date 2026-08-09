@@ -204,18 +204,45 @@ Esta es la **eliminación más segura y rentable de todo el plan**: ~1.000 líne
 
 ---
 
-## 3. Fase 0 — Red de seguridad (BLOQUEANTE)
+## 3. Fase 0 — Red de seguridad (BLOQUEANTE) ✅ COMPLETADA
 
 **Ninguna fase posterior debe empezar antes de completar esta.**
 
-| Tarea | Detalle | Esfuerzo |
+| Tarea | Estado | Resultado |
 |---|---|---|
-| **0.1** Separar `app` de `listen` | Extraer `app.cjs` que exporte la app configurada sin llamar a `listen()`. Prerequisito técnico para poder testear rutas. | 1 h |
-| **0.2** Tests de contrato HTTP | `node:test` + `fetch` contra la app levantada. Para las 24 rutas: status code y forma de respuesta. No hace falta BD real en todas. | 1–2 días |
-| **0.3** Tests de los utils sin cobertura | `utils/storage.js` (480 líneas), `utils/scheduling.js` (187), `utils/generateQuarterlyReport.js` (250) — hoy **sin ningún test**. | 1 día |
-| **0.4** Snapshot de datos reales | Copia de `data.json` + `history.json` antes de tocar nada. Son 42.000 líneas de datos de producción. | 10 min |
+| **0.1** Separar `app` de `listen` | ✅ | `server.cjs` exporta `{ app, init, start }` y solo llama a `listen()` cuando es el punto de entrada (`require.main === module`). |
+| **0.2** Tests de contrato HTTP | ✅ | 39 tests nuevos: `tests/routes/auth-contract.test.cjs` (15) + `tests/routes/routes-contract.test.cjs` (24). |
+| **0.3** Tests de los utils sin cobertura | ✅ | `scheduling.test.js` — 15 tests sobre el motor de cascada de fechas (187 líneas que estaban sin ninguna cobertura). |
+| **0.4** Snapshot de datos reales | ✅ | Copia previa de `data.json` + `history.json` + `archive/`. **Se necesitó de verdad** — ver abajo. |
 
-**Criterio de salida:** `npm test` verde en backend y frontend, cubriendo las 24 rutas y los 3 utils críticos.
+### Lo que se aprendió ejecutándola
+
+**1. Un test destruyó los datos reales de producción.** Una versión temprana de `routes-contract.test.cjs` llamó a `POST /api/projects` con lista vacía. Como `server.cjs` escribe en `data.json` sin permitir inyectar la ruta, **borró los 16 proyectos** dejando el archivo en 3 líneas. Se restauró desde el snapshot de la tarea 0.4.
+
+Mitigación permanente: `tests/helpers/test-server.cjs` ahora respalda `data.json`/`history.json` en memoria al arrancar y los restaura al cerrar, avisando por consola si detecta escritura. Ningún test futuro puede dañar los datos aunque escriba sin querer.
+
+**2. Dos suposiciones sobre el contrato eran falsas.** Los tests las corrigieron, no al revés:
+- `POST /api/projects` **sin `projects[]` responde 200, no 400** — el handler hace `Array.isArray(...) ? ... : []`, es tolerante por diseño. El test ahora documenta el comportamiento real.
+- El 404 de `GET /api/attachments/:id` es del **handler** (adjunto inexistente), no de Express por ruta perdida. Se distinguen por el cuerpo de la respuesta.
+
+**3. El motor de fechas tenía razón y el test estaba mal.** Un test afirmaba que una tarea del 6 al 7 de agosto dura 2 días hábiles. Falló porque **el 7 de agosto es festivo en Colombia** (Batalla de Boyacá) y el motor lo descuenta correctamente. Se corrigió el test y se añadió otro que fija explícitamente ese comportamiento.
+
+### Cobertura de los riesgos CRÍTICOS del plan (ver §9)
+
+| Riesgo | Test que lo blinda |
+|---|---|
+| Orden `requireApiKey` → body parser | "un cuerpo malformado sin API key da 401, no 400" |
+| Orden sesión → `requireAdmin` | "GET /api/users sin sesión responde 401 (no 403)" |
+| Exclusión del parser en `/api/attachments/upload` | "acepta cuerpos mayores al límite general" — un cuerpo de 3 MB que daría 413 si la exclusión se rompe al montar la ruta bajo un prefijo de router |
+| Path traversal en `/api/quarters/:id` | Dos tests con `../`, barras y charset inválido |
+| `timingSafeEqual` con longitudes distintas | "una API key de longitud distinta no rompe timingSafeEqual" |
+| Montaje del router de reports | "GET /api/reports/registry responde el catálogo" |
+
+**Criterio de salida cumplido:** 97 tests en backend (58 → 97) y 143 en frontend (128 → 143).
+
+### Límite conocido
+
+`POST /api/projects` **no** queda cubierto: escribe en el `data.json` real y `server.cjs` todavía no permite inyectar la ruta de datos. Cubrirlo exige parametrizar `DATA_FILE`, que es trabajo de la Fase 2 (`lib/json-store.cjs`). Está anotado en el propio archivo de tests.
 
 ---
 
