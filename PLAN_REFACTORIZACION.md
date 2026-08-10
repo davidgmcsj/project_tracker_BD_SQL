@@ -5,6 +5,69 @@
 
 ---
 
+## ESTADO ACTUAL — última actualización: 10 de agosto de 2026
+
+**Para retomar: leer solo esta sección primero.** El resto del documento es el
+plan original completo (§0-11); esta sección resume qué de eso ya se hizo.
+
+### Punto de respaldo
+
+```bash
+git log --oneline pre-refactor..HEAD   # ver todo lo hecho desde el inicio
+git reset --hard pre-refactor          # volver al estado previo a cualquier cambio
+```
+
+Rama `feature/modulo-reportes`, todo commiteado y subido a `origin`. Árbol de
+trabajo limpio al cerrar esta sesión.
+
+### Hecho (11 commits, de `c0f4d9d` a `005e3dc`)
+
+| Fase | Qué se hizo | Resultado medible |
+|---|---|---|
+| **7** (doc) | Añadida al plan: techo de 1.000 líneas para `App.css`, `formulas.js`, `App.jsx` | — |
+| **1.1** | CSS muerto eliminado (con cuidado: 47 clases "muertas" en realidad se construían con template literals — `` `eng-kpi-chip--${tone}` `` — y se salvaron del borrado) | `App.css` 6.082 → 5.222 |
+| **1.2** | Vocabulario de estados unificado en `filtroOpciones.js`; eliminados 2 mapas inversos duplicados (riesgo real de bug) | −60 líneas, 10 tests nuevos |
+| **1.3** | `API_BASE`/`authHeaders` centralizados en `utils/api.js` (antes en 5 archivos) | corrigió un bug real: `API_KEY` sin definir en `storage.js` tras mover su declaración |
+| **1.4** | Helper `toISODate()` para las 29 repeticiones de `toISOString().slice(0,10)` | `isoWeek.js` NO se tocó (espejo deliberado del backend, blindado por test de paridad) |
+| **1.5 / 1.6** | `reports/format-cell.cjs` (solo `humanize`, no `formatCell` — formatos distintos a propósito) + `db/pool.cjs` compartido entre `db-operations.cjs` y `run-migration.cjs` | |
+| **0** | Red de tests de contrato HTTP antes de tocar `server.cjs`/`db-operations.cjs` (0% cobertura previa) | Backend 58→97 tests, Frontend 128→143 tests |
+| **2.1–2.4** | `server.cjs` dividido en 10 módulos: `lib/json-store.cjs`, `middleware/{security-log,error-handler,api-key,rate-limits,session}.cjs`, `config/{env,modules}.cjs`, `lib/{legacy-migrations,bootstrap}.cjs` | `server.cjs` **1.321 → 966 líneas** (ya bajo el techo de 1.000) |
+
+**Bugs reales encontrados y corregidos durante la refactorización** (no
+inventados para justificar el trabajo):
+- `syncExternalContactToSQL` faltaba en la lista de módulos cargados, causando
+  un `require()` dentro del handler en cada petición (P3 de la auditoría).
+- Dos trampas de `__dirname` en `getDataDir()` e `init()`: al mover esas
+  funciones a `lib/`, `__dirname` cambia de valor y los datos se habrían
+  escrito/buscado en la carpeta equivocada. Resuelto con `BACKEND_DIR`
+  explícito en `lib/json-store.cjs`.
+- Un test destruyó accidentalmente `data.json` real durante la Fase 0
+  (`POST /api/projects` con lista vacía) — recuperado desde el respaldo hecho
+  al iniciar esa fase. Ahora hay respaldo automático en
+  `tests/helpers/test-server.cjs` antes de correr cualquier test de contrato.
+
+### Pendiente — próximos pasos en orden
+
+1. **Terminar Fase 2** (`server.cjs` → ~45 líneas): faltan las 27 rutas por
+   mover a `routes/*.cjs`. Orden ya decidido en §5:
+   `diagnostics → ai → users → attachments → engineers → history → quarters → maintenance → projects → auth` (la más delicada, al final, porque de ella depende `req.user`).
+2. **Fase 3**: `db-operations.cjs` (911 líneas) → fachada + 9 repos en `db/`.
+3. **Fase 4**: `EditView.jsx` (2.245 líneas, **sigue sobre el techo de 1.000**) → 14 archivos.
+4. **Fase 7.1**: `App.css` (5.222 líneas, **sigue sobre el techo**) → 14 archivos en `styles/`. Es la más delicada visualmente — requiere comparación de CSS compilado antes/después (método ya documentado en §8bis) y revisión manual en navegador, que el agente no puede hacer.
+5. **Fase 5, 6, 7.2, 7.3**: el resto, menor riesgo.
+
+**Verificación rápida de por dónde vamos** (debe devolver solo `App.css` y `EditView.jsx` hoy):
+```bash
+find frontend/src backend -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.cjs" -o -name "*.css" \) \
+  -not -path "*/node_modules/*" | xargs wc -l | awk '$1 > 1000 && $2 != "total"'
+```
+
+**Antes de continuar cualquier fase**: correr `npm test` en `backend/` y
+`frontend/` — ambas suites deben estar en verde (97 y 143 tests
+respectivamente) antes de tocar nada más.
+
+---
+
 ## 0. Resumen ejecutivo
 
 El proyecto tiene **~26.400 líneas** repartidas así:
