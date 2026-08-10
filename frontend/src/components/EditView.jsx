@@ -211,6 +211,7 @@ function ActivitiesList({
   const [adding,  setAdding]  = useState(false);
   const [draftResponsible, setDraftResponsible] = useState("");
   const [draftStatus, setDraftStatus] = useState("not_started");
+  const [draftParentId, setDraftParentId] = useState(""); // "" = actividad raíz, sin padre
 
   const [editIdx,      setEditIdx]      = useState(null);
   const [editVal,      setEditVal]      = useState("");
@@ -222,15 +223,20 @@ function ActivitiesList({
   const [confirmBulkDel,  setConfirmBulkDel]  = useState(false);
 
   const acts = safeActs(activities);
+  // Numeración jerárquica ("1", "1.1"...) para el selector "Es subtarea de" —
+  // misma fuente que usa el Kanban y el Cronograma, así el usuario reconoce
+  // la actividad por el mismo número que ve en el resto de la app.
+  const parentOptionsIndex = buildActivityIndex(acts);
 
   const confirmAdd = () => {
     const t = draft.trim();
     if (t) {
-      onAddActivity(t, draftResponsible, draftStatus);
+      onAddActivity(t, draftResponsible, draftStatus, draftParentId || null);
     }
     setDraft("");
     setDraftResponsible("");
     setDraftStatus("not_started");
+    setDraftParentId("");
     setAdding(false);
   };
 
@@ -379,6 +385,20 @@ function ActivitiesList({
             <option value="in_progress">En proceso</option>
             <option value="completed">Completada</option>
           </select>
+          {acts.length > 0 && (
+            <select
+              className="field__input list-field-draft__select"
+              value={draftParentId}
+              onChange={e => setDraftParentId(e.target.value)}
+              title="Opcional: convierte esta actividad en subtarea de otra"
+              style={{ width: "200px", flexShrink: 0 }}
+            >
+              <option value="">— Es subtarea de… (opcional) —</option>
+              {acts.map(a => (
+                <option key={a.id} value={a.id}>{activityLabel(parentOptionsIndex, a.id)}</option>
+              ))}
+            </select>
+          )}
           <button type="button" className="list-field-draft__ok"     onClick={confirmAdd}                         title="Confirmar">✓</button>
           <button type="button" className="list-field-draft__cancel" onClick={() => { setDraft(""); setAdding(false); }} title="Cancelar">✕</button>
         </div>
@@ -1731,8 +1751,16 @@ export default function EditView({
     });
   };
 
-  const handleAddActivity = (text, engId, status) => {
-    const newAct = createActivity(text);
+  // parentId opcional: "esta actividad es subtarea de..." desde el alta rápida
+  // (ActivitiesList) o la tarjeta detallada. sequence_order se calcula igual
+  // que en HierarchyTable.handleAddChild — siguiente valor entre hermanas del
+  // mismo padre, para que quede al final del grupo.
+  const handleAddActivity = (text, engId, status, parentId = null) => {
+    const siblings = activities.filter(a => (a.parent_id ?? null) === (parentId ?? null));
+    const sequenceOrder = siblings.length
+      ? Math.max(...siblings.map(a => Number(a.sequence_order) || 0)) + 1
+      : 0;
+    const newAct = createActivity(text, parentId, sequenceOrder);
     const actId = newAct.id;
     const todayStr = getToday();
 
