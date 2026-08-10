@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday } from "./formulas.js";
+import { projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday, leafActivities, canMarkCompleted } from "./formulas.js";
 
 // ── toISODate ─────────────────────────────────────────────────────────────────
 
@@ -113,4 +113,122 @@ test("businessDaysBetween excluye festivos móviles cargados para 2026 (ej. 17 d
 test("suggestedWorkHours multiplica días hábiles por la jornada", () => {
   // lunes 3 a viernes 7 de agosto: 4 días hábiles (7 es festivo) x 8h = 32h
   assert.equal(suggestedWorkHours("2026-08-03", "2026-08-07"), 32);
+});
+
+// ── leafActivities ────────────────────────────────────────────────────────────
+// Un padre con subtareas es un contenedor organizativo, no una unidad de
+// trabajo medible: solo las hojas (sin hijos) deben contar en los totales del
+// proyecto. Ver EditView.jsx buildAutoMetrics, que consume esta función.
+
+test("leafActivities devuelve todo si no hay jerarquía (comportamiento previo intacto)", () => {
+  const acts = [
+    { id: "a", parent_id: null },
+    { id: "b", parent_id: null },
+  ];
+  const result = leafActivities(acts);
+  assert.equal(result.length, 2);
+});
+
+test("leafActivities excluye una actividad que tiene un hijo directo", () => {
+  const acts = [
+    { id: "padre", parent_id: null },
+    { id: "hijo",  parent_id: "padre" },
+  ];
+  const result = leafActivities(acts);
+  assert.deepEqual(result.map(a => a.id), ["hijo"]);
+});
+
+test("leafActivities excluye a todos los ancestros en una jerarquía de 3 niveles", () => {
+  const acts = [
+    { id: "abuelo", parent_id: null },
+    { id: "padre",  parent_id: "abuelo" },
+    { id: "hijo",   parent_id: "padre" },
+  ];
+  const result = leafActivities(acts);
+  // Solo "hijo" es hoja: ni abuelo ni padre carecen de hijos.
+  assert.deepEqual(result.map(a => a.id), ["hijo"]);
+});
+
+test("leafActivities cuenta cada hoja de un padre con varios hijos", () => {
+  const acts = [
+    { id: "padre", parent_id: null },
+    { id: "h1",    parent_id: "padre" },
+    { id: "h2",    parent_id: "padre" },
+  ];
+  const result = leafActivities(acts);
+  assert.deepEqual(new Set(result.map(a => a.id)), new Set(["h1", "h2"]));
+});
+
+test("leafActivities ignora parent_id huérfano (apunta a un id que no existe)", () => {
+  // Una referencia rota no debe hacer desaparecer la actividad de los conteos:
+  // se trata como hoja porque, para efectos prácticos, no tiene un padre real
+  // presente en el array.
+  const acts = [{ id: "x", parent_id: "no-existe" }];
+  const result = leafActivities(acts);
+  assert.deepEqual(result.map(a => a.id), ["x"]);
+});
+
+test("leafActivities con array vacío devuelve array vacío", () => {
+  assert.deepEqual(leafActivities([]), []);
+});
+
+test("leafActivities tolera entrada no-array (null/undefined)", () => {
+  assert.deepEqual(leafActivities(null), []);
+  assert.deepEqual(leafActivities(undefined), []);
+});
+
+// ── canMarkCompleted ──────────────────────────────────────────────────────────
+// Un padre no puede marcarse como completado mientras tenga subtareas
+// pendientes (no completadas). Bloqueo aplicado en TaskStatusSelector.move()
+// de EditView.jsx, la única función que cambia el estado de una actividad.
+
+test("canMarkCompleted permite completar una hoja sin restricciones", () => {
+  const acts = [{ id: "a", parent_id: null }];
+  assert.equal(canMarkCompleted("a", acts, { completed: [] }), true);
+});
+
+test("canMarkCompleted bloquea un padre con una hija no completada", () => {
+  const acts = [
+    { id: "padre", parent_id: null },
+    { id: "hijo",  parent_id: "padre" },
+  ];
+  assert.equal(canMarkCompleted("padre", acts, { completed: [] }), false);
+});
+
+test("canMarkCompleted permite un padre cuando TODAS sus hijas están completadas", () => {
+  const acts = [
+    { id: "padre", parent_id: null },
+    { id: "h1",    parent_id: "padre" },
+    { id: "h2",    parent_id: "padre" },
+  ];
+  assert.equal(canMarkCompleted("padre", acts, { completed: ["h1", "h2"] }), true);
+});
+
+test("canMarkCompleted bloquea un padre si SOLO ALGUNAS hijas están completadas", () => {
+  const acts = [
+    { id: "padre", parent_id: null },
+    { id: "h1",    parent_id: "padre" },
+    { id: "h2",    parent_id: "padre" },
+  ];
+  assert.equal(canMarkCompleted("padre", acts, { completed: ["h1"] }), false);
+});
+
+test("canMarkCompleted evalúa toda la jerarquía, no solo los hijos directos", () => {
+  // abuelo -> padre -> nieto (pendiente). El abuelo también debe bloquearse.
+  const acts = [
+    { id: "abuelo", parent_id: null },
+    { id: "padre",  parent_id: "abuelo" },
+    { id: "nieto",  parent_id: "padre" },
+  ];
+  assert.equal(canMarkCompleted("abuelo", acts, { completed: [] }), false);
+  assert.equal(canMarkCompleted("padre", acts, { completed: [] }), false);
+});
+
+test("canMarkCompleted permite el abuelo cuando toda la cadena de descendientes está completada", () => {
+  const acts = [
+    { id: "abuelo", parent_id: null },
+    { id: "padre",  parent_id: "abuelo" },
+    { id: "nieto",  parent_id: "padre" },
+  ];
+  assert.equal(canMarkCompleted("abuelo", acts, { completed: ["padre", "nieto"] }), true);
 });

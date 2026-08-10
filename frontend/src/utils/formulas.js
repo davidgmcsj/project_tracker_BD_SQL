@@ -380,6 +380,40 @@ export function formatHierarchyNumber(path) {
   return Array.isArray(path) ? path.join(".") : "";
 }
 
+// Actividades sin hijos — las únicas que cuentan en totales/métricas del
+// proyecto. Un padre con subtareas es un contenedor organizativo, no una
+// unidad de trabajo medible: contarlo aparte infla el total (un padre con 5
+// hijas terminadas aparecería como 6 tareas, no 5).
+//
+// No usa buildActivityTree (evita reconstruir el árbol completo cuando solo
+// hace falta filtrar). Un parent_id huérfano (apunta a un id inexistente en
+// el array) no excluye a nadie — esa actividad se trata como hoja.
+export function leafActivities(activities) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const parentIds = new Set(acts.map(a => a.parent_id).filter(id => id != null));
+  return acts.filter(a => !parentIds.has(a.id));
+}
+
+// Un padre no puede marcarse como completado mientras tenga AL MENOS UNA
+// subtarea (directa o indirecta) que no esté completada. Evita que el estado
+// visual de un contenedor mienta sobre el trabajo real pendiente debajo.
+//
+// Recorre TODA la descendencia (no solo hijos directos): un abuelo con un
+// nieto pendiente también queda bloqueado, aunque su hijo directo ya esté
+// completado. Una hoja (sin descendientes) siempre puede completarse.
+export function canMarkCompleted(activityId, activities, taskStatus) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const completed = new Set((taskStatus && Array.isArray(taskStatus.completed)) ? taskStatus.completed : []);
+  const { childrenOf } = buildActivityTree(acts);
+
+  const descendientesPendientes = (id) => {
+    const children = childrenOf.get(id) || [];
+    return children.some(child => !completed.has(child.id) || descendientesPendientes(child.id));
+  };
+
+  return !descendientesPendientes(activityId);
+}
+
 // Progreso agregado de un nodo con hijos: promedio simple de los hijos DIRECTOS,
 // recursivo (si un hijo también tiene hijos, su valor ya viene agregado). Nodos
 // sin hijos devuelven su propio act.progress manual tal cual. Puramente derivado

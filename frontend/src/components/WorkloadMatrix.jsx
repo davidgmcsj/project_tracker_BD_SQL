@@ -5,7 +5,7 @@
 // cliente: la asignación de ingeniero por actividad no vive en SQL.
 
 import { useMemo } from "react";
-import { visibleActivities } from "../utils/formulas";
+import { visibleActivities, leafActivities } from "../utils/formulas";
 import { isoWeek, isoWeekStart, isoWeekEnd, todayISO } from "../utils/isoWeek";
 
 const SEMANAS_A_MOSTRAR = 6;
@@ -38,7 +38,10 @@ export function WorkloadMatrix({ projects, engineers }) {
     (engineers || []).filter(e => e.active !== false).forEach(e => map.set(e.id, new Map()));
 
     (projects || []).forEach(p => {
-      visibleActivities(p.activities_identified).forEach(a => {
+      // Solo hojas: un padre con subtareas es un contenedor organizativo, no
+      // trabajo real — sumar sus horas además de las de sus hijas duplicaría
+      // el esfuerzo planeado (mismo criterio que EditView.buildAutoMetrics).
+      leafActivities(visibleActivities(p.activities_identified)).forEach(a => {
         if (!a.due_date) return;
         const semanaKey = isoWeek(a.due_date);
         if (!semanas.some(s => s.key === semanaKey)) return; // fuera del rango visible

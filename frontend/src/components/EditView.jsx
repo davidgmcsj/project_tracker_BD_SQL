@@ -3,7 +3,7 @@ import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator, createDefaultImpediment,
   createActivity, buildActivityIndex, activityText, activityLabel,
-  visibleActivities, formatDateDMY, getToday,
+  visibleActivities, leafActivities, canMarkCompleted, formatDateDMY, getToday,
 } from "../utils/formulas";
 import {
   activitiesForEngineerWeek, weekRange, nextWeekRange,
@@ -930,7 +930,12 @@ export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDet
 
   const update = (colKey, newArr) => onChange({ ...ts, [colKey]: newArr });
 
+  // Un padre con subtareas pendientes no puede marcarse como completado — ver
+  // canMarkCompleted (formulas.js). El botón que dispara esto ya queda
+  // deshabilitado en la UI (más abajo), esta es la defensa real por si move()
+  // se invoca desde cualquier otro punto (drag & drop, atajo de teclado futuro).
   const move = (item, toKey) => {
+    if (toKey === "completed" && !canMarkCompleted(item, acts, ts)) return;
     const fromKey = ["completed", "in_progress", "not_started"].find(k => safeArr(ts[k]).includes(item));
     const next = {
       completed:   safeArr(ts.completed).filter(s => s !== item),
@@ -972,6 +977,7 @@ export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDet
 
   const add = (item, toKey) => {
     if (assigned.has(item)) return;
+    if (toKey === "completed" && !canMarkCompleted(item, acts, ts)) return;
     const next = { ...ts, [toKey]: [...safeArr(ts[toKey]), item] };
     updateDates(next, item, toKey, null);
     onChange(next);
@@ -1004,16 +1010,22 @@ export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDet
             <div key={id} className="task-status-unassigned__item">
               <span className="task-status-unassigned__text">{activityLabel(actIndex, id)}</span>
               <div className="task-status-unassigned__actions">
-                {TASK_STATUS_COLS.map(col => (
-                  <button
-                    key={col.key} type="button"
-                    className={`task-status-unassigned__btn task-status-unassigned__btn--${col.variant}`}
-                    title={`Mover a ${col.label}`}
-                    onClick={() => add(id, col.key)}
-                  >
-                    {col.icon}
-                  </button>
-                ))}
+                {TASK_STATUS_COLS.map(col => {
+                  const bloqueado = col.key === "completed" && !canMarkCompleted(id, acts, ts);
+                  return (
+                    <button
+                      key={col.key} type="button"
+                      className={`task-status-unassigned__btn task-status-unassigned__btn--${col.variant}`}
+                      title={bloqueado
+                        ? "No se puede completar: tiene subtareas pendientes"
+                        : `Mover a ${col.label}`}
+                      disabled={bloqueado}
+                      onClick={() => add(id, col.key)}
+                    >
+                      {col.icon}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -1081,16 +1093,22 @@ export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDet
                           <span className="task-status-col__item__grip">⠿</span>
                           <span className="task-status-col__item-text">{activityLabel(actIndex, item)}</span>
                           <div className="task-status-col__item-actions">
-                            {otherCols.map(other => (
-                              <button
-                                key={other.key} type="button"
-                                className="task-status-col__move-btn"
-                                title={`Mover a ${other.label}`}
-                                onClick={e => { e.stopPropagation(); move(item, other.key); }}
-                              >
-                                {other.icon}
-                              </button>
-                            ))}
+                            {otherCols.map(other => {
+                              const bloqueado = other.key === "completed" && !canMarkCompleted(item, acts, ts);
+                              return (
+                                <button
+                                  key={other.key} type="button"
+                                  className="task-status-col__move-btn"
+                                  title={bloqueado
+                                    ? "No se puede completar: tiene subtareas pendientes"
+                                    : `Mover a ${other.label}`}
+                                  disabled={bloqueado}
+                                  onClick={e => { e.stopPropagation(); move(item, other.key); }}
+                                >
+                                  {other.icon}
+                                </button>
+                              );
+                            })}
                             <button
                               type="button" className="task-status-col__remove-btn"
                               title="Quitar de la lista"
@@ -1458,24 +1476,34 @@ export default function EditView({
   const allActivities = safeActs(p?.activities_identified);
   const activities    = visibleActivities(allActivities);
 
-  // Métricas calculadas automáticamente desde actividades y estado de actividades
+  // Métricas calculadas automáticamente desde actividades y estado de actividades.
+  // Solo cuentan las HOJAS (actividades sin subtareas): un padre con subtareas
+  // es un contenedor organizativo, no una unidad de trabajo medible — contarlo
+  // aparte infla el total (un padre con 5 hijas terminadas aparecería como 6
+  // tareas, no 5). Ver leafActivities (formulas.js).
   const ts              = p?.task_status || {};
-  const autoTotal       = activities.length;
-  const autoCompletadas = safeArr(ts.completed).length;
-  const autoEnProceso   = safeArr(ts.in_progress).length;
+  const leafIds         = new Set(leafActivities(activities).map(a => a.id));
+  const autoTotal       = leafIds.size;
+  const autoCompletadas = safeArr(ts.completed).filter(id => leafIds.has(id)).length;
+  const autoEnProceso   = safeArr(ts.in_progress).filter(id => leafIds.has(id)).length;
   const autoNoIniciadas = Math.max(0, autoTotal - autoCompletadas - autoEnProceso);
 
   const updateMetric = (field, val) =>
     onUpdateProject(editingIdx, "manual_metrics", { ...m, [field]: val === "" ? "" : Number(val) });
 
   // Recalcula total/completadas/en_proceso desde actividades y task_status.
-  // Cuenta solo actividades visibles (las archivadas por Planner no inflan el total).
-  const buildAutoMetrics = (newActs, newTs) => ({
-    ...m,
-    total_tasks:       visibleActivities(newActs).length,
-    completed_tasks:   safeArr(newTs.completed).length,
-    in_progress_tasks: safeArr(newTs.in_progress).length,
-  });
+  // Cuenta solo actividades visibles (las archivadas por Planner no inflan el
+  // total) Y solo hojas (mismo criterio que autoTotal/autoCompletadas arriba).
+  const buildAutoMetrics = (newActs, newTs) => {
+    const visibles    = visibleActivities(newActs);
+    const leafIdsNext = new Set(leafActivities(visibles).map(a => a.id));
+    return {
+      ...m,
+      total_tasks:       leafIdsNext.size,
+      completed_tasks:   safeArr(newTs.completed).filter(id => leafIdsNext.has(id)).length,
+      in_progress_tasks: safeArr(newTs.in_progress).filter(id => leafIdsNext.has(id)).length,
+    };
+  };
 
   const addEngineer    = () => onUpdateProject(editingIdx, "engineers",   [...engineers,   createDefaultEngineer()]);
   const updateEngineer = (i, f, v) => onUpdateProject(editingIdx, "engineers",   engineers.map((e, idx)   => idx === i ? { ...e,   [f]: v } : e));
@@ -1545,11 +1573,11 @@ export default function EditView({
   };
 
   // Aplica una importación de Planner ya confirmada en el modal.
-  // Recibe { rows, engineersToCreate }. Pasos:
+  // Recibe { rows, engineersToCreate, hasParentColumn }. Pasos:
   //   1) Crear los ingenieros faltantes (onCreateEngineer es síncrono, devuelve id).
   //   2) Merge definitivo pasando el mapa nombre→id ya resuelto (enlaza responsables).
   //   3) Persistir proyecto (localStorage + servidor).
-  const handleApplyPlannerImport = ({ rows, engineersToCreate }) => {
+  const handleApplyPlannerImport = ({ rows, engineersToCreate, hasParentColumn }) => {
     const nameToId = new Map();
     (engineerCatalog || []).forEach(e => { if (e?.name) nameToId.set(normalizeName(e.name), e.id); });
     (engineersToCreate || []).forEach(({ name }) => {
@@ -1558,7 +1586,7 @@ export default function EditView({
     });
 
     const res = mergePlannerImport(
-      allActivities, p.task_status, rows, engineerCatalog, createActivity, nameToId
+      allActivities, p.task_status, rows, engineerCatalog, createActivity, nameToId, hasParentColumn
     );
 
     // Poblar el "Equipo del Proyecto" (p.engineers) con los responsables que trae

@@ -19,18 +19,19 @@ export default function PlannerImportModal({
   isOpen, onClose, onConfirm,
   existingActivities, existingTaskStatus, engineerCatalog,
 }) {
-  const [stage,     setStage]     = useState("pick");
-  const [fileName,  setFileName]  = useState("");
-  const [rows,      setRows]      = useState([]);
-  const [mergeRes,  setMergeRes]  = useState(null);
-  const [parseErrs, setParseErrs] = useState([]);
-  const [errorMsg,  setErrorMsg]  = useState("");
-  const [busy,      setBusy]      = useState(false);
+  const [stage,           setStage]           = useState("pick");
+  const [fileName,        setFileName]        = useState("");
+  const [rows,            setRows]            = useState([]);
+  const [hasParentColumn, setHasParentColumn] = useState(false);
+  const [mergeRes,        setMergeRes]        = useState(null);
+  const [parseErrs,       setParseErrs]       = useState([]);
+  const [errorMsg,        setErrorMsg]        = useState("");
+  const [busy,            setBusy]            = useState(false);
 
   if (!isOpen) return null;
 
   const reset = () => {
-    setStage("pick"); setFileName(""); setRows([]);
+    setStage("pick"); setFileName(""); setRows([]); setHasParentColumn(false);
     setMergeRes(null); setParseErrs([]); setErrorMsg(""); setBusy(false);
   };
 
@@ -50,11 +51,16 @@ export default function PlannerImportModal({
         return;
       }
       // Dry-run: sin resolvedNameToId → solo reporta ingenieros por crear.
+      // hasParentColumn se pasa desde ahora: la vista previa ya debe mostrar
+      // los parent_id resueltos y cualquier error de jerarquía (referencia
+      // rota, ciclo) antes de que el usuario confirme.
       const res = mergePlannerImport(
-        existingActivities, existingTaskStatus, parsed.rows, engineerCatalog, createActivity
+        existingActivities, existingTaskStatus, parsed.rows, engineerCatalog, createActivity,
+        undefined, parsed.hasParentColumn
       );
       setRows(parsed.rows);
-      setParseErrs(parsed.errors);
+      setHasParentColumn(parsed.hasParentColumn);
+      setParseErrs([...parsed.errors, ...(res.hierarchyErrors || [])]);
       setMergeRes(res);
       setStage("preview");
     } catch (err) {
@@ -69,7 +75,7 @@ export default function PlannerImportModal({
   const handleApply = () => {
     if (!mergeRes) return;
     // El padre recibe las filas y el dry-run; se encarga de crear ingenieros y persistir.
-    onConfirm({ rows, engineersToCreate: mergeRes.newEngineersToCreate });
+    onConfirm({ rows, engineersToCreate: mergeRes.newEngineersToCreate, hasParentColumn });
     handleClose();
   };
 

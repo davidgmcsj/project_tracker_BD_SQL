@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   excelSerialToDate, parseEsfuerzo, parseProgress, bucketToStatus,
-  normalizeName, parseAssignees, mergePlannerImport,
+  normalizeName, parseAssignees, mergePlannerImport, resolveImportedHierarchy,
 } from "./plannerImport.js";
 import { createActivity } from "./formulas.js";
 
@@ -154,4 +154,156 @@ test("mergePlannerImport es idempotente al reimportar el mismo Excel", () => {
   assert.equal(second.summary.archived, 0);
   assert.equal(second.summary.updated, 2);
   assert.equal(second.activities.length, 2);
+});
+
+// ── resolveImportedHierarchy ──────────────────────────────────────────────────
+// Resuelve la columna opcional "Tarea padre" (parent_planner_number) del Excel
+// a un mapa taskNumber → parentTaskNumber|null, detectando referencias rotas y
+// ciclos ANTES de que mergePlannerImport cree ninguna actividad — así un Excel
+// mal armado no deja huérfanos ni jerarquías circulares a medio aplicar.
+
+function rowsWithParents(pairs) {
+  // pairs: [[taskNumber, parentTaskNumber|null], ...]
+  return pairs.map(([n, p]) => ({
+    planner_task_number: n, parent_planner_number: p, text: `Tarea ${n}`,
+    assigneeNames: [], start_date: "", due_date: "", progress: 0,
+    planned_hours: 0, status: "not_started", notes_raw: "", _rowIndex: 0,
+  }));
+}
+
+test("resolveImportedHierarchy resuelve un padre válido", () => {
+  const rows = rowsWithParents([["1", null], ["2", "1"]]);
+  const { parentByNumber, hierarchyErrors } = resolveImportedHierarchy(rows, true);
+  assert.equal(parentByNumber.get("1"), null);
+  assert.equal(parentByNumber.get("2"), "1");
+  assert.deepEqual(hierarchyErrors, []);
+});
+
+test("resolveImportedHierarchy sin columna 'Tarea padre' no reporta errores y no resuelve nada", () => {
+  const rows = rowsWithParents([["1", null], ["2", null]]);
+  const { parentByNumber, hierarchyErrors, hasParentColumn } = resolveImportedHierarchy(rows, false);
+  assert.equal(hasParentColumn, false);
+  assert.equal(parentByNumber.size, 0);
+  assert.deepEqual(hierarchyErrors, []);
+});
+
+test("resolveImportedHierarchy reporta una referencia a tarea padre inexistente", () => {
+  const rows = rowsWithParents([["1", "99"]]);
+  const { parentByNumber, hierarchyErrors } = resolveImportedHierarchy(rows, true);
+  assert.equal(parentByNumber.get("1"), null); // se trata como raíz, no como huérfana
+  assert.equal(hierarchyErrors.length, 1);
+  assert.match(hierarchyErrors[0], /"1".*"99"/);
+});
+
+test("resolveImportedHierarchy detecta un ciclo directo (A es padre de B y B es padre de A)", () => {
+  const rows = rowsWithParents([["A", "B"], ["B", "A"]]);
+  const { parentByNumber, hierarchyErrors } = resolveImportedHierarchy(rows, true);
+  assert.equal(parentByNumber.get("A"), null);
+  assert.equal(parentByNumber.get("B"), null);
+  assert.equal(hierarchyErrors.length, 1);
+  assert.match(hierarchyErrors[0], /[Cc]iclo/);
+});
+
+test("resolveImportedHierarchy detecta un ciclo largo (A→B→C→A)", () => {
+  const rows = rowsWithParents([["A", "C"], ["B", "A"], ["C", "B"]]);
+  const { parentByNumber, hierarchyErrors } = resolveImportedHierarchy(rows, true);
+  assert.equal(parentByNumber.get("A"), null);
+  assert.equal(parentByNumber.get("B"), null);
+  assert.equal(parentByNumber.get("C"), null);
+  assert.ok(hierarchyErrors.length >= 1);
+});
+
+test("resolveImportedHierarchy no reporta ciclo para una tarea que es su propio padre", () => {
+  // Caso trivial de ciclo: taskNumber === parent_planner_number.
+  const rows = rowsWithParents([["1", "1"]]);
+  const { parentByNumber, hierarchyErrors } = resolveImportedHierarchy(rows, true);
+  assert.equal(parentByNumber.get("1"), null);
+  assert.equal(hierarchyErrors.length, 1);
+});
+
+test("resolveImportedHierarchy permite una jerarquía de 3 niveles sin errores", () => {
+  const rows = rowsWithParents([["1", null], ["2", "1"], ["3", "2"]]);
+  const { parentByNumber, hierarchyErrors } = resolveImportedHierarchy(rows, true);
+  assert.equal(parentByNumber.get("1"), null);
+  assert.equal(parentByNumber.get("2"), "1");
+  assert.equal(parentByNumber.get("3"), "2");
+  assert.deepEqual(hierarchyErrors, []);
+});
+
+// ── mergePlannerImport + jerarquía ────────────────────────────────────────────
+
+function rowsFixtureConPadre() {
+  return [
+    { planner_task_number: "1", parent_planner_number: null, text: "Tarea madre",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 9 },
+    { planner_task_number: "2", parent_planner_number: "1", text: "Subtarea de la madre",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 10 },
+  ];
+}
+
+test("mergePlannerImport asigna parent_id a partir de 'Tarea padre' en una importación nueva", () => {
+  const res = mergePlannerImport([], {}, rowsFixtureConPadre(), catalog, createActivity, undefined, true);
+  const madre    = res.activities.find(a => a.planner_task_number === "1");
+  const subtarea = res.activities.find(a => a.planner_task_number === "2");
+  assert.equal(madre.parent_id, null);
+  assert.equal(subtarea.parent_id, madre.id);
+});
+
+test("mergePlannerImport asigna sequence_order incremental entre hermanas en el orden del Excel", () => {
+  const rows = [
+    { planner_task_number: "1", parent_planner_number: null, text: "Madre",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 9 },
+    { planner_task_number: "2", parent_planner_number: "1", text: "Hija A",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 10 },
+    { planner_task_number: "3", parent_planner_number: "1", text: "Hija B",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 11 },
+  ];
+  const res = mergePlannerImport([], {}, rows, catalog, createActivity, undefined, true);
+  const hijaA = res.activities.find(a => a.planner_task_number === "2");
+  const hijaB = res.activities.find(a => a.planner_task_number === "3");
+  assert.ok(hijaA.sequence_order < hijaB.sequence_order,
+    "el orden de aparición en el Excel debe conservarse entre hermanas");
+});
+
+test("mergePlannerImport reimportación SIN columna 'Tarea padre' preserva parent_id existentes", () => {
+  const first = mergePlannerImport([], {}, rowsFixtureConPadre(), catalog, createActivity, undefined, true);
+  // Reimportar las mismas filas pero SIN el flag hasParentColumn (el Excel ya no
+  // trae esa columna): los parent_id ya asignados no deben tocarse.
+  const rowsSinColumna = rowsFixtureConPadre().map(r => {
+    const copia = { ...r };
+    delete copia.parent_planner_number;
+    return copia;
+  });
+  const second = mergePlannerImport(first.activities, first.task_status, rowsSinColumna, catalog, createActivity, undefined, false);
+  const subtarea = second.activities.find(a => a.planner_task_number === "2");
+  const madre    = second.activities.find(a => a.planner_task_number === "1");
+  assert.equal(subtarea.parent_id, madre.id, "el parent_id previo debe conservarse intacto");
+});
+
+test("mergePlannerImport reimportación CON columna 'Tarea padre' actualiza un cambio de padre", () => {
+  const first = mergePlannerImport([], {}, rowsFixtureConPadre(), catalog, createActivity, undefined, true);
+  // La tarea 2 ahora aparece sin padre (columna vacía en esa fila) en la reimportación.
+  const rowsReasignadas = [
+    { planner_task_number: "1", parent_planner_number: null, text: "Tarea madre",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 9 },
+    { planner_task_number: "2", parent_planner_number: null, text: "Subtarea de la madre",
+      assigneeNames: [], start_date: "", due_date: "", progress: 0, planned_hours: 0,
+      status: "not_started", notes_raw: "", _rowIndex: 10 },
+  ];
+  const second = mergePlannerImport(first.activities, first.task_status, rowsReasignadas, catalog, createActivity, undefined, true);
+  const subtarea = second.activities.find(a => a.planner_task_number === "2");
+  assert.equal(subtarea.parent_id, null, "vacío en el Excel debe volver la actividad raíz");
+});
+
+test("mergePlannerImport nunca asigna parent_id a una actividad manual (sin planner_task_number)", () => {
+  const manual = { ...createActivity("Actividad manual"), parent_id: null };
+  const res = mergePlannerImport([manual], {}, rowsFixtureConPadre(), catalog, createActivity, undefined, true);
+  const manualResultante = res.activities.find(a => a.id === manual.id);
+  assert.equal(manualResultante.parent_id, null);
 });

@@ -35,6 +35,7 @@ const COLUMN_LABELS = {
   "deposito":        "bucket",
   "% completado":    "progress",
   "notas":           "notes",
+  "tarea padre":     "parent_task_number", // opcional — jerarquía de subtareas
 };
 
 // Depósito (bucket) de Planner → estado de actividad de la app.
@@ -217,6 +218,7 @@ export async function parsePlannerWorkbook(arrayBuffer) {
 
     out.push({
       planner_task_number: taskNumber || null,
+      parent_planner_number: String(cell(row, "parent_task_number") ?? "").trim() || null,
       text,
       assigneeNames: parseAssignees(cell(row, "assignees")),
       start_date:    excelSerialToDate(cell(row, "start")),
@@ -230,7 +232,79 @@ export async function parsePlannerWorkbook(arrayBuffer) {
   }
 
   if (!out.length) errors.push("No se encontraron tareas debajo de los encabezados.");
-  return { rows: out, projectMeta, errors };
+  // hasParentColumn: si el Excel no trae "Tarea padre" en absoluto, la
+  // reimportación no debe tocar ningún parent_id ya asignado en la app (ver
+  // mergePlannerImport). Distinto de "todas las filas tienen la celda vacía",
+  // que sí significa "todas raíz".
+  return { rows: out, projectMeta, errors, hasParentColumn: colMap.parent_task_number !== undefined };
+}
+
+// ── Jerarquía padre-subtarea ──────────────────────────────────────────────────
+// Columna opcional "Tarea padre" del Excel: contiene el número de tarea (mismo
+// identificador que "Número de tarea") de la actividad que debe ser el padre
+// de esa fila. Vacío = raíz.
+//
+// Se resuelve en BLOQUE, sobre planner_task_number (string), ANTES de que
+// mergePlannerImport cree ningún id real — así el grafo completo se valida de
+// una vez y un Excel mal armado (referencia rota, ciclo) no deja jerarquías a
+// medio aplicar. wouldCreateCycle (formulas.js) no se reutiliza aquí porque
+// opera sobre activities[].id ya materializados; esta variante recorre el
+// mismo patrón (subir por la cadena de padres buscando el propio nodo) pero
+// sobre taskNumber, que todavía no tiene un id de actividad asociado.
+
+/**
+ * @param {Array} importedRows      filas de parsePlannerWorkbook (con parent_planner_number)
+ * @param {boolean} hasParentColumn si el Excel trae la columna "Tarea padre"
+ * @returns {{ parentByNumber: Map<string,string|null>, hierarchyErrors: string[], hasParentColumn: boolean }}
+ */
+export function resolveImportedHierarchy(importedRows, hasParentColumn) {
+  const parentByNumber = new Map();
+  const hierarchyErrors = [];
+
+  if (!hasParentColumn) return { parentByNumber, hierarchyErrors, hasParentColumn: false };
+
+  const numbers = new Set(importedRows.map(r => r.planner_task_number).filter(Boolean));
+  const rawParentOf = new Map(); // taskNumber -> parentTaskNumber crudo del Excel
+
+  importedRows.forEach(row => {
+    const n = row.planner_task_number;
+    if (!n) return;
+    const parent = row.parent_planner_number || null;
+    if (!parent) { rawParentOf.set(n, null); return; }
+    if (!numbers.has(parent)) {
+      hierarchyErrors.push(`Fila con tarea "${n}": la tarea padre "${parent}" no existe en el Excel.`);
+      rawParentOf.set(n, null); // se trata como raíz, no queda huérfana
+      return;
+    }
+    rawParentOf.set(n, parent);
+  });
+
+  // Detección de ciclos: para cada nodo, sube por la cadena de padres. Si se
+  // vuelve a encontrar el nodo de partida, hay un ciclo — se reporta UNA vez
+  // por ciclo (marcando sus nodos como ya reportados) y se cortan todos a raíz.
+  const yaReportado = new Set();
+  rawParentOf.forEach((_, n) => {
+    if (yaReportado.has(n)) return;
+    const cadena = [n];
+    const vistos = new Set([n]);
+    let cur = rawParentOf.get(n);
+    let esCiclo = false;
+    while (cur != null) {
+      if (vistos.has(cur)) { esCiclo = true; break; }
+      cadena.push(cur);
+      vistos.add(cur);
+      cur = rawParentOf.get(cur);
+    }
+    if (esCiclo) {
+      const cicloDesde = cadena.indexOf(cur);
+      const nodosDelCiclo = cadena.slice(cicloDesde === -1 ? 0 : cicloDesde);
+      hierarchyErrors.push(`Ciclo detectado entre tareas: ${nodosDelCiclo.join(" → ")} → ${nodosDelCiclo[0]}.`);
+      nodosDelCiclo.forEach(x => { rawParentOf.set(x, null); yaReportado.add(x); });
+    }
+  });
+
+  rawParentOf.forEach((parent, n) => parentByNumber.set(n, parent));
+  return { parentByNumber, hierarchyErrors, hasParentColumn: true };
 }
 
 // ── Merge / sincronización ────────────────────────────────────────────────────
@@ -279,14 +353,19 @@ function applyExcelFields(activity, row, nameToId) {
 //                         primera pasada (dry-run) se omite: solo se reportan los
 //                         ingenieros por crear. En la segunda (apply) se pasa
 //                         completo y se enlazan todos los responsables.
-// Devuelve: { activities, task_status, newEngineersToCreate, engineerNameToId, summary }.
+//   hasParentColumn     – (opcional, default false) si el Excel trae la columna
+//                         "Tarea padre". Sin ella, ningún parent_id existente se
+//                         toca (ver resolveImportedHierarchy).
+// Devuelve: { activities, task_status, newEngineersToCreate, engineerNameToId,
+//             summary, hierarchyErrors }.
 export function mergePlannerImport(
   existingActivities,
   existingTaskStatus,
   importedRows,
   engineerCatalog,
   createActivityFn,
-  resolvedNameToId
+  resolvedNameToId,
+  hasParentColumn = false
 ) {
   const existing = Array.isArray(existingActivities) ? existingActivities : [];
 
@@ -328,6 +407,33 @@ export function mergePlannerImport(
       created++;
     }
   });
+
+  // 1.5) Jerarquía padre-subtarea: se resuelve DESPUÉS de crear/actualizar
+  //      todas las actividades del Excel, porque recién ahí existen los ids
+  //      reales para traducir "Tarea padre" (número de Planner) a parent_id.
+  //      Sin la columna en el Excel, no se toca ningún parent_id existente.
+  let hierarchyErrors = [];
+  if (hasParentColumn) {
+    const resolved = resolveImportedHierarchy(importedRows, true);
+    hierarchyErrors = resolved.hierarchyErrors;
+    const { parentByNumber } = resolved;
+    const numberToId = new Map(
+      resultActivities.filter(a => a.planner_task_number != null).map(a => [String(a.planner_task_number), a.id])
+    );
+    // sequence_order incremental por grupo de hermanas, en el orden de aparición
+    // en el Excel — mismo criterio que nextSequenceOrder (HierarchyTable.jsx),
+    // aplicado en bloque a toda la importación en vez de incremental por fila.
+    const nextOrderByParent = new Map();
+    resultActivities.forEach(a => {
+      if (a.planner_task_number == null) return; // manual: nunca gana parent_id de la importación
+      const parentNumber = parentByNumber.get(String(a.planner_task_number));
+      const parentId = parentNumber != null ? (numberToId.get(parentNumber) ?? null) : null;
+      a.parent_id = parentId;
+      const order = nextOrderByParent.get(parentId) ?? 0;
+      a.sequence_order = order;
+      nextOrderByParent.set(parentId, order + 1);
+    });
+  }
 
   // 2) Actividades existentes no tocadas: conservar manuales; archivar las de
   //    Planner que ya no aparecen.
@@ -383,5 +489,6 @@ export function mergePlannerImport(
     newEngineersToCreate,
     engineerNameToId: nameToId,
     summary: { created, updated, archived, engineersToCreate: newEngineersToCreate.length },
+    hierarchyErrors,
   };
 }
