@@ -1,0 +1,312 @@
+/* ═══ ENGINEER WEEK SIMPLE ═══ */
+/* ═══ REPORT BULLET SECTIONS ═══ */
+.rpt-sections-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+
+.rpt-section {
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  border: 1px solid transparent;
+}
+
+.rpt-section--blue      { background: #eff6ff; border-color: #bfdbfe; }
+
+.rpt-section--amber     { background: #fffbeb; border-color: #fde68a; }
+
+.rpt-section--red       { background: #fef2f2; border-color: #fecaca; }
+
+.rpt-section--red-soft  { background: #fff5f5; border-color: #fed7d7; }
+
+.rpt-section--green     { background: #f0fdf4; border-color: #bbf7d0; }
+
+.rpt-section--teal      { background: #f0fdfa; border-color: #99f6e4; }
+
+.rpt-section--gray      { background: var(--surface-2); border-color: var(--border); }
+
+
+.rpt-section__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.rpt-section__icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.rpt-section__label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  flex: 1;
+}
+
+.rpt-section--blue      .rpt-section__label { color: #1d4ed8; }
+
+.rpt-section--amber     .rpt-section__label { color: #92400e; }
+
+.rpt-section--red       .rpt-section__label { color: #b91c1c; }
+
+.rpt-section--red-soft  .rpt-section__label { color: #c53030; }
+
+.rpt-section--green     .rpt-section__label { color: #15803d; }
+
+.rpt-section--teal      .rpt-section__label { color: #0f766e; }
+
+
+.rpt-section__count {
+  background: rgba(0,0,0,0.07);
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  color: var(--text-2);
+}
+
+
+.rpt-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rpt-bullets__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.rpt-bullets__item::before {
+  content: "▸";
+  color: var(--azul-claro);
+  font-size: 11px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.rpt-section--red .rpt-bullets__item::before       { color: var(--red); }
+
+.rpt-section--red-soft .rpt-bullets__item::before  { color: #e53e3e; }
+
+.rpt-section--amber .rpt-bullets__item::before     { color: var(--amber); }
+
+.rpt-section--green .rpt-bullets__item::before     { color: #16a34a; }
+
+.rpt-section--teal .rpt-bullets__item::before      { color: #0d9488; }
+
+.rpt-section--gray .rpt-bullets__item::before      { color: var(--text-3); }
+
+
+.rpt-bullets--compact {
+  gap: 3px;
+}
+
+.rpt-bullets--compact .rpt-bullets__item {
+  font-size: 12px;
+}
+
+
+/* ═══ ENGINEER WEEK CARDS (reporte) ═══ */
+.rpt-eng-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.rpt-eng-section__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+
+.rpt-eng-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.rpt-eng-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.rpt-eng-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+.rpt-eng-card__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--azul-oscuro);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rpt-eng-card__badge {
+  background: var(--accent-bg);
+  color: var(--azul-claro);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+
+/* ═══ NUMBERED BULLETS (activities in ReportView) ═══ */
+.rpt-bullets--numbered {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  counter-reset: act-counter;
+}
+
+.rpt-bullets__item--numbered {
+  counter-increment: act-counter;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.rpt-bullets__item--numbered::before {
+  content: counter(act-counter) ".";
+  color: var(--azul-claro);
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 2px;
+  flex-shrink: 0;
+  min-width: 16px;
+}
+
+
+/* ═══ TASK STATUS — ReportView ═══ */
+.rpt-task-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.rpt-task-status .rpt-bullets,
+.rpt-sections-grid .rpt-bullets--numbered {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-bdr) transparent;
+}
+
+.rpt-task-status .rpt-bullets::-webkit-scrollbar,
+.rpt-sections-grid .rpt-bullets--numbered::-webkit-scrollbar {
+  width: 5px;
+}
+
+.rpt-task-status .rpt-bullets::-webkit-scrollbar-track,
+.rpt-sections-grid .rpt-bullets--numbered::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rpt-task-status .rpt-bullets::-webkit-scrollbar-thumb,
+.rpt-sections-grid .rpt-bullets--numbered::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.18);
+  border-radius: 4px;
+}
+
+
+/* ═══ REPORT SECTION — ancho completo ═══ */
+.rpt-section--full {
+  grid-column: 1 / -1;
+}
+
+.milestone-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.milestone-report__group {
+  border-left: 2px solid var(--teal);
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rpt-section--gray .milestone-report__group {
+  border-left-color: var(--text-3);
+}
+
+.milestone-report__act {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--teal);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+.rpt-section--gray .milestone-report__act {
+  color: var(--text-2);
+}
+
+.milestone-report__row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.milestone-report__date {
+  background: var(--teal);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rpt-section--gray .milestone-report__date {
+  background: var(--text-2);
+}
+
+.milestone-report__note {
+  color: var(--text);
+  line-height: 1.45;
+}

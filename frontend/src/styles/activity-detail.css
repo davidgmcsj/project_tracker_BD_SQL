@@ -1,0 +1,935 @@
+
+/* ═══ BOTÓN DETALLES EN DEPÓSITOS ═══ */
+/* ═══ ACTIVITY DETAIL MODAL (adm-*) ═══ */
+
+.adm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  /* Por encima de .fs-overlay (1200): la tarjeta de actividad se abre DESDE la
+     planificación a pantalla completa (al crear una subtarea o al hacer clic
+     en una fila), así que debe superponerse a ella. Con z-index menor quedaba
+     oculta detrás y solo aparecía al cerrar la planificación. */
+  z-index: 1300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+
+
+.adm-panel {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: adm-slide-in 0.18s ease-out;
+  position: relative;
+}
+
+
+@keyframes adm-slide-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ── Cabecera ── */
+.adm-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.adm-header__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.adm-header__project {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.adm-header__spacer { flex: 1; }
+
+.adm-header__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.4;
+  margin: 0 0 10px;
+}
+
+.adm-header__title-input {
+  width: 100%;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.4;
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+  box-sizing: border-box;
+  min-height: 32px;
+}
+
+.adm-header__title-input:hover {
+  border-color: var(--borde);
+  background: var(--surface);
+}
+
+.adm-header__title-input:focus {
+  border-color: var(--azul);
+  background: var(--surface);
+  outline: none;
+}
+
+
+.adm-close-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.adm-close-btn:hover {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+
+/* ── Pastilla de estado ── */
+.adm-status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.adm-status-pill--completed   { background: var(--green-bg); color: var(--green); }
+
+.adm-status-pill--inprogress  { background: var(--amber-bg); color: var(--amber); }
+
+.adm-status-pill--notstarted  { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+
+/* ── Badges de fechas de depósito ── */
+.adm-dates-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.adm-date-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.adm-date-badge__icon  { font-size: 12px; }
+
+.adm-date-badge__label { color: inherit; opacity: 0.75; }
+
+.adm-date-badge__value { font-weight: 700; }
+
+
+.adm-date-badge--added      { background: #eff6ff; color: #1d4ed8; }
+
+.adm-date-badge--inprogress { background: var(--amber-bg); color: #b45309; }
+
+.adm-date-badge--completed  { background: var(--green-bg); color: #065f46; }
+
+
+/* Fechas de transición EDITABLES (útil al importar de Planner sin ese dato) */
+.adm-dates-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.adm-date-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 130px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.adm-date-edit__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.adm-date-edit--added      .adm-date-edit__head { color: #1d4ed8; }
+
+.adm-date-edit--inprogress .adm-date-edit__head { color: #b45309; }
+
+.adm-date-edit--completed  .adm-date-edit__head { color: var(--green); }
+
+.adm-date-edit__input {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: var(--t-sm);
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+
+.adm-date-edit__input:focus { border-color: var(--azul-claro); box-shadow: var(--ring); }
+
+
+/* ── Cuerpo ── */
+.adm-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  max-height: calc(80vh - 160px);
+}
+
+
+.adm-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.adm-progress-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adm-range {
+  flex: 1;
+  accent-color: var(--azul-oscuro);
+  cursor: pointer;
+}
+
+.adm-input--pct {
+  width: 58px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.adm-pct-sign {
+  font-size: 12px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.adm-suggest-link {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  color: var(--azul-oscuro);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.adm-suggest-link:hover { opacity: 0.75; }
+
+
+/* ── Campo genérico ── */
+.adm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adm-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.adm-input,
+.adm-select {
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.adm-input:focus,
+.adm-select:focus {
+  border-color: var(--azul-oscuro);
+}
+
+.adm-textarea {
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.adm-textarea:focus { border-color: var(--azul-oscuro); }
+
+
+/* ── Sección genérica ── */
+.adm-section { display: flex; flex-direction: column; gap: 8px; }
+
+.adm-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.adm-section__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adm-empty-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  margin: 0;
+}
+
+
+/* ── Adjuntos ── */
+.adm-attach-error {
+  font-size: 12px;
+  color: var(--red, #CC0033);
+  margin: 4px 0;
+}
+
+.adm-attach-list {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adm-attach-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-2, #f7f8fa);
+}
+
+.adm-attach-item__icon { flex-shrink: 0; font-size: 15px; }
+
+.adm-attach-item__name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--azul-oscuro, #003399);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-attach-item__name:hover { text-decoration: underline; }
+
+.adm-attach-item__name--link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adm-attach-item__size {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.adm-attach-item__remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+
+.adm-attach-item__remove:hover { color: var(--red, #CC0033); }
+
+
+/* ── Responsables ── */
+.adm-assignees {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.adm-assignee-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #eff6ff;
+  color: var(--azul-oscuro);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.adm-assignee-chip--ext { background: #fdf4ff; color: #7c3aed; }
+
+.adm-assignee-chip__ext {
+  font-size: 9px;
+  background: #7c3aed;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.adm-assignee-chip__remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: #93c5fd;
+  padding: 0 0 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.adm-assignee-chip__remove:hover { color: #1e40af; }
+
+.adm-select--assignee {
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px dashed var(--borde, #cbd5e1);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  width: 100%;
+}
+
+.adm-select--assignee:focus { outline: none; border-color: var(--azul); }
+
+
+/* ── Botón agregar ── */
+.adm-add-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--azul-oscuro);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.adm-add-btn:hover {
+  background: var(--azul-oscuro);
+  color: #fff;
+  border-style: solid;
+}
+
+
+/* ── Draft inline ── */
+.adm-inline-draft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adm-inline-draft--keydate { flex-wrap: wrap; }
+
+.adm-inline-draft__input {
+  flex: 1;
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+}
+
+.adm-inline-draft__input:focus { border-color: var(--azul-oscuro); }
+
+.adm-inline-draft__date {
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.adm-inline-draft__date:focus { border-color: var(--azul-oscuro); }
+
+.adm-inline-draft__ok,
+.adm-inline-draft__cancel {
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.adm-inline-draft__ok     { background: var(--green); color: #fff; }
+
+.adm-inline-draft__cancel { background: var(--red-bg); color: var(--red); }
+
+
+/* ── Checklist ── */
+.adm-checklist-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.adm-checklist-bar {
+  display: inline-block;
+  width: 60px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.adm-checklist-bar__fill {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  border-radius: 4px;
+  transition: width 0.2s;
+}
+
+.adm-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adm-checklist__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.adm-checklist__item--done .adm-checklist__text-input {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+
+.adm-checklist__item--dragover {
+  background: var(--azul-oscuro-10, rgba(20, 60, 120, 0.08));
+  border-radius: 6px;
+}
+
+.adm-checklist__drag-handle {
+  flex-shrink: 0;
+  cursor: grab;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
+.adm-checklist__drag-handle:active { cursor: grabbing; }
+
+.adm-checklist__reorder-btns {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0;
+}
+
+.adm-checklist__reorder-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 8px;
+  line-height: 1;
+  padding: 1px 2px;
+}
+
+.adm-checklist__reorder-btn:hover:not(:disabled) { color: var(--azul-oscuro); }
+
+.adm-checklist__reorder-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.adm-checklist__chk {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--green);
+}
+
+.adm-checklist__text-input {
+  flex: 1;
+  border: none;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  padding: 2px 0;
+  transition: border-color 0.15s;
+}
+
+.adm-checklist__text-input:focus { border-bottom-color: var(--azul-oscuro); }
+
+.adm-checklist__remove {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.adm-checklist__item:hover .adm-checklist__remove { opacity: 1; }
+
+.adm-checklist__remove:hover { color: var(--red); }
+
+
+/* ── Subtareas reales (jerarquía) ── */
+.adm-subtask-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adm-subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.adm-subtask-item:hover { background: var(--azul-oscuro-10, rgba(20, 60, 120, 0.06)); }
+
+.adm-subtask-item__num {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.adm-subtask-item__name {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--azul-oscuro);
+  padding: 2px 0;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+
+.adm-subtask-item__name:hover { text-decoration-color: var(--azul-oscuro); }
+
+.adm-subtask-item__dates {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.adm-subtask-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.adm-subtask-status--not-started { background: var(--red-bg);   color: var(--red);   border-color: var(--red); }
+
+.adm-subtask-status--in-progress { background: var(--info-bg);  color: var(--info);  border-color: var(--info); }
+
+.adm-subtask-status--completed   { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+
+.adm-subtask-item__remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.adm-subtask-item:hover .adm-subtask-item__remove { opacity: 1; }
+
+.adm-subtask-item__remove:hover { color: var(--red); }
+
+
+/* ── Fechas clave ── */
+.adm-keydate-list,
+.adm-notes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.adm-keydate-item,
+.adm-note-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adm-keydate-item__icon { font-size: 14px; flex-shrink: 0; }
+
+.adm-keydate-item__date,
+.adm-note-item__date {
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
+.adm-keydate-item__date:focus,
+.adm-note-item__date:focus { border-color: var(--azul-oscuro); }
+
+.adm-keydate-item__label,
+.adm-note-item__text {
+  flex: 1;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  color: var(--text);
+}
+
+.adm-keydate-item__label:focus,
+.adm-note-item__text:focus { border-color: var(--azul-oscuro); }
+
+.adm-keydate-item__remove,
+.adm-note-item__remove {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.adm-keydate-item__remove:hover,
+.adm-note-item__remove:hover { color: var(--red); }
+
+
+/* ── Pie ── */
+.adm-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;  /* eliminar a la izq, guardar a la der */
+  align-items: center;
+  background: var(--surface-2);
+}
+
+/* ── Campo Estado actual del proyecto (sn-*) ─────────────────────────────── */
+/* Tarjeta de lectura — clic para editar */
+/* Estado vacío */
+.adm-delete-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.adm-delete-btn:hover { background: #fee2e2; }
+
+.adm-save-btn {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 24px;
+  background: var(--azul-oscuro);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.adm-save-btn:hover { background: var(--azul-medio); }
+
+
+/* ── Badge "Sin guardar" ── */
+.adm-dirty-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--amber-bg);
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  flex-shrink: 0;
+}
+
+
+/* ── Diálogo de confirmación de descarte ── */
+.adm-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+}
+
+.adm-confirm-dialog {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adm-confirm-dialog__msg {
+  font-size: 14px;
+  color: var(--text);
+  text-align: center;
+  font-weight: 500;
+  margin: 0;
+}
+
+.adm-confirm-dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.adm-confirm-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  width: 100%;
+}
+
+.adm-confirm-btn:hover { opacity: 0.85; }
+
+.adm-confirm-btn--cancel  { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+.adm-confirm-btn--discard { background: var(--red-bg);    color: var(--red); }
+
+.adm-confirm-btn--save    { background: var(--azul-oscuro); color: #fff; }

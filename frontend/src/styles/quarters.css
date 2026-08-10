@@ -1,0 +1,428 @@
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   QUARTER RESET MODAL (qrm-*)
+   Modal de doble confirmación para el reinicio de trimestre.
+   Diseñado para ser visualmente pesado e intencionalmente difícil de hacer
+   click accidental — el usuario debe leer y escribir texto antes de confirmar.
+══════════════════════════════════════════════════════════════════════════════ */
+
+.qrm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.qrm-panel {
+  background: var(--surface-1, #fff);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  width: 100%; max-width: 520px;
+  overflow: hidden;
+}
+
+
+/* Cabecera del modal */
+.qrm-header {
+  padding: 28px 28px 0;
+  text-align: center;
+}
+
+.qrm-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+
+.qrm-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--azul-oscuro, #1a2e4a);
+  margin: 0 0 6px;
+}
+
+.qrm-subtitle {
+  font-size: 14px;
+  color: var(--text-2, #666);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.qrm-confirm-phrase {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 20px;
+  background: #fef3c7;
+  border: 2px dashed #f59e0b;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #92400e;
+}
+
+
+/* Cuerpo del modal */
+.qrm-body {
+  padding: 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+
+/* Filas de estadísticas en el paso 1 */
+.qrm-stat-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.qrm-stat-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+
+.qrm-stat-sub  { color: #555; display: block; font-size: 12px; margin-top: 2px; }
+
+.qrm-stat-row--archive { background: #fef2f2; color: #7f1d1d; }
+
+.qrm-stat-row--keep    { background: #f0fdf4; color: #14532d; }
+
+.qrm-stat-row--reset   { background: #eff6ff; color: #1e3a5f; }
+
+.qrm-stat-row strong   { color: inherit; }
+
+
+/* Advertencia */
+.qrm-warning {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #78350f;
+  line-height: 1.5;
+}
+
+
+/* Input de confirmación */
+.qrm-confirm-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid var(--border, #ddd);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.qrm-confirm-input:focus { border-color: var(--azul-oscuro, #1a2e4a); }
+
+
+/* Error */
+.qrm-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #991b1b;
+}
+
+
+/* Loading */
+.qrm-loading {
+  padding: 48px 28px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.qrm-spinner {
+  width: 40px; height: 40px;
+  border: 4px solid var(--border, #ddd);
+  border-top-color: var(--azul-oscuro, #1a2e4a);
+  border-radius: 50%;
+  animation: qrm-spin 0.8s linear infinite;
+}
+
+@keyframes qrm-spin { to { transform: rotate(360deg); } }
+
+.qrm-loading-text { font-size: 16px; font-weight: 600; color: var(--text-1, #222); margin: 0; }
+
+.qrm-loading-sub  { font-size: 13px; color: var(--text-2, #888); margin: 0; }
+
+
+/* Filas de resultado (paso 4) — texto azul oscuro explícito */
+.qrm-result-row {
+  display: flex;
+  justify-content: space-between;
+  color: var(--azul-oscuro, #1a2e4a);
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface-2, #f9f9f9);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.qrm-result-row strong { font-size: 18px; color: var(--azul-oscuro, #1a2e4a); }
+
+.qrm-result-note {
+  font-size: 13px;
+  color: var(--text-2, #888);
+  text-align: center;
+  margin: 4px 0 0;
+}
+
+
+/* Footer con botones */
+.qrm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 28px 24px;
+  border-top: 1px solid var(--border, #eee);
+}
+
+.qrm-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.qrm-btn:active { transform: scale(0.97); }
+
+.qrm-btn--cancel  { background: var(--surface-2, #f0f0f0); color: var(--text-2, #555); }
+
+.qrm-btn--next    { background: var(--azul-oscuro, #1a2e4a); color: #fff; }
+
+.qrm-btn--confirm { background: #dc2626; color: #fff; }
+
+.qrm-btn--confirm:disabled { background: #fca5a5; cursor: not-allowed; }
+
+.qrm-btn:not(:disabled):hover { opacity: 0.88; }
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   QUARTERS VIEW (qv-*)
+   Vista de consulta de trimestres históricos. Modo solo lectura.
+══════════════════════════════════════════════════════════════════════════════ */
+
+.qv-container {
+  padding: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+
+/* Lista de trimestres */
+.qv-list-header { margin-bottom: 20px; }
+
+.qv-list-title  { font-size: 22px; font-weight: 700; color: var(--azul-oscuro, #1a2e4a); margin: 0 0 6px; }
+
+.qv-list-sub    { font-size: 14px; color: var(--text-2, #888); margin: 0; }
+
+.qv-loading     { padding: 40px; text-align: center; color: var(--text-2, #888); font-size: 15px; }
+
+.qv-error       { padding: 16px; background: #fef2f2; border-radius: 8px; color: #991b1b; font-size: 14px; }
+
+
+.qv-empty { text-align: center; padding: 48px 0; color: var(--text-2, #888); }
+
+.qv-empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+.qv-empty-sub  { font-size: 13px; margin-top: 4px; }
+
+
+.qv-list { display: flex; flex-direction: column; gap: 10px; }
+
+
+/* Tarjeta de cada trimestre en la lista */
+.qv-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  width: 100%;
+}
+
+.qv-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-color: var(--azul-oscuro, #1a2e4a); }
+
+.qv-card__label { font-size: 18px; font-weight: 700; color: var(--azul-oscuro, #1a2e4a); min-width: 90px; }
+
+.qv-card__meta  { display: flex; flex-wrap: wrap; gap: 12px; flex: 1; font-size: 13px; color: var(--text-2, #888); }
+
+.qv-card__arrow { font-size: 20px; color: var(--text-2, #ccc); }
+
+
+/* Cabecera del detalle de un trimestre */
+.qv-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.qv-back-btn {
+  padding: 8px 14px;
+  background: var(--surface-2, #f0f0f0);
+  border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  color: var(--text-1, #333);
+}
+
+.qv-back-btn:hover { background: var(--border, #e0e0e0); }
+
+.qv-detail-title-group { display: flex; align-items: center; gap: 10px; flex: 1; }
+
+.qv-detail-title  { font-size: 20px; font-weight: 700; color: var(--azul-oscuro, #1a2e4a); margin: 0; }
+
+.qv-detail-badge  { padding: 3px 10px; background: #eff6ff; color: #1d4ed8; border-radius: 20px; font-size: 12px; font-weight: 600; }
+
+.qv-search {
+  padding: 8px 12px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 8px;
+  font-size: 14px;
+  min-width: 220px;
+  outline: none;
+}
+
+.qv-search:focus { border-color: var(--azul-oscuro, #1a2e4a); }
+
+
+/* Proyectos en el detalle */
+.qv-projects { display: flex; flex-direction: column; gap: 8px; }
+
+
+.qv-project {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-1, #fff);
+}
+
+.qv-project__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.qv-project__header:hover { background: var(--surface-2, #f9f9f9); }
+
+.qv-project__name    { flex: 1; font-size: 15px; font-weight: 600; color: var(--azul-oscuro, #1a2e4a); }
+
+.qv-project__pills   { display: flex; gap: 6px; }
+
+.qv-project__chevron { font-size: 12px; color: var(--text-2, #aaa); }
+
+
+/* Pills de estado */
+.qv-pill {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.qv-pill--done    { background: #d1fae5; color: #065f46; }
+
+.qv-pill--wip     { background: #dbeafe; color: #1e40af; }
+
+.qv-pill--pending { background: #f3f4f6; color: #374151; }
+
+
+/* Actividades dentro de un proyecto */
+.qv-acts { border-top: 1px solid var(--border, #eee); }
+
+.qv-acts__empty { padding: 16px; font-size: 13px; color: var(--text-2, #888); text-align: center; }
+
+
+.qv-act {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #f0f0f0);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qv-act:last-child { border-bottom: none; }
+
+
+.qv-act__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.qv-act__text { flex: 1; font-size: 14px; color: var(--text-1, #222); line-height: 1.4; }
+
+.qv-act__desc { font-size: 13px; color: var(--text-2, #666); padding-left: 20px; }
+
+.qv-act__dates {
+  display: flex; gap: 12px;
+  font-size: 12px; color: var(--text-2, #888);
+  padding-left: 20px;
+}
+
+
+/* Checklist */
+.qv-act__checklist { padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
+
+.qv-chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-1, #333); }
+
+.qv-chk--done .qv-chk__text { text-decoration: line-through; color: var(--text-2, #999); }
+
+.qv-chk__icon { font-size: 14px; flex-shrink: 0; }
+
+
+/* Notas */
+.qv-act__notes { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+
+.qv-act__notes-label { font-size: 11px; font-weight: 700; color: var(--text-2, #aaa); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.qv-note { display: flex; gap: 8px; font-size: 13px; }
+
+.qv-note__date { color: var(--text-2, #aaa); white-space: nowrap; flex-shrink: 0; }
+
+.qv-note__text { color: var(--text-1, #333); }
+
+
+/* Fechas clave */
+.qv-act__keydates { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+
+.qv-keydate { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+
+.qv-keydate__icon  { flex-shrink: 0; }
+
+.qv-keydate__label { flex: 1; color: var(--text-1, #333); }
+
+.qv-keydate__date  { color: var(--text-2, #888); white-space: nowrap; }

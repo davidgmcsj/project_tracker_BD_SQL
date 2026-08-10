@@ -1,0 +1,157 @@
+
+/* ═══════════════════════════════════════════════════════════════════
+   MÓDULO DE REPORTES — catálogo de consultas + filtros acumulativos
+   ═══════════════════════════════════════════════════════════════════ */
+.reportes-view { display: flex; flex-direction: column; gap: var(--s4); }
+
+.reportes-view__toolbar { justify-content: flex-start; }
+
+.reportes-view__export { display: flex; gap: var(--s2); margin-left: auto; }
+
+.reportes-view__consulta-hint {
+  color: var(--text-2); font-size: var(--t-sm); font-style: italic;
+  margin: -4px 0 var(--s3);
+}
+
+.reportes-view__error {
+  color: var(--red); background: var(--red-bg); border: 1px solid var(--red);
+  border-radius: var(--radius-sm); padding: var(--s3) var(--s4); margin: 0; font-size: var(--t-sm);
+}
+
+
+/* ── Tarjetas de arranque rápido ── */
+.reportes-templates {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s3);
+}
+
+.reportes-template-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--s4); text-align: left; cursor: pointer; transition: .15s; box-shadow: var(--shadow);
+}
+
+.reportes-template-card:hover { border-color: var(--dorado); box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+
+.reportes-template-card__icon { font-size: 1.5rem; }
+
+.reportes-template-card__title { font-weight: 700; color: var(--text); font-size: var(--t-body); }
+
+.reportes-template-card__desc { font-size: var(--t-cap); color: var(--text-2); }
+
+
+/* ── Reportes guardados ── */
+.reportes-saved { display: flex; flex-direction: column; gap: var(--s2); }
+
+.reportes-saved__row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+.reportes-saved__label { font-size: var(--t-cap); font-weight: 700; color: var(--text-2); }
+
+.reportes-saved__empty { font-size: var(--t-cap); color: var(--text-3); font-style: italic; }
+
+.reportes-saved-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--info-bg); border: 1px solid var(--info);
+  border-radius: var(--radius-pill); padding: 3px 4px 3px 4px;
+}
+
+.reportes-saved-chip__load {
+  border: none; background: none; color: var(--info); font-weight: 600;
+  font-size: var(--t-cap); cursor: pointer; padding: 2px 4px;
+}
+
+.reportes-saved-chip__remove {
+  border: none; background: rgba(0,0,0,.08); color: var(--text-2); cursor: pointer;
+  border-radius: 50%; width: 16px; height: 16px; line-height: 1; font-size: 10px;
+}
+
+.reportes-saved-chip__remove:hover { background: var(--red); color: #fff; }
+
+.reportes-saved__form { display: flex; align-items: center; gap: var(--s2); }
+
+.reportes-saved__form .report-filters__search { flex: 0 1 260px; }
+
+
+/* ── Panel de facetas ── */
+.reportes-filter-panel {
+  display: flex; flex-direction: column; gap: var(--s2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: var(--s3) var(--s4);
+}
+
+.reportes-filter { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+.reportes-filter__label {
+  flex: 0 0 130px; font-size: var(--t-sm); font-weight: 600; color: var(--text-2); text-transform: capitalize;
+}
+
+.reportes-filter__sep { color: var(--text-3); }
+
+.reportes-chip--pending { background: var(--surface-2); border-color: var(--border-strong); }
+
+
+/* ── Chips de filtros aplicados ── */
+.reportes-chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+.reportes-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent-bg); border: 1px solid var(--accent-bdr);
+  border-radius: var(--radius-pill); padding: 5px 6px 5px 12px;
+  font-size: var(--t-cap); font-weight: 600; color: var(--text);
+}
+
+.reportes-chip__remove {
+  border: none; background: rgba(0,0,0,.08); color: var(--text-2); cursor: pointer;
+  border-radius: 50%; width: 18px; height: 18px; line-height: 1; font-size: 11px;
+}
+
+.reportes-chip__remove:hover { background: var(--red); color: #fff; }
+
+
+/* ── Tabla de vista previa ── */
+.reportes-table-wrap {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+
+.reportes-table__toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: var(--s3) var(--s4); border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+
+.reportes-table__columns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.reportes-table__columns-label { font-size: var(--t-cap); color: var(--text-2); font-weight: 600; margin-right: 4px; }
+
+.reportes-col-chip {
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-2);
+  border-radius: var(--radius-pill); padding: 3px 10px; font-size: var(--t-cap); cursor: pointer; transition: .15s;
+}
+
+.reportes-col-chip--on { background: var(--info-bg); border-color: var(--info); color: var(--info); font-weight: 600; }
+
+
+.reportes-table__scroll { overflow-x: auto; }
+
+.reportes-table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+
+.reportes-table__th {
+  text-align: left; padding: var(--s2) var(--s3); cursor: pointer; user-select: none;
+  color: var(--text-2); font-weight: 700; white-space: nowrap; border-bottom: 2px solid var(--border);
+  background: var(--surface-2);
+}
+
+.reportes-table__th:hover { color: var(--azul-claro); }
+
+.reportes-table__sort-icon { color: var(--dorado); }
+
+.reportes-table td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); color: var(--text); }
+
+.reportes-table tr:last-child td { border-bottom: none; }
+
+.reportes-table tr:hover td { background: var(--surface-2); }
+
+.reportes-table__empty { text-align: center; color: var(--text-3); padding: var(--s6) !important; font-style: italic; }
+
+
+/* ── Selector de modo (Tabla / Tablero / Carga) — Fase 12 ── */
+.reportes-view__modos { display: flex; gap: var(--s2); }

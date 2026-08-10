@@ -1,0 +1,113 @@
+
+.edit-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.edit-panel__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 13px;
+  margin-top: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+
+.edit-row {
+  display: grid;
+  gap: 20px;
+}
+
+.edit-row--2col { grid-template-columns: 1fr 1fr; }
+
+.edit-empty {
+  color: var(--text-3);
+  text-align: center;
+  padding: 60px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+
+/* ═══ FORM FIELDS ═══ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field--optional {
+  padding: 16px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.field__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.field__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--azul-oscuro);
+}
+
+.field__input,
+.field__textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: var(--t-body);
+  outline: none;
+  width: 100%;
+  transition: all 0.2s;
+}
+
+.field__input:focus,
+.field__textarea:focus {
+  border-color: var(--azul-claro);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.field__textarea {
+  font-size: 13px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.field__textarea:disabled {
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 600px) {
+  .edit-row--2col,
+  .edit-row--3col {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ═══ IMPORTAR DE PLANNER ═══ */
+.field__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

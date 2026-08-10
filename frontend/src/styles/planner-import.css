@@ -1,0 +1,136 @@
+
+/* ═══ PLANNER LINK ═══ */
+.planner-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--azul-claro);
+  text-decoration: none;
+  border: 1px solid var(--accent-bdr);
+  border-radius: 20px;
+  padding: 2px 10px;
+  background: var(--accent-bg);
+  transition: all 0.2s;
+}
+
+.planner-link:hover {
+  background: var(--azul-claro);
+  color: white;
+}
+
+
+/* Modal de importación (reutiliza .delete-modal-overlay / .delete-modal) */
+.planner-modal {
+  max-width: 720px;
+  width: min(720px, 94vw);
+  text-align: left;
+}
+
+.planner-modal__file {
+  display: inline-block;
+  margin: 8px auto 4px;
+  padding: 10px 18px;
+  border: 1px dashed var(--azul-oscuro);
+  border-radius: 8px;
+  color: var(--azul-oscuro);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.planner-modal__file input { display: none; }
+
+.planner-modal__file:hover { background: var(--accent-bg); }
+
+.planner-modal__filename {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 2px 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-modal__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+.planner-chip {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.planner-chip--new  { background: var(--green-bg); color: var(--green); }
+
+.planner-chip--upd  { background: #eff6ff; color: var(--azul-oscuro); }
+
+.planner-chip--arch { background: var(--amber-bg); color: var(--amber); }
+
+.planner-chip--eng  { background: var(--surface-2); color: var(--text-2); }
+
+.planner-modal__engineers {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 0 0 10px;
+}
+
+.planner-modal__warnings {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #92400e;
+  max-height: 90px;
+  overflow-y: auto;
+}
+
+.planner-modal__table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+
+.planner-modal__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.planner-modal__table th {
+  position: sticky;
+  top: 0;
+  background: var(--azul-oscuro);
+  color: #fff;
+  text-align: left;
+  padding: 6px 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.planner-modal__table td {
+  padding: 5px 8px;
+  border-top: 1px solid var(--border, #e2e8f0);
+  vertical-align: top;
+}
+
+.planner-modal__cell-name {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-modal__table tr:nth-child(even) td { background: var(--surface-2); }

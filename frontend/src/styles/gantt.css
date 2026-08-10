@@ -1,0 +1,217 @@
+
+/* ══════════════════ Diagrama de Gantt / Línea de tiempo ══════════════════ */
+.gantt {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  /* SIN overflow:hidden a propósito: rompería `position:sticky` del thead
+     (Fix scroll) — cualquier ancestro con overflow distinto de visible
+     desactiva el sticky, aunque no sea el que scrollea. Las esquinas ya
+     quedan limpias porque .gantt-filterbar y .gantt-cal tienen su propio
+     borde/fondo alineado al radio del contenedor. */
+  overflow: visible;
+}
+
+.gantt-empty {
+  padding: 20px;
+  font-size: 13px;
+  color: var(--text-3);
+  background: var(--bg-2, #f7f8fa);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  line-height: 1.5;
+}
+
+/* ── Barra de filtros unificada (reemplaza al antiguo Zoom + panel de fechas
+   separados, que mostraban el mismo control dos veces) — dos filas: atajos
+   de período arriba, rango exacto + filtro de estado abajo. Siempre visible. */
+.gantt-filterbar {
+  display: flex; flex-direction: column; gap: var(--s2);
+  padding: var(--s3) 12px; border-bottom: 1px solid var(--border); background: var(--bg-2, #f7f8fa);
+  border-radius: 10px 10px 0 0;
+}
+
+.gantt-filterbar__row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.gantt-filterbar__label { font-size: 12px; color: var(--text-2); font-weight: 600; margin-right: 2px; }
+
+
+.gantt__toolbar-sep { width: 1px; height: 18px; background: var(--border-strong); margin: 0 4px; }
+
+.gantt__filter-chip {
+  font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--surface); color: var(--text-2); cursor: pointer; transition: all 0.15s;
+}
+
+.gantt__filter-chip:hover { border-color: var(--border-strong); }
+
+.gantt__filter-chip--on { background: var(--inst-azul); border-color: var(--inst-azul); color: #fff; font-weight: 600; }
+
+
+/* Navegación de semana (solo visible con el atajo "Semana actual" activo) */
+.gantt__week-nav { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+
+.gantt__week-nav-btn {
+  font-size: 12px; width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text-2); cursor: pointer;
+}
+
+.gantt__week-nav-btn:hover { border-color: var(--azul-oscuro); color: var(--azul-oscuro); }
+
+.gantt__week-nav-label { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+
+
+.gantt-date-filter__label {
+  display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-2); font-weight: 600;
+}
+
+.gantt-date-filter__input {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 4px 6px;
+}
+
+.gantt-date-filter__clear {
+  font-size: var(--t-cap); color: var(--red); background: none; border: none; cursor: pointer;
+  padding: 4px 0; text-decoration: underline;
+}
+
+.gantt-date-filter__chip {
+  font-size: 11px; padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--surface-2); color: var(--text-2); cursor: pointer; transition: all 0.15s;
+}
+
+.gantt-date-filter__chip:hover { border-color: var(--inst-azul); color: var(--inst-azul); }
+
+.gantt-empty__link {
+  background: none;
+  border: none;
+  color: var(--azul-oscuro);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.gantt-empty__link:hover { opacity: 0.75; }
+
+/* Sin scroll vertical propio: la tabla crece con todas sus filas y se ve
+   completa haciendo scroll de la página (un solo scrollbar, sin el conflicto
+   de dos áreas de scroll superpuestas que impedía arrastrar el thumb). El
+   scroll horizontal sí se mantiene — hay más columnas de las que caben. */
+.gantt__scroll { overflow-x: auto; overflow-y: visible; }
+
+
+/* ── Calendario de celdas (reemplaza el modelo de barras) ──────────────────
+   Cada fila es una actividad, cada columna es una unidad de tiempo exacta
+   del zoom activo (día/semana/mes) — no un eje continuo en píxeles. Solo se
+   pinta la celda que contiene la fecha de ENTREGA de cada fila. */
+/* SIN table-layout:fixed a propósito: con muchas columnas de día (30+), fixed
+   hacía que el navegador comprimiera la primera columna por debajo de su
+   min-width real — el ancho de "Actividad" quedaba en ~50px pese al CSS. El
+   ancho real de esta tabla lo fija el <colgroup> con estilos inline desde
+   React (labelWidth, arrastrable), no CSS estático. */
+/* table-layout:fixed es obligatorio aquí: es el único modo en que el navegador
+   respeta los anchos declarados en <colgroup>. Sin él (y con width:100%) el
+   navegador reparte el ancho del contenedor entre todas las columnas, y al
+   ensanchar "Actividad" las de fecha se comprimían hasta desaparecer. Con
+   fixed, la suma de los <col> define el ancho real y .gantt__scroll aporta el
+   scroll horizontal cuando esa suma excede el contenedor. */
+/* Sin width aquí: lo fija GanttChart.jsx inline con la suma real de columnas. */
+.gantt-cal { border-collapse: collapse; table-layout: fixed; }
+
+.gantt-cal__label-col {
+  position: sticky; left: 0; z-index: 2; background: var(--surface-2);
+  text-align: left; padding: 6px 10px; white-space: nowrap;
+  border-right: 2px solid var(--border-strong); border-bottom: 1px solid var(--border);
+  font-size: var(--t-sm); box-sizing: border-box; overflow: hidden;
+}
+
+thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2); }
+
+.gantt-cal__row-num { color: var(--text-2); font-weight: 700; margin-right: 4px; }
+
+.gantt-cal__row-text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+
+/* Redimensionable desde CUALQUIER fila — cada <td>/<th> de esta columna
+   detecta con JS (getBoundingClientRect) si el mousedown cayó cerca de su
+   propio borde derecho y arranca el arrastre ahí mismo (ver
+   useResizableColumn en GanttChart.jsx). El borde derecho ya existente
+   (border-right de .gantt-cal__label-col) se resalta en hover de toda la
+   columna como pista visual de que es arrastrable. */
+.gantt-cal__label-col--resizable:hover { border-right-color: var(--inst-azul); }
+
+
+.gantt-cal__col-head {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--text-2);
+  font-size: 10px; font-weight: 600; text-align: center; padding: 6px 2px; min-width: 34px;
+  border-bottom: 2px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap;
+}
+
+.gantt-cal__col-head--weekend { background: rgba(0, 51, 153, 0.05); }
+
+/* Único lugar donde se marca "hoy" — antes también se repetía en cada celda
+   de cada fila (parecía una alerta de "vencido" en las 40 filas); ahora
+   resalta solo el encabezado de esa columna. */
+.gantt-cal__col-head--today {
+  background: var(--inst-amarillo); color: var(--text); font-weight: 800;
+  box-shadow: inset 0 -3px 0 var(--inst-azul);
+}
+
+
+.gantt-cal__row { cursor: pointer; transition: background 0.12s; }
+
+.gantt-cal__row:hover, .gantt-cal__row--hover { background: var(--accent-bg); }
+
+.gantt-cal__row:hover .gantt-cal__label-col, .gantt-cal__row--hover .gantt-cal__label-col { background: var(--accent-bg); }
+
+
+.gantt-cal__cell {
+  min-width: 34px; height: 30px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.gantt-cal__cell--weekend { background: rgba(0, 51, 153, 0.035); }
+
+.gantt-cal__cell--col-hover { background: var(--accent-bg); }
+
+.gantt-cal__cell--due {
+  border-radius: 4px; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.15); cursor: help;
+  text-align: center; vertical-align: middle; overflow: hidden;
+}
+
+.gantt-cal__cell--due-completed  { opacity: 0.85; }
+
+.gantt-cal__cell--due-not_started { opacity: 0.9; }
+
+
+/* Fecha de entrega rotulada sobre el bloque de color. La sombra de texto la
+   mantiene legible sobre los tres colores de estado (rojo/azul/verde). */
+.gantt-cal__due-label {
+  color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  white-space: nowrap; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+
+
+/* Leyenda */
+.gantt__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2, #f7f8fa);
+  font-size: 11px;
+  color: var(--text-2);
+  border-radius: 0 0 10px 10px;
+}
+
+.gantt__legend-item { display: flex; align-items: center; gap: 5px; }
+
+.gantt__legend-item--hint { margin-left: auto; font-style: italic; flex-basis: 100%; }
+
+.gantt__legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+.gantt__legend-swatch--today { background: var(--inst-amarillo); box-shadow: inset 0 -2px 0 var(--inst-azul); }

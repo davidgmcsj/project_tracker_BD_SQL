@@ -1,0 +1,125 @@
+
+/* ═══════════════════════════════════════════════════════════════════
+   TABLA JERÁRQUICA DE TAREAS (HierarchyTable) — vista tipo MS Project
+   ═══════════════════════════════════════════════════════════════════ */
+.htable-wrap { display: flex; flex-direction: column; gap: var(--s3); height: 100%; }
+
+
+.htable-toolbar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
+.htable-toolbar__label { font-size: var(--t-sm); color: var(--text-2); font-weight: 600; }
+
+.htable-toolbar__chip {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill);
+  color: var(--text-2); font-size: var(--t-sm); padding: 4px 12px; cursor: pointer;
+}
+
+.htable-toolbar__chip:hover { border-color: var(--border-strong); }
+
+.htable-toolbar__chip--on { background: var(--inst-azul); border-color: var(--inst-azul); color: #fff; font-weight: 600; }
+
+.htable-toolbar__count { margin-left: auto; font-size: var(--t-cap); color: var(--text-2); }
+
+
+.htable-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+
+.htable { width: 100%; border-collapse: collapse; font-size: var(--t-sm); table-layout: fixed; }
+
+.htable thead th {
+  position: sticky; top: 0; background: var(--surface-2); color: var(--text-2); font-weight: 700;
+  text-align: left; padding: var(--s2) var(--s3); border-bottom: 2px solid var(--border); white-space: nowrap; z-index: 1;
+}
+
+.htable__cell { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); vertical-align: middle; }
+
+.htable__cell--num { text-align: center; color: var(--text-2); font-variant-numeric: tabular-nums; width: 44px; white-space: nowrap; }
+
+.htable__cell--name { width: auto; }
+
+.htable__cell--assignee { width: 130px; }
+
+.htable__cell--date { width: 108px; }
+
+.htable__cell--progress { width: 64px; }
+
+.htable__cell--status { width: 116px; }
+
+.htable__cell--actions { width: 36px; text-align: right; white-space: nowrap; }
+
+.htable__row--parent { background: var(--surface-2); }
+
+.htable__row--parent:hover { background: var(--accent-bg); }
+
+.htable__row:not(.htable__row--parent):hover { background: var(--surface-2); }
+
+
+.htable__indent { display: flex; align-items: center; gap: 6px; }
+
+.htable__toggle {
+  background: transparent; border: none; cursor: pointer; color: var(--text-2); font-size: 11px;
+  width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+
+.htable__toggle--spacer { cursor: default; }
+
+.htable__name-text {
+  background: none; border: none; padding: 0; font: inherit; text-align: left; cursor: pointer;
+  color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.htable__name-text--link:hover { color: var(--azul-claro); text-decoration: underline; }
+
+.htable__add-child {
+  background: var(--accent-bg); border: 1px solid var(--accent-bdr); border-radius: var(--radius-sm);
+  color: var(--text-2); font-size: var(--t-cap); padding: 2px 8px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;
+}
+
+.htable__add-child:hover { background: var(--accent); }
+
+
+.htable__date {
+  width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 3px 5px;
+}
+
+.htable__readonly {
+  color: var(--text-2); font-style: italic; font-size: var(--t-cap); white-space: nowrap;
+}
+
+.htable__readonly-text {
+  color: var(--text); font-size: var(--t-sm); white-space: nowrap;
+}
+
+.htable__icon-btn {
+  background: transparent; border: none; cursor: pointer; font-size: 14px; padding: 2px 4px;
+  color: var(--text-3); border-radius: var(--radius-sm);
+}
+
+.htable__icon-btn:hover { background: var(--surface-2); color: var(--text); }
+
+.htable__icon-btn--danger:hover { background: var(--red-bg); color: var(--red); }
+
+
+/* Estado con color — mismo semáforo del resto de la app: rojo/azul/verde.
+   Antes era un <select> editable; ahora es una "pill" de solo lectura. */
+.htable__status-pill {
+  display: inline-block; font-weight: 700; font-size: var(--t-cap); border-radius: var(--radius-pill);
+  padding: 3px 10px; border: 1px solid; white-space: nowrap;
+}
+
+.htable__status-pill--not-started { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+
+.htable__status-pill--in-progress { background: var(--info-bg); color: var(--info); border-color: var(--info); }
+
+.htable__status-pill--completed   { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+
+
+.htable-footer { display: flex; justify-content: flex-start; }
+
+.htable-empty { color: var(--text-3); font-style: italic; padding: var(--s5); text-align: center; }
+
+
+.htable__cascade-notice {
+  background: var(--info-bg); color: var(--info); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: var(--s2) var(--s3); font-size: var(--t-sm);
+}
