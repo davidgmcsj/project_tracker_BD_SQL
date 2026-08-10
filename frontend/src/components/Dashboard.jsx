@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { GlobalMetricsTable, ProjectMetricsTableCompact } from "./MetricsTable";
 import { generateAssignmentsByEngineer } from "../utils/formulas";
-import QuarterResetModal from "./QuarterResetModal";
 
 const STATUS = {
   "on-track":        { label: "En curso",        cssClass: "on-track",        icon: "🟡" },
@@ -11,24 +10,12 @@ const STATUS = {
   "mejora-continua": { label: "Mejora Continua", cssClass: "mejora-continua", icon: "🔵" },
 };
 
-export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, quarterInfo, onQuarterReset, onCleanStats }) {
-  const [toast,            setToast]            = useState("");
-  const [showResetModal,   setShowResetModal]   = useState(false);
-  const [cleaningStats,    setCleaningStats]    = useState(false);
+// Orden de urgencia en el dashboard: lo que necesita atención primero.
+const STATUS_ORDER = { blocked: 0, "at-risk": 1, "on-track": 2, "mejora-continua": 3, completed: 4 };
 
-  const handleCleanStats = async () => {
-    if (!window.confirm("¿Aplicar limpieza de trimestre a los proyectos actuales?\n\nSe reiniciará:\n• Estado del proyecto → En curso\n• Indicadores → en cero\n• Logros, plan, impedimentos, comentarios → vacíos\n• Actividades completadas → eliminadas\n• Historial de fechas de depósito → borrado\n• Estadísticas semanales de ingenieros → cero\n\nSe conservará:\n• Actividades en proceso y no iniciadas (con sus responsables y detalle)\n\n¿Continuar?")) return;
-    setCleaningStats(true);
-    try {
-      await onCleanStats();
-      setToast("✓ Estadísticas limpiadas correctamente");
-    } catch (e) {
-      setToast("Error al limpiar estadísticas");
-    } finally {
-      setCleaningStats(false);
-      setTimeout(() => setToast(""), 3000);
-    }
-  };
+export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewReport, onExportReport, onGenerateInforme, generatingInforme, generatingName, onCancelInforme, includedInAvg, onToggleIncludeInAvg, onTogglePriority, globalStatus, globalStatusMode, generatingGlobalStatus, globalStatusOpen, onToggleGlobalStatusOpen, onGenerateGlobalStatus, onOpenPlanning }) {
+  const [toast,            setToast]            = useState("");
+  const [search,           setSearch]           = useState("");
 
   const handleCopyAssign = (p, i, e) => {
     e.stopPropagation();
@@ -152,46 +139,54 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
 
       {toast && <div className="toast">{toast}</div>}
 
-      {/* Barra de acciones de trimestre */}
-      {quarterInfo && onQuarterReset && (
-        <div className="dashboard-quarter-bar">
-          <div className="dashboard-quarter-bar__info">
-            <span className="dashboard-quarter-bar__label">Trimestre actual:</span>
-            <span className="dashboard-quarter-bar__name">{quarterInfo.label}</span>
-          </div>
-          <button
-            className="btn btn--new-quarter"
-            onClick={() => setShowResetModal(true)}
-            title={`Cerrar ${quarterInfo.label} e iniciar ${quarterInfo.nextLabel}`}
-          >
-            🗂 Nuevo trimestre
-          </button>
-          {onCleanStats && (
-            <button
-              className="btn btn--clean-stats"
-              onClick={handleCleanStats}
-              disabled={cleaningStats}
-              title="Limpiar estadísticas semanales e historial sin archivar"
-            >
-              {cleaningStats ? "⏳ Limpiando…" : "🧹 Limpiar estadísticas"}
-            </button>
-          )}
-        </div>
-      )}
+      {/* Buscador de proyectos */}
+      <div className="dashboard-search-bar">
+        <input
+          className="dashboard-search-input"
+          type="text"
+          placeholder="Buscar proyecto…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {search && (
+          <button className="dashboard-search-clear" onClick={() => setSearch("")} title="Limpiar">✕</button>
+        )}
+      </div>
 
       <div className="dashboard-grid">
-        {projects.map((p, i) => {
+        {projects
+          .map((p, i) => ({ p, i }))           // conserva el índice real para onEdit/onViewReport
+          .filter(({ p }) => {
+            if (!search.trim()) return true;
+            const term = search.toLowerCase();
+            return (p.project_name || "").toLowerCase().includes(term);
+          })
+          .sort((a, b) => (STATUS_ORDER[a.p.status] ?? 9) - (STATUS_ORDER[b.p.status] ?? 9))  // urgencia primero
+          .map(({ p, i }) => {
           const st = STATUS[p.status] || STATUS["on-track"];
           const isGeneratingThis = generatingInforme && generatingName === (p.project_name || `Proyecto ${i + 1}`);
 
           return (
-            <div key={p.id} className="project-card" onClick={() => onEdit(i)}>
+            <div key={p.id} className={`project-card project-card--${st.cssClass}${p.priority ? " project-card--priority" : ""}`} onClick={() => onEdit(i)}>
               <div className="project-card__header">
                 <h3 className="project-card__name">
                   <span style={{ marginRight: 6 }}>{st.icon}</span>
                   {p.project_name || `Proyecto ${i + 1}`}
                 </h3>
-                <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
+                <div className="project-card__header-right" onClick={e => e.stopPropagation()}>
+                  {onTogglePriority && (
+                    <button
+                      type="button"
+                      className={`priority-star${p.priority ? " priority-star--active" : ""}`}
+                      onClick={() => onTogglePriority(p.id)}
+                      title={p.priority ? "Quitar de prioritarios" : "Marcar como prioritario"}
+                      aria-pressed={!!p.priority}
+                    >
+                      {p.priority ? "★" : "☆"}
+                    </button>
+                  )}
+                  <span className={`status-pill status-pill--${st.cssClass}`}>{st.label}</span>
+                </div>
               </div>
               <label className="project-card__avg-toggle" onClick={e => e.stopPropagation()}>
                 <input
@@ -233,6 +228,19 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
                   👥 Asignaciones
                 </button>
               </div>
+              {/* Accesos rápidos a las vistas de planificación, sin salir del
+                  dashboard: se abren en overlay y al cerrarlas se vuelve aquí. */}
+              <div className="project-card__actions project-card__actions--planning" onClick={e => e.stopPropagation()}>
+                <button className="btn btn--card-plan" onClick={() => onOpenPlanning(i, "status")} title="Estado de actividades">
+                  🗃 Estados
+                </button>
+                <button className="btn btn--card-plan" onClick={() => onOpenPlanning(i, "gantt")} title="Diagrama de Gantt">
+                  📅 Gantt
+                </button>
+                <button className="btn btn--card-plan" onClick={() => onOpenPlanning(i, "hierarchy")} title="Planificación completa">
+                  🗂 Planificación
+                </button>
+              </div>
             </div>
           );
         })}
@@ -242,16 +250,6 @@ export default function Dashboard({ projects, engineers, onEdit, onAdd, onViewRe
           <span className="add-card__text">Agregar proyecto</span>
         </div>
       </div>
-
-      {/* Modal de doble confirmación para reinicio de trimestre */}
-      {showResetModal && quarterInfo && (
-        <QuarterResetModal
-          quarterInfo={quarterInfo}
-          projects={projects}
-          onConfirm={onQuarterReset}
-          onClose={() => setShowResetModal(false)}
-        />
-      )}
     </div>
   );
 }

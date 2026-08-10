@@ -1,0 +1,9 @@
+{
+  "name": "project-tracker-bd",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "migrate": "npm --prefix backend run migrate"
+  }
+}

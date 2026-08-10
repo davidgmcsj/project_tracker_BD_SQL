@@ -1,21 +1,29 @@
 import { useState, useEffect } from "react";
 import { loadQuartersList, loadQuarterById } from "../utils/storage";
+import QuarterResetModal from "./QuarterResetModal";
 
 // ── QuartersView ──────────────────────────────────────────────────────────────
 //
-// Módulo de consulta de trimestres históricos. Permite:
+// Módulo de consulta y administración de trimestres. Permite:
 //   - Ver la lista de todos los trimestres archivados (metadatos).
 //   - Entrar a un trimestre y ver sus proyectos en modo SOLO LECTURA.
 //   - Buscar actividades por texto dentro del trimestre seleccionado.
+//   - Cerrar el trimestre actual (Nuevo trimestre) o limpiar sus estadísticas.
+//     Estas dos últimas viven aquí (no en el Dashboard) por ser acciones de
+//     mantenimiento trimestral, no de uso diario.
 //
 // Navegación interna:
 //   "list"    → lista de trimestres disponibles
 //   "detail"  → proyectos y actividades de un trimestre específico
 //
 // Props:
-//   onBack → () => void — vuelve al dashboard (botón en header)
+//   onBack        → () => void — vuelve al dashboard (botón en header)
+//   projects      → proyectos actuales (para el modal de reinicio)
+//   quarterInfo   → { label, nextLabel } del trimestre en curso
+//   onQuarterReset → (…) => Promise — ejecuta el reinicio de trimestre
+//   onCleanStats   → () => Promise — limpia estadísticas sin archivar
 
-export default function QuartersView({ onBack }) {
+export default function QuartersView({ onBack, projects: currentProjects, quarterInfo, onQuarterReset, onCleanStats }) {
   const [innerView,       setInnerView]       = useState("list");
   const [quarters,        setQuarters]        = useState([]);
   const [loading,         setLoading]         = useState(true);
@@ -25,6 +33,23 @@ export default function QuartersView({ onBack }) {
   const [loadingDetail,   setLoadingDetail]   = useState(false);
   const [searchText,      setSearchText]      = useState("");
   const [expandedProject, setExpandedProject] = useState(null);   // ID del proyecto expandido
+  const [showResetModal,  setShowResetModal]  = useState(false);
+  const [cleaningStats,   setCleaningStats]   = useState(false);
+  const [toast,           setToast]           = useState("");
+
+  const handleCleanStats = async () => {
+    if (!window.confirm("¿Aplicar limpieza de trimestre a los proyectos actuales?\n\nSe reiniciará:\n• Estado del proyecto → En curso\n• Indicadores → en cero\n• Logros, plan, impedimentos, comentarios → vacíos\n• Actividades completadas → eliminadas\n• Historial de fechas de depósito → borrado\n• Estadísticas semanales de ingenieros → cero\n\nSe conservará:\n• Actividades en proceso y no iniciadas (con sus responsables y detalle)\n\n¿Continuar?")) return;
+    setCleaningStats(true);
+    try {
+      await onCleanStats();
+      setToast("✓ Estadísticas limpiadas correctamente");
+    } catch {
+      setToast("Error al limpiar estadísticas");
+    } finally {
+      setCleaningStats(false);
+      setTimeout(() => setToast(""), 3000);
+    }
+  };
 
   // ── Cargar lista de trimestres al montar ────────────────────────────────────
   useEffect(() => {
@@ -79,15 +104,38 @@ export default function QuartersView({ onBack }) {
     return                                              { label: "No iniciada", cls: "qv-pill--pending" };
   };
 
-  const priorityDot = (p) => {
-    const map = { alta: "qv-dot--high", media: "qv-dot--mid", baja: "qv-dot--low" };
-    return map[p] || "qv-dot--mid";
-  };
-
   // ── Vista: lista de trimestres ──────────────────────────────────────────────
   if (innerView === "list") {
     return (
       <div className="qv-container">
+        {toast && <div className="toast">{toast}</div>}
+
+        {quarterInfo && onQuarterReset && (
+          <div className="dashboard-quarter-bar">
+            <div className="dashboard-quarter-bar__info">
+              <span className="dashboard-quarter-bar__label">Trimestre actual:</span>
+              <span className="dashboard-quarter-bar__name">{quarterInfo.label}</span>
+            </div>
+            <button
+              className="btn btn--new-quarter"
+              onClick={() => setShowResetModal(true)}
+              title={`Cerrar ${quarterInfo.label} e iniciar ${quarterInfo.nextLabel}`}
+            >
+              🗂 Nuevo trimestre
+            </button>
+            {onCleanStats && (
+              <button
+                className="btn btn--clean-stats"
+                onClick={handleCleanStats}
+                disabled={cleaningStats}
+                title="Limpiar estadísticas semanales e historial sin archivar"
+              >
+                {cleaningStats ? "⏳ Limpiando…" : "🧹 Limpiar estadísticas"}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="qv-list-header">
           <h2 className="qv-list-title">Trimestres archivados</h2>
           <p className="qv-list-sub">
@@ -128,6 +176,15 @@ export default function QuartersView({ onBack }) {
             </button>
           ))}
         </div>
+
+        {showResetModal && quarterInfo && (
+          <QuarterResetModal
+            quarterInfo={quarterInfo}
+            projects={currentProjects}
+            onConfirm={onQuarterReset}
+            onClose={() => setShowResetModal(false)}
+          />
+        )}
       </div>
     );
   }
@@ -202,7 +259,6 @@ export default function QuartersView({ onBack }) {
                       return (
                         <div key={act.id} className="qv-act">
                           <div className="qv-act__top">
-                            <span className={`qv-dot ${priorityDot(act.priority)}`} title={`Prioridad: ${act.priority || "media"}`} />
                             <span className="qv-act__text">{act.text}</span>
                             <span className={`qv-pill ${stCls}`}>{stLabel}</span>
                           </div>

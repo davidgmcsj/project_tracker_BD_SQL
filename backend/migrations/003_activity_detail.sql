@@ -1,7 +1,8 @@
 -- ============================================================
 -- Migración 003: Detalle operacional de actividades
 -- Guarda en SQL los campos del modal de actividad:
---   prioridad, fechas, descripción, checklist, notas, fechas clave.
+--   fechas, descripción, checklist, notas, fechas clave.
+--   (La columna Prioridad creada aquí fue eliminada en la migración 009).
 -- Es seguro re-ejecutar: todas las operaciones usan IF NOT EXISTS.
 -- ============================================================
 

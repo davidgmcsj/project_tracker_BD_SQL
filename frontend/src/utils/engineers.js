@@ -1,7 +1,17 @@
 // engineers.js — Agregación cross-proyecto para la vista por ingeniero.
 // Funciones puras: no tocan React ni el DOM, solo leen projects/engineers ya cargados.
 
-import { buildActivityIndex } from "./formulas";
+import { buildActivityIndex, getActivityStatus, toISODate } from "./formulas.js";
+import { activitiesForWeek, weekRange, nextWeekRange, SITUATION } from "./weekPlanning.js";
+import { ESTADO_ACTIVIDAD_LABEL } from "./filtroOpciones.js";
+
+// Actividades del ingeniero en ese proyecto que asignadas a él, fuente de
+// verdad (assigned_engineers), sin pasar por el snapshot weekly_detail.
+function engineerActivitiesInProject(engineerId, project) {
+  return (project.activities_identified || []).filter(a =>
+    (a.assigned_engineers || []).some(e => e.id === engineerId || e.engineer_id === engineerId)
+  );
+}
 
 // Proyectos donde el ingeniero aparece en engineers[].
 export function getProjectsForEngineer(engineerId, projects) {
@@ -29,6 +39,50 @@ export function hasActiveWeeklyTasks(engineerId, project) {
   return countActiveWeeklyTasks(engineerId, project) > 0;
 }
 
+// ── Variante EN VIVO de "esta semana" (vistas vivas, no reportes archivados) ──
+// countActiveWeeklyTasks/getEngineerActivitiesInProject (arriba) leen el campo
+// almacenado weekly_detail, que solo se refresca cuando alguien abre ese
+// proyecto en EditView esa semana — dos vistas podían mostrar números
+// distintos el mismo día. Estas calculan desde las fechas con el mismo motor
+// de utils/weekPlanning.js que usa engineerWeekTasks más abajo.
+//
+// countActiveWeeklyTasks/getEngineerActivitiesInProject NO se eliminan: el
+// reporte semanal archivado (MetricsTable.jsx, ReportView.jsx) debe leer el
+// snapshot congelado al cerrar la semana, no recalcular en vivo.
+
+// Cantidad de actividades del ingeniero que caen en la semana actual en ese
+// proyecto, calculado en vivo desde las fechas.
+export function countLiveWeeklyTasks(engineerId, project, today = new Date()) {
+  return getLiveWeekActivitiesInProject(engineerId, project, today).length;
+}
+
+// True si el ingeniero tiene al menos una actividad esta semana en ese
+// proyecto, calculado en vivo. Variante de hasActiveWeeklyTasks para vistas
+// vivas — ver nota arriba.
+export function hasLiveWeeklyTasks(engineerId, project, today = new Date()) {
+  return countLiveWeeklyTasks(engineerId, project, today) > 0;
+}
+
+// Actividades del ingeniero que caen en la semana actual en ese proyecto.
+// Mismo shape que getEngineerActivitiesInProject ({ id, text, position, history })
+// para que sea un reemplazo directo en las vistas vivas (ActivitiesTable, etc.).
+export function getLiveWeekActivitiesInProject(engineerId, project, today = new Date()) {
+  const mine = engineerActivitiesInProject(engineerId, project);
+  const range = weekRange(toISODate(today));
+  const actIndex = buildActivityIndex(project.activities_identified);
+  const history = project.task_status?.status_history || {};
+
+  return activitiesForWeek(mine, range, project.task_status).map(({ activity }) => {
+    const entry = actIndex.get(activity.id);
+    return {
+      id: activity.id,
+      text: activity.text || "",
+      position: entry?.position,
+      history: history[activity.id] || {},
+    };
+  });
+}
+
 // Para un ingeniero y un proyecto donde participa, resuelve su weekly_detail
 // (ids de actividad) a { id, text, position, history } usando el índice de
 // actividades del proyecto y las fechas de task_status.status_history.
@@ -46,4 +100,191 @@ export function getEngineerActivitiesInProject(engineerId, project) {
       return { id, text: entry.text, position: entry.position, history: history[id] || {} };
     })
     .filter(Boolean);
+}
+
+// Resuelve el estado (completed/in_progress/not_started) de una actividad según
+// las listas de project.task_status.
+function activityStatusIn(project, actId) {
+  const ts = project.task_status || {};
+  if ((ts.completed   || []).includes(actId)) return "completed";
+  if ((ts.in_progress || []).includes(actId)) return "in_progress";
+  return "not_started";
+}
+
+// Todas las actividades del proyecto asignadas al ingeniero (fuente de verdad:
+// assigned_engineers de cada actividad), independientemente de si están o no en
+// el weekly_detail de la semana. Devuelve { id, text, position, history, status }.
+export function getAllAssignedActivitiesInProject(engineerId, project) {
+  const history = project.task_status?.status_history || {};
+
+  return (project.activities_identified || [])
+    .map((a, i) => ({ a, position: i + 1 }))
+    .filter(({ a }) =>
+      (a.assigned_engineers || []).some(e => e.engineer_id === engineerId || e.id === engineerId)
+    )
+    .map(({ a, position }) => ({
+      id: a.id,
+      text: a.text || "",
+      position,
+      history: history[a.id] || {},
+      status: activityStatusIn(project, a.id),
+    }));
+}
+
+// ── Agregación semanal cross-proyecto (pantalla "mi semana" del ingeniero) ────
+// Junta las tareas de un ingeniero de TODOS sus proyectos y las clasifica por
+// semana (mismo motor de solapamiento de utils/weekPlanning.js), con el
+// nombre del proyecto agregado a cada fila para distinguir el origen.
+
+// { activity, situation, projectName, projectId } por cada actividad del
+// ingeniero, en cualquier proyecto, que caiga en `range`.
+function engineerActivitiesForRange(engineerId, projects, range, opts) {
+  const rows = [];
+  getProjectsForEngineer(engineerId, projects).forEach(project => {
+    const mine = (project.activities_identified || []).filter(a =>
+      (a.assigned_engineers || []).some(e => e.id === engineerId || e.engineer_id === engineerId)
+    );
+    activitiesForWeek(mine, range, project.task_status, opts).forEach(row => {
+      rows.push({ ...row, projectName: project.project_name || "Proyecto", projectId: project.id });
+    });
+  });
+  return rows.sort((a, b) => {
+    const da = a.activity.due_date || a.activity.start_date || "";
+    const db = b.activity.due_date || b.activity.start_date || "";
+    return da.localeCompare(db);
+  });
+}
+
+// Tareas de esta semana, de todos los proyectos del ingeniero.
+export function engineerWeekTasks(engineerId, projects, today = new Date()) {
+  return engineerActivitiesForRange(engineerId, projects, weekRange(toISODate(today)));
+}
+
+// Tareas de la próxima semana (sin arrastre de vencidas de esta semana, que
+// ya se ven en engineerWeekTasks).
+export function engineerNextWeekTasks(engineerId, projects, today = new Date()) {
+  return engineerActivitiesForRange(
+    engineerId, projects, nextWeekRange(toISODate(today)), { includeOverdue: false }
+  );
+}
+
+// ── KPIs accionables + "qué hacer ahora" (pantalla "mi semana", EngineerHub) ──
+// A partir de las filas de engineerWeekTasks (que SÍ incluyen completadas
+// on-time — activitiesForWeek solo excluye vencidas-ya-completadas), arma los
+// contadores de la franja de KPIs y la lista priorizada de trabajo pendiente:
+// vencidas primero, luego el resto por fecha de entrega ascendente.
+export function buildEngineerWeekKpis(rows, projects, today = new Date()) {
+  const todayIso = toISODate(today);
+  const projectById = new Map((projects || []).map(p => [p.id, p]));
+
+  const pendingRows = rows.filter(row => {
+    const project = projectById.get(row.projectId);
+    return getActivityStatus(project?.task_status, row.activity.id) !== "Completada";
+  });
+
+  const overdue = pendingRows.filter(r => r.situation === SITUATION.OVERDUE).length;
+  const dueToday = pendingRows.filter(r => r.activity.due_date === todayIso).length;
+
+  const todo = [...pendingRows].sort((a, b) => {
+    const aOverdue = a.situation === SITUATION.OVERDUE;
+    const bOverdue = b.situation === SITUATION.OVERDUE;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+    const da = a.activity.due_date || a.activity.start_date || "";
+    const db = b.activity.due_date || b.activity.start_date || "";
+    return da.localeCompare(db);
+  });
+
+  return { overdue, dueToday, thisWeek: rows.length, pending: pendingRows.length, todo };
+}
+
+// ── Conteo agregado + vencidas históricas (hero del dashboard del ingeniero) ──
+// Distinto de buildEngineerWeekKpis a propósito: ese mide la ventana semanal
+// actual; esto mide TODA la carga del ingeniero en TODOS sus proyectos, sin
+// importar cuándo cae la fecha — completadas/en proceso/no iniciadas +
+// vencidas históricas (fecha de fin pasada, sin completar, sin importar si
+// cae en la semana actual o hace meses). Se apoyan en la misma fuente de
+// verdad que getAllAssignedActivitiesInProject (assigned_engineers +
+// activityStatusIn), pero necesitan due_date/start_date, que ese shape no
+// expone — se recorren las actividades del proyecto directo.
+export function buildEngineerTotals(engineerId, projects, today = new Date()) {
+  const todayIso = toISODate(today);
+  let completed = 0, inProgress = 0, notStarted = 0, overdue = 0;
+
+  getProjectsForEngineer(engineerId, projects).forEach(project => {
+    engineerActivitiesInProject(engineerId, project).forEach(a => {
+      const status = activityStatusIn(project, a.id);
+      if (status === "completed") { completed++; return; }
+
+      if (status === "in_progress") inProgress++;
+      else notStarted++;
+
+      const due = a.due_date || a.start_date;
+      if (due && due < todayIso) overdue++;
+    });
+  });
+
+  return { completed, inProgress, notStarted, overdue, total: completed + inProgress + notStarted };
+}
+
+// ── Reporte por ingeniero (texto plano para copiar) ───────────────────────────
+
+const STATUS_TXT = ESTADO_ACTIVIDAD_LABEL;
+const fmt = d => d || "—";
+
+// Genera un reporte de texto plano para un ingeniero: sus actividades por proyecto
+// (con estado y fechas de transición) y sus tareas adicionales.
+export function generateEngineerReportText(engineer, projects) {
+  if (!engineer) return "";
+  const lines = [];
+  lines.push(`REPORTE POR INGENIERO — ${engineer.name}`);
+  if (engineer.role) lines.push(engineer.role);
+  lines.push("═".repeat(60));
+  lines.push("");
+
+  const projs = getProjectsForEngineer(engineer.id, projects);
+
+  lines.push(`PROYECTOS ASIGNADOS (${projs.length})`);
+  lines.push("");
+
+  if (projs.length === 0) {
+    lines.push("  Sin proyectos asignados.");
+  }
+
+  for (const p of projs) {
+    const acts = getAllAssignedActivitiesInProject(engineer.id, p);
+    lines.push(`▸ ${p.project_name || "Proyecto"}`);
+    if (acts.length === 0) {
+      lines.push("    Sin actividades asignadas.");
+    } else {
+      for (const a of acts) {
+        const h = a.history || {};
+        lines.push(`    ${a.position}. ${a.text}  [${STATUS_TXT[a.status]}]`);
+        lines.push(`       Inscrita: ${fmt(h.added)} · En proceso: ${fmt(h.in_progress)} · Completada: ${fmt(h.completed)}`);
+      }
+    }
+    lines.push("");
+  }
+
+  const tasks = engineer.tasks || [];
+  lines.push("─".repeat(60));
+  lines.push(`TAREAS ADICIONALES (${tasks.length})`);
+  lines.push("");
+
+  if (tasks.length === 0) {
+    lines.push("  Sin tareas adicionales.");
+  } else {
+    for (const t of tasks) {
+      const h = { added: t.date || "", in_progress: "", completed: "", ...(t.history || {}) };
+      const st = STATUS_TXT[t.status] || STATUS_TXT.not_started;
+      const pct = Number(t.progress) ? ` · ${t.progress}%` : "";
+      lines.push(`• ${t.description}  [${st}${pct}]`);
+      lines.push(`     Inscrita: ${fmt(h.added)} · En proceso: ${fmt(h.in_progress)} · Completada: ${fmt(h.completed)}`);
+      if (t.objectives) lines.push(`     Objetivos: ${t.objectives}`);
+      if (t.solution)   lines.push(`     Solución: ${t.solution}`);
+      const done = (t.checklist || []).filter(c => c.done).length;
+      if ((t.checklist || []).length) lines.push(`     Subactividades: ${done}/${t.checklist.length}`);
+    }
+  }
+
+  return lines.join("\n");
 }

@@ -43,6 +43,46 @@ function buildEngineerIndex(engineersCatalog) {
   return map;
 }
 
+// ── Semana ISO 8601 ──────────────────────────────────────────────────────────
+// Mismo algoritmo que el getWeekNumber histórico (db-operations.cjs), extraído
+// aquí y completado con el AÑO ISO: sin él, el 1-ene-2027 (viernes) calcula
+// bien la semana 53 pero queda etiquetado como "2027-W53" en vez de "2026-W53",
+// porque esa semana pertenece al año anterior según ISO 8601.
+// Espejo ESM en frontend/src/utils/isoWeek.js — blindado con test de paridad.
+
+function isoWeekParts(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() + 4 - day); // jueves de la semana ISO que contiene dateStr
+  const isoYear = d.getFullYear();
+  const yearStart = new Date(isoYear, 0, 1);
+  const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return { isoYear, week };
+}
+
+function isoWeekNumber(dateStr) { return isoWeekParts(dateStr).week; }
+function isoYearOf(dateStr) { return isoWeekParts(dateStr).isoYear; }
+
+function isoWeek(dateStr) {
+  const { isoYear, week } = isoWeekParts(dateStr);
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
+}
+
+function isoWeekStart(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1); // lunes de la semana que contiene dateStr
+  return d.toISOString().slice(0, 10);
+}
+
+function isoWeekEnd(dateStr) {
+  const start = new Date(isoWeekStart(dateStr) + "T12:00:00");
+  start.setDate(start.getDate() + 6);
+  return start.toISOString().slice(0, 10);
+}
+
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
 module.exports = {
   toArray,
   buildActivityIndex,
@@ -50,4 +90,11 @@ module.exports = {
   resolveActText,
   resolveActArr,
   buildEngineerIndex,
+  isoWeekParts,
+  isoWeekNumber,
+  isoYearOf,
+  isoWeek,
+  isoWeekStart,
+  isoWeekEnd,
+  todayISO,
 };

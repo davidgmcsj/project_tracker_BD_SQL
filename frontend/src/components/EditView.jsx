@@ -1,11 +1,21 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   projectProgress,
   createDefaultEngineer, createDefaultIndicator, createDefaultImpediment,
   createActivity, buildActivityIndex, activityText, activityLabel,
+  visibleActivities, leafActivities, canMarkCompleted, formatDateDMY, getToday,
 } from "../utils/formulas";
+import {
+  activitiesForEngineerWeek, weekRange, nextWeekRange,
+  activitiesForWeek, completedInWeek, SITUATION_LABEL,
+} from "../utils/weekPlanning";
+import { mergePlannerImport, normalizeName } from "../utils/plannerImport";
 import { useClickOutside } from "../hooks/useClickOutside";
 import ActivityDetailModal from "./ActivityDetailModal";
+import PlannerImportModal from "./PlannerImportModal";
+import { ProjectNotesPanel } from "./ProjectNotesPanel";
+import ProjectPlanningOverlays from "./ProjectPlanningOverlays";
+import { estadoActividadLabel } from "../utils/filtroOpciones";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -16,6 +26,11 @@ const STATUS_OPTIONS = [
   { value: "completed",       label: "Completado"      },
   { value: "mejora-continua", label: "Mejora Continua" },
 ];
+
+// Semana en curso, calculada una vez al cargar el módulo — suficiente para
+// una sesión de trabajo normal (el caso extremo de dejar la pestaña abierta
+// cruzando la medianoche del domingo se corrige con un refresco de página).
+const CURRENT_WEEK = weekRange(getToday());
 
 const IMPEDIMENT_TYPES = [
   { category: "blocker",        label: "Bloqueante",         icon: "🚫", hasImpact: true  },
@@ -47,13 +62,6 @@ function buildAssignables(engineerCatalog, externalContacts) {
     id: c.id, name: c.name, company: c.company || "", type: "external",
   }));
   return [...engineers, ...externals];
-}
-
-// Filtra items: todas las palabras del query deben aparecer en el texto (case-insensitive)
-function matchesSearch(text, query) {
-  if (!query.trim()) return true;
-  const lower = text.toLowerCase();
-  return query.trim().toLowerCase().split(/\s+/).every(word => lower.includes(word));
 }
 
 // ── Dropdown de asignación con soporte de externos y creación en popover ──────
@@ -195,27 +203,40 @@ function ActivitiesList({
   onChange,
   onUpdateActivityMeta,
   onAddActivity,
+  onAddActivityDetailed,
   onCreateExternal,
+  onImportPlanner,
 }) {
   const [draft,   setDraft]   = useState("");
   const [adding,  setAdding]  = useState(false);
   const [draftResponsible, setDraftResponsible] = useState("");
   const [draftStatus, setDraftStatus] = useState("not_started");
+  const [draftParentId, setDraftParentId] = useState(""); // "" = actividad raíz, sin padre
 
   const [editIdx,      setEditIdx]      = useState(null);
   const [editVal,      setEditVal]      = useState("");
   const [confirmDelId, setConfirmDelId] = useState(null); // ID de actividad pendiente de confirmar borrado
 
+  // Selección múltiple para borrado por lotes. Guardamos IDs (no índices) para
+  // que la selección no se corra si la lista cambia mientras hay marcadas.
+  const [selectedIds,     setSelectedIds]     = useState(() => new Set());
+  const [confirmBulkDel,  setConfirmBulkDel]  = useState(false);
+
   const acts = safeActs(activities);
+  // Numeración jerárquica ("1", "1.1"...) para el selector "Es subtarea de" —
+  // misma fuente que usa el Kanban y el Cronograma, así el usuario reconoce
+  // la actividad por el mismo número que ve en el resto de la app.
+  const parentOptionsIndex = buildActivityIndex(acts);
 
   const confirmAdd = () => {
     const t = draft.trim();
     if (t) {
-      onAddActivity(t, draftResponsible, draftStatus);
+      onAddActivity(t, draftResponsible, draftStatus, draftParentId || null);
     }
     setDraft("");
     setDraftResponsible("");
     setDraftStatus("not_started");
+    setDraftParentId("");
     setAdding(false);
   };
 
@@ -235,6 +256,26 @@ function ActivitiesList({
   const confirmRemoveAct = () => {
     onChange(acts.filter(a => a.id !== confirmDelId));
     setConfirmDelId(null);
+  };
+
+  // ── Selección múltiple ──────────────────────────────────────────────────────
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const allSelected  = acts.length > 0 && acts.every(a => selectedIds.has(a.id));
+  const someSelected = selectedIds.size > 0;
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(acts.map(a => a.id)));
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const confirmBulkRemove = () => {
+    onChange(acts.filter(a => !selectedIds.has(a.id)));
+    clearSelection();
+    setConfirmBulkDel(false);
   };
 
   const getAssignedEngId = (act) => {
@@ -270,11 +311,49 @@ function ActivitiesList({
           {acts.length > 0 && <span className="act-count">{acts.length}</span>}
         </label>
         {!adding && (
-          <button type="button" className="btn-add-item" onClick={() => setAdding(true)}>
-            + Agregar actividad
-          </button>
+          <div className="field__header-actions">
+            {onImportPlanner && (
+              <button type="button" className="btn-import-planner" onClick={onImportPlanner} title="Cargar el Excel exportado de Planner">
+                📥 Importar de Planner
+              </button>
+            )}
+            {/* Abre la tarjeta completa (fechas, responsables, objetivos,
+                subtareas). El alta rápida inline queda como atajo secundario
+                para cargar varias actividades seguidas solo con su nombre. */}
+            <button type="button" className="btn-add-item" onClick={onAddActivityDetailed}>
+              + Agregar actividad
+            </button>
+            <button type="button" className="btn-add-item btn-add-item--ghost" onClick={() => setAdding(true)} title="Agregar solo el nombre, sin abrir la tarjeta">
+              + Alta rápida
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Barra de acciones por lotes: visible solo cuando hay actividades y no se está agregando */}
+      {!adding && acts.length > 0 && (
+        <div className="act-bulk-bar">
+          <label className="act-bulk-bar__all">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+              onChange={toggleSelectAll}
+            />
+            {someSelected ? `${selectedIds.size} seleccionada(s)` : "Seleccionar todo"}
+          </label>
+          {someSelected && (
+            <div className="act-bulk-bar__actions">
+              <button type="button" className="btn btn--secondary act-bulk-bar__btn" onClick={clearSelection}>
+                Limpiar
+              </button>
+              <button type="button" className="btn btn--danger act-bulk-bar__btn" onClick={() => setConfirmBulkDel(true)}>
+                🗑️ Eliminar {selectedIds.size} seleccionada(s)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {adding && (
         <div className="list-field-draft list-field-draft--activity">
@@ -306,6 +385,20 @@ function ActivitiesList({
             <option value="in_progress">En proceso</option>
             <option value="completed">Completada</option>
           </select>
+          {acts.length > 0 && (
+            <select
+              className="field__input list-field-draft__select"
+              value={draftParentId}
+              onChange={e => setDraftParentId(e.target.value)}
+              title="Opcional: convierte esta actividad en subtarea de otra"
+              style={{ width: "200px", flexShrink: 0 }}
+            >
+              <option value="">— Es subtarea de… (opcional) —</option>
+              {acts.map(a => (
+                <option key={a.id} value={a.id}>{activityLabel(parentOptionsIndex, a.id)}</option>
+              ))}
+            </select>
+          )}
           <button type="button" className="list-field-draft__ok"     onClick={confirmAdd}                         title="Confirmar">✓</button>
           <button type="button" className="list-field-draft__cancel" onClick={() => { setDraft(""); setAdding(false); }} title="Cancelar">✕</button>
         </div>
@@ -320,8 +413,10 @@ function ActivitiesList({
             if (statusVal === "completed") statusSelectClass = "act-list__select--status-completed";
             else if (statusVal === "in_progress") statusSelectClass = "act-list__select--status-progress";
 
+            const isSelected = selectedIds.has(act.id);
+
             return (
-              <li key={act.id} className="act-list__item" style={{ alignItems: "center" }}>
+              <li key={act.id} className={`act-list__item${isSelected ? " act-list__item--selected" : ""}`} style={{ alignItems: "center" }}>
                 {editIdx === i ? (
                   <div className="list-field-draft" style={{ flex: 1, margin: 0 }}>
                     <input
@@ -338,6 +433,14 @@ function ActivitiesList({
                   </div>
                 ) : (
                   <>
+                    <input
+                      type="checkbox"
+                      className="act-list__select-box"
+                      checked={isSelected}
+                      onChange={() => toggleSelected(act.id)}
+                      title="Seleccionar para eliminar"
+                      style={{ flexShrink: 0 }}
+                    />
                     <span className="act-list__num">{i + 1}.</span>
                     <span className="act-list__text">{act.text}</span>
                     
@@ -416,132 +519,20 @@ function ActivitiesList({
           </div>
         );
       })()}
-    </div>
-  );
-}
 
-// ── Selector de actividades (multi-select con límite) ─────────────────────────
-
-function getCurrentWeekKey() {
-  const now = new Date();
-  const day = now.getDay() || 7;
-  const mon = new Date(now);
-  mon.setDate(now.getDate() - day + 1);
-  return mon.toISOString().slice(0, 10);
-}
-
-function ActivitySelector({ label, activities, selected, limit, onChange, excludeCompleted, excludeOldCompleted, completedDates, fixedAssigned }) {
-  const [query, setQuery] = useState("");
-  const acts   = safeActs(activities);
-  const selArr = safeArr(selected);
-  const actIndex = buildActivityIndex(acts);
-
-  const currentWeek = getCurrentWeekKey();
-
-  // excludeCompleted: oculta TODAS las completadas (para "próxima semana" e "ingeniero esta semana")
-  const completedSet = excludeCompleted ? new Set(safeArr(excludeCompleted)) : null;
-
-  // excludeOldCompleted: oculta solo las completadas en semanas ANTERIORES (para "qué se hizo esta semana")
-  const oldCompletedSet = excludeOldCompleted
-    ? new Set(
-        safeArr(excludeOldCompleted).filter(id => {
-          const dateKey = completedDates?.[id];
-          if (!dateKey) return false;
-          const itemWeek = new Date(dateKey + "T12:00:00");
-          const day = itemWeek.getDay() || 7;
-          itemWeek.setDate(itemWeek.getDate() - day + 1);
-          return itemWeek.toISOString().slice(0, 10) < currentWeek;
-        })
-      )
-    : null;
-
-  const deselect = (id) => onChange(selArr.filter(s => s !== id));
-  const select   = (id) => {
-    if (limit && selArr.length >= limit) return;
-    onChange([...selArr, id]);
-  };
-  const toggle = (id) => selArr.includes(id) ? deselect(id) : select(id);
-
-  const { onDragStart, onDrop } = useDragSort(selArr, onChange);
-
-  const fixedSet = fixedAssigned ? new Set(safeArr(fixedAssigned)) : null;
-
-  // Filtra según el modo y aplica búsqueda, preservando posición original
-  const visible = acts.reduce((acc, act, origIdx) => {
-    if (completedSet    && completedSet.has(act.id))    return acc;
-    if (oldCompletedSet && oldCompletedSet.has(act.id)) return acc;
-    if (!matchesSearch(act.text, query)) return acc;
-    acc.push({ act, origIdx });
-    return acc;
-  }, []);
-
-  return (
-    <div className="act-selector">
-      <div className="act-selector__header">
-        <span className="act-selector__label">{label}</span>
-        {limit && (
-          <span className={`act-selector__count ${selArr.length >= limit ? "act-selector__count--full" : ""}`}>
-            {selArr.length}/{limit} seleccionadas
-          </span>
-        )}
-      </div>
-
-      {acts.length > 0 ? (
-        <>
-          <div className="act-selector__search">
-            <input
-              className="act-selector__search-input"
-              type="text" placeholder="Buscar actividad…"
-              value={query} onChange={e => setQuery(e.target.value)}
-            />
-            {query && (
-              <button type="button" className="act-selector__search-clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
-            )}
+      {/* Diálogo de confirmación de eliminación por lotes */}
+      {confirmBulkDel && (
+        <div className="act-del-overlay">
+          <div className="act-del-dialog">
+            <div className="act-del-dialog__icon">🗑️</div>
+            <h4 className="act-del-dialog__title">¿Eliminar {selectedIds.size} actividad(es)?</h4>
+            <p className="act-del-dialog__name">Se eliminarán las {selectedIds.size} actividades seleccionadas.</p>
+            <p className="act-del-dialog__warn">Esta acción no se puede deshacer.</p>
+            <div className="act-del-dialog__actions">
+              <button className="btn btn--secondary" onClick={() => setConfirmBulkDel(false)}>Cancelar</button>
+              <button className="btn btn--danger-solid" onClick={confirmBulkRemove}>Eliminar seleccionadas</button>
+            </div>
           </div>
-          <div className="act-selector__list">
-            {visible.length === 0 ? (
-              <p className="act-selector__empty">{query ? `Sin coincidencias para "${query}"` : "Sin actividades disponibles"}</p>
-            ) : visible.map(({ act, origIdx }) => {
-              const checked     = selArr.includes(act.id);
-              const isFixed     = fixedSet && fixedSet.has(act.id);
-              const disabled    = !checked && limit && selArr.length >= limit;
-              return (
-                <label
-                  key={act.id}
-                  className={`act-selector__item ${checked ? "act-selector__item--checked" : ""} ${disabled ? "act-selector__item--disabled" : ""} ${isFixed ? "act-selector__item--fixed" : ""}`}
-                >
-                  <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(act.id)} />
-                  <span className="act-selector__num">{origIdx + 1}.</span>
-                  <span className="act-selector__text">{act.text}</span>
-                  {isFixed && <span className="act-selector__fixed-badge">Asignada</span>}
-                </label>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <p className="act-selector__empty">
-          Primero agrega actividades identificadas para poder seleccionarlas aquí.
-        </p>
-      )}
-
-      {selArr.length > 0 && (
-        <div className="act-selector__selected">
-          <span className="act-selector__selected-label">Seleccionadas:</span>
-          {selArr.map((id, i) => (
-            <span
-              key={id} className="act-selector__chip"
-              draggable
-              onDragStart={() => onDragStart(i)}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => onDrop(i)}
-              title="Arrastra para reordenar"
-            >
-              <span className="act-selector__chip-grip">⠿</span>
-              <span className="act-selector__chip-text">{activityLabel(actIndex, id)}</span>
-              <button type="button" className="act-selector__chip-remove" onClick={() => deselect(id)} title="Quitar selección">✕</button>
-            </span>
-          ))}
         </div>
       )}
     </div>
@@ -649,47 +640,35 @@ function IndicatorRow({ ind, index, onChange, onRemove }) {
   );
 }
 
-// ── Lista de seleccionadas con drag-to-reorder ────────────────────────────────
-
-function SelectedList({ items, activities, onChange }) {
-  const { onDragStart, onDrop } = useDragSort(items, onChange);
-  const actIndex = buildActivityIndex(safeActs(activities));
-  return (
-    <ol className="engineer-selected__list">
-      {items.map((id, i) => (
-        <li
-          key={id} className="engineer-selected__item"
-          draggable
-          onDragStart={() => onDragStart(i)}
-          onDragOver={e => e.preventDefault()}
-          onDrop={() => onDrop(i)}
-          title="Arrastra para reordenar"
-        >
-          <span className="engineer-selected__grip">⠿</span>
-          <span className="engineer-selected__num">{i + 1}.</span>
-          <span className="engineer-selected__text">{activityText(actIndex, id)}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 // ── Fila de ingeniero ─────────────────────────────────────────────────────────
 
 const CREATE_ENGINEER_OPTION = "__create__";
 
-function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer }) {
-  const weeklyArr = safeArr(eng.weekly_detail);
-  const limit     = eng.weekly_total > 0 ? eng.weekly_total : undefined;
-
-  // IDs de actividades asignadas fijamente a este ingeniero (para destacar en verde)
-  const fixedAssigned = eng.engineer_id
-    ? safeActs(activities)
-        .filter(a => (a.assigned_engineers || []).some(e => e.id === eng.engineer_id))
-        .map(a => a.id)
-    : [];
+function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, engineerCatalog, onCreateEngineer, onOpenActivity }) {
   const [creating, setCreating] = useState(false);
   const [newName,  setNewName]  = useState("");
+
+  // "Esta semana" ya no se selecciona a mano: se deduce de las fechas de
+  // inicio/fin de las actividades asignadas a este ingeniero, por
+  // solapamiento con la semana actual (ver utils/weekPlanning.js). Una tarea
+  // de varias semanas aparece sola en cada una que atraviesa.
+  const weekRows = useMemo(() => {
+    if (!eng.engineer_id) return [];
+    return activitiesForEngineerWeek(activities, CURRENT_WEEK, taskStatus, eng.engineer_id);
+  }, [activities, taskStatus, eng.engineer_id]);
+  const weekIds = weekRows.map(r => r.activity.id);
+  // Comparación por contenido (no por referencia): el array se recalcula en
+  // cada render pero solo debe escribirse en el proyecto cuando cambia lo
+  // que contiene, para no disparar guardados/renders de más.
+  const weekIdsKey = weekIds.join(",");
+
+  useEffect(() => {
+    const current = safeArr(eng.weekly_detail);
+    if (current.join(",") === weekIdsKey) return;
+    onChange(index, "weekly_detail", weekIds);
+    if (eng.weekly_total !== weekIds.length) onChange(index, "weekly_total", weekIds.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se recalcula por weekIdsKey (contenido), no por identidad de weekIds
+  }, [weekIdsKey]);
 
   const confirmCreate = () => {
     const name = newName.trim();
@@ -745,46 +724,137 @@ function EngineerRow({ eng, index, onChange, onRemove, activities, taskStatus, e
         </button>
       </div>
 
-      <div className="engineer-card__sections">
-        <div className="engineer-section">
-          <div className="engineer-section__title">Esta semana</div>
-          <div className="engineer-week-simple">
-            <label className="field__label" style={{ fontSize: "11px" }}>
-              Tareas semana
-              {limit && <span style={{ fontSize: "10px", color: "var(--text-3)", marginLeft: 6 }}>(selecciona hasta {limit})</span>}
-            </label>
-            <input
-              className="field__input engineer-week-simple__num" type="number" min="0"
-              value={eng.weekly_total || 0}
-              onFocus={e => e.target.select()}
-              onChange={e => onChange(index, "weekly_total", e.target.value === "" ? "" : Number(e.target.value))}
-            />
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <ActivitySelector
-              label="Actividades de la semana"
-              activities={activities}
-              selected={weeklyArr}
-              limit={limit}
-              onChange={val => onChange(index, "weekly_detail", val)}
-              excludeOldCompleted={taskStatus?.completed}
-              completedDates={taskStatus?.completed_dates}
-              fixedAssigned={fixedAssigned}
-            />
-          </div>
-        </div>
-
+      <div className="engineer-card__sections engineer-card__sections--single">
         <div className="engineer-section">
           <div className="engineer-section__title">
-            Seleccionadas
-            {weeklyArr.length > 0 && (
-              <span className="engineer-selected__count">{weeklyArr.length}</span>
-            )}
+            Esta semana
+            {weekRows.length > 0 && <span className="engineer-selected__count">{weekRows.length}</span>}
+            <span className="engineer-week-auto-hint" title="Calculado automáticamente desde las fechas de inicio/fin de cada actividad">
+              🔄 automático
+            </span>
           </div>
-          {weeklyArr.length === 0 ? (
-            <p className="engineer-selected__empty">Selecciona actividades en "Esta semana"</p>
+          {!eng.engineer_id ? (
+            <p className="engineer-selected__empty">Selecciona un ingeniero para ver sus tareas de la semana.</p>
+          ) : weekRows.length === 0 ? (
+            <p className="engineer-selected__empty">Sin actividades asignadas que crucen esta semana.</p>
           ) : (
-            <SelectedList items={weeklyArr} activities={activities} onChange={val => onChange(index, "weekly_detail", val)} />
+            <WeekActivitiesTable rows={weekRows} onOpenActivity={onOpenActivity} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "completed" no es una situación del motor de clasificación (weekPlanning.js
+// solo describe pendientes) — es la vista de "esto ya se hizo" que usa
+// NextWeekPlanningSection para el bloque de logros de la semana.
+const ROW_STATUS_LABEL = { ...SITUATION_LABEL, completed: "Completada" };
+
+// Tabla de solo lectura: actividad, inicio, fin y su situación en la semana
+// (vence / inicia / continúa / en demora / completada). Clic en el nombre
+// abre su tarjeta.
+function WeekActivitiesTable({ rows, onOpenActivity }) {
+  return (
+    <table className="week-auto-table">
+      <thead>
+        <tr>
+          <th>Actividad</th>
+          <th>Inicio</th>
+          <th>Fin</th>
+          <th>Situación</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ activity, situation }) => (
+          <tr key={activity.id}>
+            <td className="week-auto-table__name">
+              {onOpenActivity ? (
+                <button type="button" className="week-auto-table__name-link" onClick={() => onOpenActivity(activity.id)}>
+                  {activity.text || "(sin nombre)"}
+                </button>
+              ) : (activity.text || "(sin nombre)")}
+            </td>
+            <td>{formatDateDMY(activity.start_date)}</td>
+            <td>{formatDateDMY(activity.due_date)}</td>
+            <td>
+              <span className={`week-auto-table__situation week-auto-table__situation--${situation}`}>
+                {ROW_STATUS_LABEL[situation]}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ── Cierre semanal automático (reemplaza selección manual) ───────────────────
+// "Qué se hizo esta semana" y "plan próxima semana" ya no se seleccionan a
+// mano: se derivan de completed_dates y de las fechas de cada actividad
+// (mismo motor que EngineerRow — ver utils/weekPlanning.js). El resultado se
+// escribe en next_week_plan/weekly_achievements para que ReportView y el
+// resto de consumidores del reporte sigan funcionando sin cambios.
+
+const NEXT_WEEK = nextWeekRange(getToday());
+
+function NextWeekPlanningSection({ activities, taskStatus, project, onUpdateProject, onOpenActivity }) {
+  const completedRows = useMemo(
+    () => completedInWeek(activities, CURRENT_WEEK, taskStatus),
+    [activities, taskStatus]
+  );
+  const nextWeekRows = useMemo(
+    () => activitiesForWeek(activities, NEXT_WEEK, taskStatus, { includeOverdue: false }),
+    [activities, taskStatus]
+  );
+
+  const completedIds = completedRows.map(a => a.id);
+  const nextWeekIds  = nextWeekRows.map(r => r.activity.id);
+  const completedKey = completedIds.join(",");
+  const nextWeekKey  = nextWeekIds.join(",");
+
+  useEffect(() => {
+    const current = safeArr(project.weekly_achievements);
+    if (current.join(",") === completedKey) return;
+    onUpdateProject({ ...project, weekly_achievements: completedIds });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se recalcula por completedKey (contenido)
+  }, [completedKey]);
+
+  useEffect(() => {
+    const current = safeArr(project.next_week_plan);
+    if (current.join(",") === nextWeekKey) return;
+    onUpdateProject({ ...project, next_week_plan: nextWeekIds });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se recalcula por nextWeekKey (contenido)
+  }, [nextWeekKey]);
+
+  return (
+    <div className="field field--optional">
+      <div className="field__header">
+        <label className="field__label" style={{ marginBottom: 0 }}>
+          Cierre semanal
+          <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
+            Calculado automáticamente desde las fechas de cada actividad
+          </span>
+        </label>
+      </div>
+      <div className="edit-row edit-row--2col" style={{ marginTop: 12 }}>
+        <div className="field">
+          <label className="field__label">✓ Qué se hizo esta semana</label>
+          {completedRows.length === 0 ? (
+            <p className="engineer-selected__empty">Sin actividades completadas esta semana.</p>
+          ) : (
+            <WeekActivitiesTable
+              rows={completedRows.map(activity => ({ activity, situation: "completed" }))}
+              onOpenActivity={onOpenActivity}
+            />
+          )}
+        </div>
+        <div className="field">
+          <label className="field__label">→ Plan para la próxima semana</label>
+          {nextWeekRows.length === 0 ? (
+            <p className="engineer-selected__empty">Sin actividades planificadas para la próxima semana.</p>
+          ) : (
+            <WeekActivitiesTable rows={nextWeekRows} onOpenActivity={onOpenActivity} />
           )}
         </div>
       </div>
@@ -833,7 +903,7 @@ function StatusDateBadge({ label, value, onEdit }) {
   );
 }
 
-function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) {
+export function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) {
   const ts   = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
   const acts = safeActs(activities);
   const actIndex  = buildActivityIndex(acts);
@@ -850,7 +920,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
     ...filterValid(ts.not_started),
   ]);
 
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => getToday();
 
   // Actualiza completed_dates (para filtrado semanal) y status_history (para mostrar fechas)
   const updateDates = (next, item, toKey, fromKey) => {
@@ -880,7 +950,12 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
 
   const update = (colKey, newArr) => onChange({ ...ts, [colKey]: newArr });
 
+  // Un padre con subtareas pendientes no puede marcarse como completado — ver
+  // canMarkCompleted (formulas.js). El botón que dispara esto ya queda
+  // deshabilitado en la UI (más abajo), esta es la defensa real por si move()
+  // se invoca desde cualquier otro punto (drag & drop, atajo de teclado futuro).
   const move = (item, toKey) => {
+    if (toKey === "completed" && !canMarkCompleted(item, acts, ts)) return;
     const fromKey = ["completed", "in_progress", "not_started"].find(k => safeArr(ts[k]).includes(item));
     const next = {
       completed:   safeArr(ts.completed).filter(s => s !== item),
@@ -922,6 +997,7 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
 
   const add = (item, toKey) => {
     if (assigned.has(item)) return;
+    if (toKey === "completed" && !canMarkCompleted(item, acts, ts)) return;
     const next = { ...ts, [toKey]: [...safeArr(ts[toKey]), item] };
     updateDates(next, item, toKey, null);
     onChange(next);
@@ -954,16 +1030,22 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
             <div key={id} className="task-status-unassigned__item">
               <span className="task-status-unassigned__text">{activityLabel(actIndex, id)}</span>
               <div className="task-status-unassigned__actions">
-                {TASK_STATUS_COLS.map(col => (
-                  <button
-                    key={col.key} type="button"
-                    className={`task-status-unassigned__btn task-status-unassigned__btn--${col.variant}`}
-                    title={`Mover a ${col.label}`}
-                    onClick={() => add(id, col.key)}
-                  >
-                    {col.icon}
-                  </button>
-                ))}
+                {TASK_STATUS_COLS.map(col => {
+                  const bloqueado = col.key === "completed" && !canMarkCompleted(id, acts, ts);
+                  return (
+                    <button
+                      key={col.key} type="button"
+                      className={`task-status-unassigned__btn task-status-unassigned__btn--${col.variant}`}
+                      title={bloqueado
+                        ? "No se puede completar: tiene subtareas pendientes"
+                        : `Mover a ${col.label}`}
+                      disabled={bloqueado}
+                      onClick={() => add(id, col.key)}
+                    >
+                      {col.icon}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -990,13 +1072,6 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                     const otherCols = TASK_STATUS_COLS.filter(c => c.key !== col.key);
                     const hist    = ts.status_history?.[item] || {};
                     const act     = actByIdMap.get(item);
-                    const prio    = act?.priority || "media";
-                    const PRIO_STYLE = {
-                      alta:  { bg: "#fee2e2", color: "#991b1b", label: "Alta"  },
-                      media: { bg: "#fef3c7", color: "#92400e", label: "Media" },
-                      baja:  { bg: "#dbeafe", color: "#1e40af", label: "Baja"  },
-                    };
-                    const prioStyle = PRIO_STYLE[prio] || PRIO_STYLE.media;
                     const fmtKanbanDate = (d) => {
                       if (!d) return null;
                       const [y, m, day] = d.split("-");
@@ -1038,16 +1113,22 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                           <span className="task-status-col__item__grip">⠿</span>
                           <span className="task-status-col__item-text">{activityLabel(actIndex, item)}</span>
                           <div className="task-status-col__item-actions">
-                            {otherCols.map(other => (
-                              <button
-                                key={other.key} type="button"
-                                className="task-status-col__move-btn"
-                                title={`Mover a ${other.label}`}
-                                onClick={e => { e.stopPropagation(); move(item, other.key); }}
-                              >
-                                {other.icon}
-                              </button>
-                            ))}
+                            {otherCols.map(other => {
+                              const bloqueado = other.key === "completed" && !canMarkCompleted(item, acts, ts);
+                              return (
+                                <button
+                                  key={other.key} type="button"
+                                  className="task-status-col__move-btn"
+                                  title={bloqueado
+                                    ? "No se puede completar: tiene subtareas pendientes"
+                                    : `Mover a ${other.label}`}
+                                  disabled={bloqueado}
+                                  onClick={e => { e.stopPropagation(); move(item, other.key); }}
+                                >
+                                  {other.icon}
+                                </button>
+                              );
+                            })}
                             <button
                               type="button" className="task-status-col__remove-btn"
                               title="Quitar de la lista"
@@ -1056,10 +1137,6 @@ function TaskStatusSelector({ taskStatus, activities, onChange, onOpenDetail }) 
                           </div>
                         </div>
                         <div className="task-status-col__dates">
-                          <span
-                            className="task-status-col__prio-badge"
-                            style={{ background: prioStyle.bg, color: prioStyle.color }}
-                          >Prioridad: {prioStyle.label}</span>
                           <span className={`task-status-col__date-chip${act?.start_date ? "" : " task-status-col__date-chip--nodate"}`}>
                             Inicio: {fmtKanbanDate(act?.start_date) || "Sin fecha"}
                           </span>
@@ -1244,7 +1321,7 @@ function BulkAssignPanel({ activities, engineerCatalog, externalContacts, taskSt
               const isChecked  = checked.has(a.id);
               const assignedEngs = a.assigned_engineers || [];
               const actStatus  = getActStatus(a.id);
-              const statusLabel = actStatus === "completed" ? "Completada" : actStatus === "in_progress" ? "En proceso" : "No iniciada";
+              const statusLabel = estadoActividadLabel(actStatus);
               const statusMod   = actStatus === "completed" ? "bulk-assign-row__status--done" : actStatus === "in_progress" ? "bulk-assign-row__status--progress" : "bulk-assign-row__status--pending";
               return (
                 <label
@@ -1286,358 +1363,103 @@ function BulkAssignPanel({ activities, engineerCatalog, externalContacts, taskSt
   );
 }
 
-// ── Asignación fija de actividades a ingenieros ───────────────────────────────
-// Persiste hasta que la actividad se marque como completada.
-// No se reinicia con "Nueva semana".
+// ── Panel "Pulso del proyecto" ────────────────────────────────────────────────
+// Reemplaza el textarea plano de "Estado actual". Muestra el semáforo del
+// proyecto, chips de datos VIVOS calculados de las actividades (avance, blo-
+// queantes, próxima fecha clave) y la nota de contexto en una tarjeta cuidada.
 
-const ROW_HEIGHT_PX = 44; // altura aproximada de cada fila
-const MAX_VISIBLE   = 7;
+const PULSE_STATUS = {
+  "on-track":        { label: "En curso",        cls: "ok",   icon: "🟡" },
+  "at-risk":         { label: "En riesgo",       cls: "warn", icon: "🟠" },
+  blocked:           { label: "Bloqueado",       cls: "crit", icon: "🔴" },
+  completed:         { label: "Completado",      cls: "ok",   icon: "🟢" },
+  "mejora-continua": { label: "Mejora Continua", cls: "info", icon: "🔵" },
+};
 
-function ActivityAssignmentRow({ activity, position, engineerCatalog, externalContacts, completedBy, onToggleEngineer, onCreateExternal }) {
-  const isCompleted = !!completedBy;
-  const assignedIds = new Set((activity.assigned_engineers || []).map(e => e.id));
-  const assignables = buildAssignables(engineerCatalog, externalContacts);
-
-  // Incluir también asignados que ya no estén activos en el catálogo (para no perder el chip)
-  const allAssigned = activity.assigned_engineers || [];
-
-  if (isCompleted) {
-    const names = Array.isArray(completedBy)
-      ? completedBy.map(e => e.engineer_name).filter(Boolean).join(", ")
-      : (completedBy.engineer_name || "—");
-    return (
-      <div className="act-assign-row act-assign-row--completed">
-        <span className="act-assign-row__num">{position}.</span>
-        <span className="act-assign-row__text act-assign-row__text--done">{activity.text}</span>
-        <span className="act-assign-row__badge-done">✓ {names}</span>
-      </div>
-    );
-  }
-
-  const hasUnassigned = assignables.some(a => !assignedIds.has(a.id));
-
-  return (
-    <div className="act-assign-row act-assign-row--multi">
-      <div className="act-assign-row__top">
-        <span className="act-assign-row__num">{position}.</span>
-        <span className="act-assign-row__text">{activity.text}</span>
-      </div>
-      <div className="act-assign-row__chips">
-        {allAssigned.map(e => {
-          const isExternal = e.id.startsWith("ext_");
-          const extEntry   = isExternal ? (externalContacts || []).find(c => c.id === e.id) : null;
-          const chipLabel  = isExternal
-            ? `${e.name.split(' ')[0]}${extEntry?.company ? ` · ${extEntry.company}` : ""}`
-            : e.name;
-          return (
-            <span key={e.id} className={`act-assign-chip${isExternal ? " act-assign-chip--external" : ""}`} title={isExternal ? `${e.name}${extEntry?.company ? ` (${extEntry.company})` : ""}` : e.name}>
-              {isExternal && <span className="act-assign-chip__ext-tag">Ext</span>}
-              {chipLabel}
-              <button
-                type="button"
-                className="act-assign-chip__remove"
-                onClick={() => onToggleEngineer(activity.id, e.id, false)}
-                title={`Quitar a ${e.name}`}
-              >✕</button>
-            </span>
-          );
-        })}
-        {hasUnassigned && (
-          <AssigneeDropdown
-            assignables={assignables}
-            assignedIds={assignedIds}
-            placeholder={assignedIds.size === 0 ? "Asignar…" : "+ Otro…"}
-            onSelect={id => onToggleEngineer(activity.id, id, true)}
-            onCreateExternal={(name, company) => onCreateExternal(activity.id, name, company)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Campo "Estado actual del proyecto" con modo lectura / edición ─────────────
-// En modo lectura muestra una tarjeta con el texto formateado y un botón "Editar".
-// En modo edición muestra el textarea y botones "Guardar" / "Cancelar".
-// Nunca muestra los dos al mismo tiempo.
-function StatusNotesField({ value, onChange }) {
-  const [editing,  setEditing]  = useState(false);
-  const [draft,    setDraft]    = useState(value);
-
-  // Si el valor externo cambia (ej: carga de proyecto) sincronizamos el draft
-  // solo cuando NO estamos editando, para no pisar lo que el usuario está escribiendo.
+function ProjectPulseField({ project, value, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState(value);
   const prevValue = useRef(value);
   useEffect(() => {
-    if (!editing && value !== prevValue.current) {
-      setDraft(value);
-      prevValue.current = value;
-    }
+    if (!editing && value !== prevValue.current) { setDraft(value); prevValue.current = value; }
   }, [value, editing]);
 
-  const handleEdit = () => { setDraft(value); setEditing(true); };
+  const handleEdit   = () => { setDraft(value); setEditing(true); };
+  const handleSave   = () => { onChange(draft); setEditing(false); prevValue.current = draft; };
+  const handleCancel = () => { setDraft(value); setEditing(false); };
 
-  const handleSave = () => {
-    onChange(draft);
-    setEditing(false);
-    prevValue.current = draft;
+  // ── Datos vivos (derivados, no capturados) ──
+  const acts = visibleActivities(project.activities_identified);
+  const m    = project.manual_metrics || {};
+  const pct  = Math.round(projectProgress(m.total_tasks, m.completed_tasks, m.in_progress_tasks));
+  const blockers = (project.impediments || []).filter(im => im.category === "blocker");
+  const risks    = (project.impediments || []).filter(im => im.category === "risk");
+  // Próxima fecha clave = due_date más cercana en el futuro entre las actividades.
+  const today = getToday();
+  const upcoming = acts
+    .map(a => a.due_date).filter(d => d && d >= today).sort();
+  const nextDate = upcoming[0] || null;
+  const fmtShort = (d) => {
+    if (!d) return null;
+    const [, mo, da] = d.split("-");
+    const MM = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    return `${da} ${MM[Number(mo) - 1]}`;
   };
-
-  const handleCancel = () => {
-    setDraft(value);
-    setEditing(false);
-  };
+  const st = PULSE_STATUS[project.status] || PULSE_STATUS["on-track"];
 
   return (
-    <div className="field field--optional">
-      <div className="field__header" style={{ marginBottom: 8 }}>
-        <label className="field__label">📋 Estado actual del proyecto</label>
+    <div className={`pulse pulse--${st.cls}`}>
+      <div className="pulse__head">
+        <div className="pulse__status">
+          <span className="pulse__icon">{st.icon}</span>
+          <div>
+            <div className="pulse__status-label">{st.label}</div>
+            <div className="pulse__eyebrow">Estado actual del proyecto</div>
+          </div>
+        </div>
         {!editing && (
-          <button type="button" className="sn-edit-btn" onClick={handleEdit}>
-            {value ? "✎ Editar" : "+ Agregar"}
+          <button type="button" className="pulse__edit" onClick={handleEdit}>
+            {value ? "✎ Editar nota" : "+ Agregar nota"}
           </button>
         )}
       </div>
 
+      {/* Chips de datos vivos */}
+      <div className="pulse__chips">
+        <span className="pulse-chip"><strong className="tabular">{pct}%</strong> avance</span>
+        <span className={`pulse-chip ${blockers.length ? "pulse-chip--crit" : ""}`}>
+          <strong className="tabular">{blockers.length}</strong> bloqueante{blockers.length !== 1 ? "s" : ""}
+        </span>
+        {risks.length > 0 && (
+          <span className="pulse-chip pulse-chip--warn"><strong className="tabular">{risks.length}</strong> riesgo{risks.length !== 1 ? "s" : ""}</span>
+        )}
+        {nextDate && <span className="pulse-chip">📅 Próx. hito: <strong>{fmtShort(nextDate)}</strong></span>}
+        <span className="pulse-chip">{acts.length} actividad{acts.length !== 1 ? "es" : ""}</span>
+      </div>
+
+      {/* Nota de contexto */}
       {editing ? (
-        // ── Modo edición ──────────────────────────────────────────────────────
-        <div className="sn-edit-wrap">
+        <div className="pulse__edit-wrap">
           <textarea
-            className="field__textarea status-notes__textarea"
-            rows={6}
-            autoFocus
-            placeholder="Redacta aquí el estado actual del proyecto: avances, decisiones tomadas, bloqueos, contexto importante..."
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
+            className="field__textarea pulse__textarea" rows={5} autoFocus
+            placeholder="Contexto de la semana: avances, decisiones, bloqueos, qué necesitas para destrabar…"
+            value={draft} onChange={e => setDraft(e.target.value)}
           />
-          <div className="sn-edit-actions">
+          <div className="pulse__edit-actions">
             <button type="button" className="btn btn--secondary" onClick={handleCancel}>Cancelar</button>
-            <button type="button" className="btn btn--primary"   onClick={handleSave}>Guardar</button>
+            <button type="button" className="btn btn--brand-solid" onClick={handleSave}>Guardar nota</button>
           </div>
         </div>
       ) : value ? (
-        // ── Modo lectura: tarjeta con el texto ───────────────────────────────
-        <div className="sn-card" onClick={handleEdit} title="Clic para editar">
-          {value.split("\n").map((line, i) =>
-            line.trim() ? <p key={i} className="sn-card__line">{line}</p> : <br key={i} />
-          )}
+        <div className="pulse__note" onClick={handleEdit} title="Clic para editar">
+          {value.split("\n").map((line, i) => line.trim()
+            ? <p key={i} className="pulse__note-line">{line}</p>
+            : <br key={i} />)}
         </div>
       ) : (
-        // ── Sin contenido aún ────────────────────────────────────────────────
-        <p className="sn-empty" onClick={handleEdit}>
-          Sin estado registrado. Haz clic aquí o en "+ Agregar" para redactar.
+        <p className="pulse__empty" onClick={handleEdit}>
+          Sin nota de contexto. Los datos de arriba se calculan solos; agrega aquí la narrativa que no se ve en los números.
         </p>
-      )}
-    </div>
-  );
-}
-
-function ActivityAssignmentSection({ activities, taskStatus, engineerCatalog, externalContacts, onActivitiesChange, onCreateExternal }) {
-  const [query,         setQuery]         = useState("");
-  const [filterEngId,   setFilterEngId]   = useState("");  // "" = todos
-
-  const completedSet = new Set(safeArr((taskStatus || {}).completed));
-  const completedBy  = (taskStatus || {}).completed_by || {};
-
-  const allActs     = safeActs(activities);
-  const positionMap = new Map(allActs.map((a, i) => [a.id, i + 1]));
-
-  const assignableActs = allActs.filter(a => !completedSet.has(a.id));
-  const completedActs  = allActs.filter(a => completedSet.has(a.id) && completedBy[a.id]);
-
-  // Ingenieros que tienen al menos una actividad asignada (para el filtro dropdown)
-  const assignedEngineers = (() => {
-    const seen = new Map();
-    allActs.forEach(a => {
-      (a.assigned_engineers || []).forEach(e => {
-        if (!seen.has(e.id)) seen.set(e.id, e.name);
-      });
-    });
-    return [...seen.entries()].map(([id, name]) => ({ id, name }));
-  })();
-
-  const applyFilters = (arr) => {
-    let result = arr;
-    // Filtro por ingeniero
-    if (filterEngId) {
-      result = result.filter(a => (a.assigned_engineers || []).some(e => e.id === filterEngId));
-    }
-    // Búsqueda por texto / número
-    if (query.trim()) {
-      const words = query.trim().toLowerCase().split(/\s+/);
-      result = result.filter(a => {
-        const haystack = `${positionMap.get(a.id)} ${a.text}`.toLowerCase();
-        return words.every(w => haystack.includes(w));
-      });
-    }
-    return result;
-  };
-
-  const visibleAssignable = applyFilters(assignableActs);
-  const visibleCompleted  = applyFilters(completedActs);
-  const allVisible        = [...visibleAssignable, ...visibleCompleted];
-  const totalRows         = allVisible.length;
-  const needsScroll       = totalRows > MAX_VISIBLE;
-  const listMaxHeight     = needsScroll ? `${MAX_VISIBLE * ROW_HEIGHT_PX}px` : undefined;
-
-  const handleToggleEngineer = (actId, personId, add) => {
-    // Busca primero en el catálogo de ingenieros, luego en externos
-    const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
-    const entry       = allContacts.find(e => e.id === personId);
-    const today       = new Date().toISOString().slice(0, 10);
-    const newActs     = allActs.map(a => {
-      if (a.id !== actId) return a;
-      const current = a.assigned_engineers || [];
-      const updated = add
-        ? (current.some(e => e.id === personId) ? current : [...current, { id: personId, name: entry?.name || "" }])
-        : current.filter(e => e.id !== personId);
-      return {
-        ...a,
-        assigned_engineers: updated,
-        assigned_date: updated.length > 0 ? (a.assigned_date || today) : null,
-      };
-    });
-    if (!add && filterEngId === personId) {
-      const stillHas = newActs.some(a => (a.assigned_engineers || []).some(e => e.id === personId));
-      if (!stillHas) setFilterEngId("");
-    }
-    onActivitiesChange(newActs);
-  };
-
-  // Crea un externo nuevo y lo asigna inmediatamente a la actividad
-  const handleCreateExternal = (actId, name, company) => {
-    const newId = onCreateExternal(name, company); // devuelve el ext_xxx nuevo
-    // onCreateExternal actualiza el catálogo; lo asignamos usando el id que acaba de retornar
-    // pero como es async (persistencia), forzamos aquí la asignación directa con los datos conocidos
-    const today   = new Date().toISOString().slice(0, 10);
-    const newActs = allActs.map(a => {
-      if (a.id !== actId) return a;
-      const current = a.assigned_engineers || [];
-      if (current.some(e => e.id === newId)) return a;
-      return {
-        ...a,
-        assigned_engineers: [...current, { id: newId, name }],
-        assigned_date: a.assigned_date || today,
-      };
-    });
-    onActivitiesChange(newActs);
-  };
-
-  if (!allActs.length) {
-    return (
-      <div className="field field--optional">
-        <div className="field__header">
-          <label className="field__label">👤 Asignación de Responsables</label>
-        </div>
-        <p className="act-list__empty">Agrega actividades identificadas para poder asignarlas.</p>
-      </div>
-    );
-  }
-
-  const assignedCount   = assignableActs.filter(a => (a.assigned_engineers || []).length > 0).length;
-  const activeFilters   = !!query.trim() || !!filterEngId;
-
-  return (
-    <div className="field field--optional">
-      <div className="field__header">
-        <label className="field__label">👤 Asignación de Responsables</label>
-        <span className="field__header-hint">
-          {assignedCount} de {assignableActs.length} asignadas
-        </span>
-      </div>
-
-      {/* Barra de filtros */}
-      <div className="act-assign-filters">
-        {/* Búsqueda por texto */}
-        <div className="act-assign-search">
-          <input
-            className="act-assign-search__input"
-            type="text"
-            placeholder="Buscar por número o texto…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-          {query && (
-            <button type="button" className="act-assign-search__clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
-          )}
-        </div>
-
-        {/* Filtro por responsable — solo muestra los que tienen actividades asignadas */}
-        <select
-          className="field__input act-assign-filter-eng"
-          value={filterEngId}
-          onChange={e => setFilterEngId(e.target.value)}
-        >
-          <option value="">Todos los responsables</option>
-          {assignedEngineers.filter(e => !e.id.startsWith("ext_")).map(e => (
-            <option key={e.id} value={e.id}>{e.name}</option>
-          ))}
-          {assignedEngineers.some(e => e.id.startsWith("ext_")) && (
-            <>
-              <option disabled>── Externos ──</option>
-              {assignedEngineers.filter(e => e.id.startsWith("ext_")).map(e => (
-                <option key={e.id} value={e.id}>{e.name} (ext.)</option>
-              ))}
-            </>
-          )}
-        </select>
-
-        {/* Contador de resultados + limpiar filtros */}
-        {activeFilters && (
-          <div className="act-assign-filters__right">
-            <span className="act-assign-search__count">{totalRows} resultado{totalRows !== 1 ? "s" : ""}</span>
-            <button
-              type="button"
-              className="act-assign-filters__clear-all"
-              onClick={() => { setQuery(""); setFilterEngId(""); }}
-            >Limpiar filtros</button>
-          </div>
-        )}
-      </div>
-
-      <div
-        className={`act-assign-list${needsScroll ? " act-assign-list--scroll" : ""}`}
-        style={needsScroll ? { maxHeight: listMaxHeight } : undefined}
-      >
-        {allVisible.length === 0 ? (
-          <p className="act-assign-empty">
-            {activeFilters ? "Sin coincidencias para los filtros aplicados." : "Sin actividades."}
-          </p>
-        ) : (
-          <>
-            {visibleAssignable.map(a => (
-              <ActivityAssignmentRow
-                key={a.id}
-                activity={a}
-                position={positionMap.get(a.id)}
-                engineerCatalog={engineerCatalog}
-                externalContacts={externalContacts}
-                completedBy={null}
-                onToggleEngineer={handleToggleEngineer}
-                onCreateExternal={handleCreateExternal}
-              />
-            ))}
-            {visibleCompleted.length > 0 && (
-              <>
-                <div className="act-assign-divider">Completadas</div>
-                {visibleCompleted.map(a => (
-                  <ActivityAssignmentRow
-                    key={a.id}
-                    activity={a}
-                    position={positionMap.get(a.id)}
-                    engineerCatalog={engineerCatalog}
-                    externalContacts={externalContacts}
-                    completedBy={completedBy[a.id]}
-                    onToggleEngineer={handleToggleEngineer}
-                    onCreateExternal={handleCreateExternal}
-                  />
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </div>
-      {needsScroll && (
-        <p className="act-assign-scroll-hint">↕ Desliza para ver las {totalRows} actividades</p>
       )}
     </div>
   );
@@ -1655,6 +1477,8 @@ export default function EditView({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [dragOverIdx,     setDragOverIdx]     = useState(null);
   const [modalActId,      setModalActId]      = useState(null);
+  const [showPlannerModal, setShowPlannerModal] = useState(false);
+  const [planningView,    setPlanningView]    = useState(null); // "status" | "gantt" | "hierarchy" | null
   const dragSrcIdx = useRef(null);
 
   const handleDragStart = (e, i) => { dragSrcIdx.current = i; e.dataTransfer.effectAllowed = "move"; };
@@ -1667,25 +1491,39 @@ export default function EditView({
   const engineers   = p?.engineers   || [];
   const indicators  = p?.indicators  || [];
   const impediments = p?.impediments || [];
-  const activities  = safeActs(p?.activities_identified);
+  // allActivities = crudo (incluye archivadas) para almacenamiento y merge de importación.
+  // activities    = solo visibles (no archivadas) para toda la UI y las métricas.
+  const allActivities = safeActs(p?.activities_identified);
+  const activities    = visibleActivities(allActivities);
 
-  // Métricas calculadas automáticamente desde actividades y estado de actividades
+  // Métricas calculadas automáticamente desde actividades y estado de actividades.
+  // Solo cuentan las HOJAS (actividades sin subtareas): un padre con subtareas
+  // es un contenedor organizativo, no una unidad de trabajo medible — contarlo
+  // aparte infla el total (un padre con 5 hijas terminadas aparecería como 6
+  // tareas, no 5). Ver leafActivities (formulas.js).
   const ts              = p?.task_status || {};
-  const autoTotal       = activities.length;
-  const autoCompletadas = safeArr(ts.completed).length;
-  const autoEnProceso   = safeArr(ts.in_progress).length;
+  const leafIds         = new Set(leafActivities(activities).map(a => a.id));
+  const autoTotal       = leafIds.size;
+  const autoCompletadas = safeArr(ts.completed).filter(id => leafIds.has(id)).length;
+  const autoEnProceso   = safeArr(ts.in_progress).filter(id => leafIds.has(id)).length;
   const autoNoIniciadas = Math.max(0, autoTotal - autoCompletadas - autoEnProceso);
 
   const updateMetric = (field, val) =>
     onUpdateProject(editingIdx, "manual_metrics", { ...m, [field]: val === "" ? "" : Number(val) });
 
-  // Recalcula total/completadas/en_proceso desde actividades y task_status
-  const buildAutoMetrics = (newActs, newTs) => ({
-    ...m,
-    total_tasks:       newActs.length,
-    completed_tasks:   safeArr(newTs.completed).length,
-    in_progress_tasks: safeArr(newTs.in_progress).length,
-  });
+  // Recalcula total/completadas/en_proceso desde actividades y task_status.
+  // Cuenta solo actividades visibles (las archivadas por Planner no inflan el
+  // total) Y solo hojas (mismo criterio que autoTotal/autoCompletadas arriba).
+  const buildAutoMetrics = (newActs, newTs) => {
+    const visibles    = visibleActivities(newActs);
+    const leafIdsNext = new Set(leafActivities(visibles).map(a => a.id));
+    return {
+      ...m,
+      total_tasks:       leafIdsNext.size,
+      completed_tasks:   safeArr(newTs.completed).filter(id => leafIdsNext.has(id)).length,
+      in_progress_tasks: safeArr(newTs.in_progress).filter(id => leafIdsNext.has(id)).length,
+    };
+  };
 
   const addEngineer    = () => onUpdateProject(editingIdx, "engineers",   [...engineers,   createDefaultEngineer()]);
   const updateEngineer = (i, f, v) => onUpdateProject(editingIdx, "engineers",   engineers.map((e, idx)   => idx === i ? { ...e,   [f]: v } : e));
@@ -1718,6 +1556,12 @@ export default function EditView({
   // solo hay que podar las referencias colgantes (la actividad que se borró)
   // de todos los campos que la referencian por id.
   const handleActivitiesChange = (newActs) => {
+    // newActs viene de la lista visible (sin archivadas). Reincorporamos las
+    // actividades archivadas para no perderlas al guardar (siguen ocultas y
+    // recuperables). Los ids archivados no entran en validIds, así que sus
+    // referencias en task_status ya estaban podadas de antemano.
+    const archived = allActivities.filter(a => a.archived);
+    const mergedActs = [...newActs, ...archived];
     const validIds = new Set(newActs.map(a => a.id));
     const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
 
@@ -1732,7 +1576,7 @@ export default function EditView({
 
     onUpdateProjectFull(editingIdx, {
       ...p,
-      activities_identified: newActs,
+      activities_identified: mergedActs,
       task_status: {
         ...newTs,
         completed_dates: pruneObjKeys(ts.completed_dates),
@@ -1748,13 +1592,62 @@ export default function EditView({
     });
   };
 
+  // Aplica una importación de Planner ya confirmada en el modal.
+  // Recibe { rows, engineersToCreate, hasParentColumn }. Pasos:
+  //   1) Crear los ingenieros faltantes (onCreateEngineer es síncrono, devuelve id).
+  //   2) Merge definitivo pasando el mapa nombre→id ya resuelto (enlaza responsables).
+  //   3) Persistir proyecto (localStorage + servidor).
+  const handleApplyPlannerImport = ({ rows, engineersToCreate, hasParentColumn }) => {
+    const nameToId = new Map();
+    (engineerCatalog || []).forEach(e => { if (e?.name) nameToId.set(normalizeName(e.name), e.id); });
+    (engineersToCreate || []).forEach(({ name }) => {
+      const newId = onCreateEngineer ? onCreateEngineer(name, "") : null;
+      if (newId) nameToId.set(normalizeName(name), newId);
+    });
+
+    const res = mergePlannerImport(
+      allActivities, p.task_status, rows, engineerCatalog, createActivity, nameToId, hasParentColumn
+    );
+
+    // Poblar el "Equipo del Proyecto" (p.engineers) con los responsables que trae
+    // el Excel, sin duplicar los que ya están. Reúne todos los ids asignados a las
+    // actividades importadas (no archivadas) y agrega una fila por cada uno nuevo.
+    const teamIds = new Set((p.engineers || []).map(r => r.engineer_id).filter(Boolean));
+    const importedEngIds = new Set();
+    res.activities.forEach(a => {
+      if (a.archived) return;
+      (a.assigned_engineers || []).forEach(e => {
+        // Solo ingenieros del catálogo (ids "eng_..."), no colaboradores externos ("ext_...").
+        if (e.id && e.id.startsWith("eng_")) importedEngIds.add(e.id);
+      });
+    });
+    const newTeamRows = [...importedEngIds]
+      .filter(id => !teamIds.has(id))
+      .map(id => ({ ...createDefaultEngineer(), engineer_id: id }));
+    const mergedEngineers = [...(p.engineers || []), ...newTeamRows];
+
+    const updatedProject = {
+      ...p,
+      activities_identified: res.activities,
+      task_status:           res.task_status,
+      manual_metrics:        buildAutoMetrics(res.activities, res.task_status),
+      engineers:             mergedEngineers,
+      planner_last_import:   new Date().toISOString(),
+    };
+    const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
+    onUpdateProjectFull(editingIdx, updatedProject);
+    // Persistir con el array explícito para evitar estado obsoleto (mismo patrón que
+    // handleActivityModalSave). Los ingenieros nuevos ya se persistieron en onCreateEngineer.
+    if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
+  };
+
   const handleUpdateActivityMeta = (actId, newEngId, newStatus) => {
     let updatedActs = activities.map(a => {
       if (a.id !== actId) return a;
       let updatedEngs = a.assigned_engineers || [];
       let updatedDate = a.assigned_date;
       if (newEngId !== undefined) {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getToday();
         if (newEngId !== null && typeof newEngId === 'object') {
           // Multi-assign format: { action: 'add'|'remove', engId }
           if (newEngId.action === 'add') {
@@ -1799,7 +1692,7 @@ export default function EditView({
         next[newStatus] = [...next[newStatus], actId];
       }
       
-      const today = () => new Date().toISOString().slice(0, 10);
+      const today = () => getToday();
       const cDates = { ...(updatedTs.completed_dates || {}) };
       if (newStatus === "completed") cDates[actId] = today();
       else if (fromKey === "completed") delete cDates[actId];
@@ -1839,7 +1732,7 @@ export default function EditView({
     const allContacts = [...(engineerCatalog || []), ...(externalContacts || [])];
     const eng = allContacts.find(e => e.id === engId);
     if (!eng) return;
-    const today  = new Date().toISOString().slice(0, 10);
+    const today  = getToday();
     const idSet  = new Set(actIds);
     const newActs = activities.map(a => {
       if (!idSet.has(a.id)) return a;
@@ -1858,10 +1751,18 @@ export default function EditView({
     });
   };
 
-  const handleAddActivity = (text, engId, status) => {
-    const newAct = createActivity(text);
+  // parentId opcional: "esta actividad es subtarea de..." desde el alta rápida
+  // (ActivitiesList) o la tarjeta detallada. sequence_order se calcula igual
+  // que en HierarchyTable.handleAddChild — siguiente valor entre hermanas del
+  // mismo padre, para que quede al final del grupo.
+  const handleAddActivity = (text, engId, status, parentId = null) => {
+    const siblings = activities.filter(a => (a.parent_id ?? null) === (parentId ?? null));
+    const sequenceOrder = siblings.length
+      ? Math.max(...siblings.map(a => Number(a.sequence_order) || 0)) + 1
+      : 0;
+    const newAct = createActivity(text, parentId, sequenceOrder);
     const actId = newAct.id;
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getToday();
 
     if (engId !== "") {
       const eng = (engineerCatalog || []).find(e => e.id === engId);
@@ -1907,13 +1808,46 @@ export default function EditView({
       task_status: updatedTs,
       manual_metrics: buildAutoMetrics(newActs, updatedTs),
     });
+    return actId;
+  };
+
+  // Crea una actividad vacía y abre su tarjeta completa de inmediato, para
+  // capturar todos los detalles (fechas, responsables, objetivos, subtareas)
+  // sin pasar por el formulario mínimo de la lista.
+  const handleAddActivityDetailed = () => {
+    const newId = handleAddActivity("Nueva actividad", "", "not_started");
+    setModalActId(newId);
   };
 
   const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
 
+  // Subtareas reales de la actividad abierta en el modal — sección "Subtareas"
+  // (distinta del checklist "Subactividades"). Crear/abrir una reemplaza el
+  // modal por la tarjeta de la subtarea (mismo modal, otro id).
+  const modalSubtasks = modalActId
+    ? activities.filter(a => a.parent_id === modalActId)
+    : [];
+
   const handleActivityModalSave = (updatedAct) => {
-    const newActs = activities.map(a => a.id === updatedAct.id ? updatedAct : a);
-    const updatedProject = { ...p, activities_identified: newActs };
+    // _history (fechas de transición Inscrita/En proceso/Completada) viene del modal
+    // pero NO vive en la actividad: se escribe en task_status.status_history[actId].
+    const { _history, ...actClean } = updatedAct;
+    const newActs = activities.map(a => a.id === actClean.id ? actClean : a);
+    let updatedProject = { ...p, activities_identified: newActs };
+    if (_history) {
+      const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+      const cleanHist = {};
+      if (_history.added)       cleanHist.added       = _history.added;
+      if (_history.in_progress) cleanHist.in_progress = _history.in_progress;
+      if (_history.completed)   cleanHist.completed   = _history.completed;
+      updatedProject = {
+        ...updatedProject,
+        task_status: {
+          ...ts,
+          status_history: { ...(ts.status_history || {}), [actClean.id]: cleanHist },
+        },
+      };
+    }
     const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
     onUpdateProjectFull(editingIdx, updatedProject);
     if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
@@ -1940,6 +1874,54 @@ export default function EditView({
     setModalActId(null);
   };
 
+  // Crea una subtarea real (actividad hija) y devuelve su id, para abrir
+  // inmediatamente la tarjeta de la subtarea recién creada desde la sección
+  // "Subtareas" del modal de detalle.
+  const handleHierarchyAddChild = (parentId, sequenceOrder) => {
+    const newAct = createActivity("Nueva subtarea", parentId, sequenceOrder);
+    const newActs = [...activities, newAct];
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
+    });
+    return newAct.id;
+  };
+
+  // Crea una subtarea para la actividad abierta en el modal y navega a su
+  // tarjeta de inmediato (misma mecánica que HierarchyTable.handleAddChild).
+  const handleCreateSubtaskFromModal = () => {
+    const newId = handleHierarchyAddChild(modalActId, modalSubtasks.length);
+    setModalActId(newId);
+  };
+
+  // Elimina una actividad de la jerarquía. Sus hijas directas (si las tenía)
+  // suben a ser hijas de SU padre en vez de quedar huérfanas — mismo criterio
+  // que buildActivityTree ya aplica a datos huérfanos preexistentes.
+  const handleHierarchyDelete = (actId) => {
+    const target = activities.find(a => a.id === actId);
+    const parentId = target?.parent_id ?? null;
+    const newActs = activities
+      .filter(a => a.id !== actId)
+      .map(a => a.parent_id === actId ? { ...a, parent_id: parentId } : a);
+    const ts = p.task_status || {};
+    const updatedTs = {
+      ...ts,
+      completed:      (ts.completed   || []).filter(id => id !== actId),
+      in_progress:    (ts.in_progress || []).filter(id => id !== actId),
+      not_started:    (ts.not_started || []).filter(id => id !== actId),
+      status_history: Object.fromEntries(
+        Object.entries(ts.status_history || {}).filter(([id]) => id !== actId)
+      ),
+    };
+    onUpdateProjectFull(editingIdx, {
+      ...p,
+      activities_identified: newActs,
+      task_status: updatedTs,
+      manual_metrics: buildAutoMetrics(newActs, updatedTs),
+    });
+  };
+
   return (
     <div className="edit-view">
       {/* ── Pestañas ── */}
@@ -1964,7 +1946,18 @@ export default function EditView({
         <div className="edit-panel">
           {/* Cabecera */}
           <div className="edit-panel__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "18px", color: "var(--azul-oscuro)" }}>Editando: {p.project_name || "Nuevo Proyecto"}</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                className={`priority-star priority-star--lg${p.priority ? " priority-star--active" : ""}`}
+                onClick={() => onUpdateProject(editingIdx, "priority", !p.priority)}
+                title={p.priority ? "Quitar de prioritarios" : "Marcar como prioritario"}
+                aria-pressed={!!p.priority}
+              >
+                {p.priority ? "★" : "☆"}
+              </button>
+              <h2 style={{ fontSize: "18px", color: "var(--azul-oscuro)" }}>Editando: {p.project_name || "Nuevo Proyecto"}</h2>
+            </div>
             <button
               className={`btn ${hasUnsavedChanges ? "btn--accent" : ""}`}
               onClick={onSaveChanges} style={{ padding: "10px 24px", fontSize: "14px" }}
@@ -2085,7 +2078,9 @@ export default function EditView({
             onChange={handleActivitiesChange}
             onUpdateActivityMeta={handleUpdateActivityMeta}
             onAddActivity={handleAddActivity}
+            onAddActivityDetailed={handleAddActivityDetailed}
             onCreateExternal={onAddExternalContact}
+            onImportPlanner={() => setShowPlannerModal(true)}
           />
 
           {/* ══ 3b. Asignación masiva ══ */}
@@ -2099,27 +2094,60 @@ export default function EditView({
             />
           )}
 
-          {/* ══ 4. Estado de actividades ══ */}
+          {/* ══ 4. Planificación — accesos a las vistas a pantalla completa ══
+                 Las tres vistas (tablero de estados, Gantt y tabla jerárquica)
+                 viven en overlay: dentro del formulario quedaban demasiado
+                 estrechas para ser útiles. */}
           {activities.length > 0 && (
             <div className="field field--optional">
-              <label className="field__label" style={{ marginBottom: 10 }}>
-                Estado de Actividades
-                <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
-                  Clasifica cada actividad en su estado actual
-                </span>
-              </label>
-              <TaskStatusSelector
-                taskStatus={p.task_status}
-                activities={activities}
-                onOpenDetail={setModalActId}
-                onChange={val => onUpdateProjectFull(editingIdx, {
-                  ...p,
-                  task_status:    val,
-                  manual_metrics: buildAutoMetrics(activities, val),
-                })}
-              />
+              <div className="field__header">
+                <label className="field__label" style={{ marginBottom: 0 }}>
+                  Planificación
+                  <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 400, marginLeft: 8 }}>
+                    Estados, cronograma y tabla de actividades, a pantalla completa
+                  </span>
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    style={{ padding: "5px 14px", fontSize: "12px" }}
+                    onClick={() => setPlanningView("status")}
+                  >
+                    🗃 Ver estado de actividades
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    style={{ padding: "5px 14px", fontSize: "12px" }}
+                    onClick={() => setPlanningView("gantt")}
+                  >
+                    📅 Ver diagrama de Gantt
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--accent"
+                    style={{ padding: "5px 14px", fontSize: "12px" }}
+                    onClick={() => setPlanningView("hierarchy")}
+                  >
+                    🗂 Ver planificación completa
+                  </button>
+                </div>
+              </div>
             </div>
           )}
+
+          {/* Mismo componente que usa el dashboard: las tres vistas y la
+              tarjeta de detalle se comportan igual desde ambos accesos. */}
+          <ProjectPlanningOverlays
+            project={p}
+            view={planningView}
+            onClose={() => setPlanningView(null)}
+            onUpdateProject={updated => onUpdateProjectFull(editingIdx, updated)}
+            engineerCatalog={engineerCatalog}
+            externalContacts={externalContacts}
+            StatusBoard={TaskStatusSelector}
+          />
 
           {/* ══ 5. Indicadores ══ */}
           <div className="field field--optional">
@@ -2160,21 +2188,8 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 7. Asignación de Responsables ══ */}
-          {activities.length > 0 && (
-            <ActivityAssignmentSection
-              activities={activities}
-              taskStatus={p.task_status}
-              engineerCatalog={engineerCatalog}
-              externalContacts={externalContacts}
-              onActivitiesChange={newActs => onUpdateProjectFull(editingIdx, {
-                ...p,
-                activities_identified: newActs,
-                manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
-              })}
-              onCreateExternal={onAddExternalContact}
-            />
-          )}
+          {/* ══ 7. (Removido) Asignación de Responsables — ahora se hace arriba,
+                 en cada actividad de "Actividades identificadas". ══ */}
 
           {/* ══ 8. Ingenieros ══ */}
           <div className="field field--optional">
@@ -2193,6 +2208,7 @@ export default function EditView({
                     taskStatus={p.task_status}
                     engineerCatalog={engineerCatalog}
                     onCreateEngineer={onCreateEngineer}
+                    onOpenActivity={setModalActId}
                   />
                 ))}
                 <div className="shared-tasks-row">
@@ -2207,54 +2223,28 @@ export default function EditView({
             )}
           </div>
 
-          {/* ══ 9. Estado actual del proyecto ══ */}
-          <StatusNotesField
+          {/* ══ 9. Estado actual del proyecto — Panel "Pulso del proyecto" ══ */}
+          <ProjectPulseField
+            project={p}
             value={p.status_notes || ""}
             onChange={val => onUpdateProject(editingIdx, "status_notes", val)}
           />
 
-          {/* ══ 10. Cierre semanal ══ */}
-          <div className="field field--optional">
-            <div className="field__header">
-              <label className="field__label">Sección de Cierre</label>
-              <label className="field__checkbox-wrapper">
-                <input
-                  type="checkbox" checked={p.show_closing_fields}
-                  onChange={e => onUpdateProject(editingIdx, "show_closing_fields", e.target.checked)}
-                />
-                Habilitar campos
-              </label>
-            </div>
-            {p.show_closing_fields ? (
-              <div className="edit-row edit-row--2col" style={{ marginTop: "12px" }}>
-                <div className="field">
-                  <label className="field__label">→ Plan para la próxima semana</label>
-                  <ActivitySelector
-                    label="Selecciona las actividades planificadas"
-                    activities={activities}
-                    selected={safeArr(p.next_week_plan)}
-                    onChange={val => onUpdateProject(editingIdx, "next_week_plan", val)}
-                    excludeCompleted={p.task_status?.completed}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field__label">✓ ¿Qué se hizo esta semana?</label>
-                  <ActivitySelector
-                    label="Selecciona las actividades completadas"
-                    activities={activities}
-                    selected={safeArr(p.weekly_achievements)}
-                    onChange={val => onUpdateProject(editingIdx, "weekly_achievements", val)}
-                    excludeOldCompleted={p.task_status?.completed}
-                    completedDates={p.task_status?.completed_dates}
-                  />
-                </div>
-              </div>
-            ) : (
-              <p style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 8 }}>
-                Activa esta sección para registrar el cierre semanal.
-              </p>
-            )}
-          </div>
+          {/* ══ 9b. Notas y comentarios fechados (Proyecto_Notas, independiente del pulso) ══ */}
+          <ProjectNotesPanel proyectoAppID={p.id} />
+
+          {/* ══ 10. Cierre semanal — automático ══
+                 Reemplaza la selección manual de "qué se hizo" y "plan próxima
+                 semana": ambos se deducen de las fechas de las actividades.
+                 Sigue escribiendo en next_week_plan/weekly_achievements para
+                 que ReportView y el resto de consumidores no cambien. */}
+          <NextWeekPlanningSection
+            activities={activities}
+            taskStatus={p.task_status}
+            onUpdateProject={updated => onUpdateProjectFull(editingIdx, updated)}
+            project={p}
+            onOpenActivity={setModalActId}
+          />
 
           <div className="edit-panel__footer">
             <button className="btn btn--accent"  onClick={() => onViewReport(editingIdx)}>📄 Ver reporte</button>
@@ -2282,12 +2272,28 @@ export default function EditView({
         <ActivityDetailModal
           activity={modalActivity}
           projectName={p.project_name || "Proyecto"}
+          projectId={p.id}
           taskStatus={p.task_status}
           engineerCatalog={engineerCatalog}
           externalContacts={externalContacts}
           onSave={handleActivityModalSave}
           onDelete={handleActivityModalDelete}
           onClose={() => setModalActId(null)}
+          subtasks={modalSubtasks}
+          onCreateSubtask={handleCreateSubtaskFromModal}
+          onOpenSubtask={setModalActId}
+          onDeleteSubtask={handleHierarchyDelete}
+        />
+      )}
+
+      {p && (
+        <PlannerImportModal
+          isOpen={showPlannerModal}
+          onClose={() => setShowPlannerModal(false)}
+          onConfirm={handleApplyPlannerImport}
+          existingActivities={allActivities}
+          existingTaskStatus={p.task_status}
+          engineerCatalog={engineerCatalog}
         />
       )}
     </div>

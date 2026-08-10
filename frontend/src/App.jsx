@@ -1,10 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Dashboard     from "./components/Dashboard";
-import EditView      from "./components/EditView";
+import EditView, { TaskStatusSelector } from "./components/EditView";
+import ProjectPlanningOverlays from "./components/ProjectPlanningOverlays";
 import ReportView    from "./components/ReportView";
-import EngineersView from "./components/EngineersView";
+import EngineerHub from "./components/EngineerHub";
 import QuartersView  from "./components/QuartersView";
+import { ReportesView } from "./components/ReportesView";
+import SaveConflictModal from "./components/SaveConflictModal";
+import { LoginScreen } from "./components/LoginScreen";
+import { CommandPalette } from "./components/CommandPalette";
 import ProgressRing  from "./components/ProgressRing";
+import NavGroup from "./components/NavGroup";
+import UserMenu from "./components/UserMenu";
+import UsersAdminView from "./components/UsersAdminView";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
@@ -14,9 +22,63 @@ import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
   syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
   syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
+  authHeaders, getCurrentUser, logout,
 } from "./utils/storage";
+import { apiUrl } from "./utils/api";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
+import { recomputeWeeklyFields } from "./utils/weekPlanning";
+import { useUrlState } from "./hooks/useUrlState";
 import "./App.css";
+
+// Navegación principal (Fase 4 — de 7 pestañas planas a 4 grupos): "Ingenieros"
+// y "Reportes" agrupan varias claves de `view` que antes eran pestañas propias
+// y respondían la misma pregunta con datos que podían no coincidir (ver Fase 1).
+// Las claves internas de `view` NO cambian — solo se agrupa cómo se navegan —
+// así que enlaces existentes con ?view="engineer-report" siguen abriendo lo
+// mismo que antes sin necesitar alias.
+const BASE_TABS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "edit",       label: "Editar" },
+  {
+    label: "Ingenieros",
+    options: [
+      { key: "engineers",       label: "Equipo y mi semana" },
+      { key: "engineer-report", label: "Historial por ingeniero" },
+    ],
+  },
+  {
+    label: "Reportes",
+    options: [
+      { key: "report",   label: "Reporte semanal" },
+      { key: "reportes", label: "Consultas" },
+      { key: "quarters", label: "Trimestres" },
+    ],
+  },
+];
+
+// Un usuario SIN rol admin (migración 019) solo ve un botón fijo a su propio
+// dashboard — nada de Dashboard general, Editar, Reportes ni Administración.
+// El botón oculto aquí es la primera capa (evita el clic normal); la guarda
+// real está en el useEffect de arriba (fuerza `view` aunque alguien navegue
+// directo por URL) y en el backend (requireApiKey/requireAdmin siguen
+// aplicando sin importar qué muestre esta nav).
+const LOCKED_TABS = [{ key: "engineers", label: "Mi dashboard" }];
+
+// "Administración" (usuarios) solo se agrega para admins — un usuario normal
+// ni siquiera ve el botón, no solo se le bloquea el endpoint (eso ya lo hace
+// requireAdmin en el backend; esto es además no confundir con una opción que
+// de todos modos le daría 403).
+function buildTabs(esAdmin) {
+  if (!esAdmin) return LOCKED_TABS;
+  return [...BASE_TABS, { key: "admin-users", label: "Administración" }];
+}
+
+// Todas las claves de `view` que agrupa cada botón, para saber cuál grupo
+// resaltar como activo aunque `view` apunte a una de sus opciones internas.
+function tabContainsView(tab, view) {
+  if (tab.key) return tab.key === view;
+  return tab.options.some(o => o.key === view);
+}
 
 const STAT_CARDS = [
   { dot: "done",     label: "Completadas"  },
@@ -34,11 +96,25 @@ function getStatValue(dot, stats, projects) {
   }
 }
 
+// Cuenta proyectos por estado del semáforo para la fila de KPIs ejecutivos.
+function countByStatus(projects) {
+  const c = { onTrack: 0, atRisk: 0, blocked: 0, other: 0 };
+  projects.forEach(p => {
+    if (p.status === "on-track") c.onTrack++;
+    else if (p.status === "at-risk") c.atRisk++;
+    else if (p.status === "blocked") c.blocked++;
+    else c.other++;
+  });
+  return c;
+}
+
 export default function App() {
   const [projects,          setProjects]          = useState([]);
   const [engineers,         setEngineers]         = useState([]);
   const [externalContacts,  setExternalContacts]  = useState([]);
-  const [view,              setView]              = useState("dashboard");
+  // Sincronizado con la URL (Fase 13): un enlace compartido abre la pestaña
+  // correcta directamente, no solo los filtros internos de Reportes.
+  const [view,              setView]              = useUrlState("view", "dashboard");
   const [editingIdx,        setEditingIdx]        = useState(null);
   const [weekLabel,         setWeekLabel]         = useState(getWeekLabel());
   const [reportDate,        setReportDate]        = useState(getToday());
@@ -52,10 +128,46 @@ export default function App() {
   const [globalStatusMode,      setGlobalStatusMode]      = useState(null);
   const [generatingGlobalStatus,setGeneratingGlobalStatus]= useState(false);
   const [globalStatusOpen,      setGlobalStatusOpen]      = useState(false);
+  const [theme,                 setTheme]                 = useState(() => localStorage.getItem("wt-theme") || "light");
+  // undefined = verificando sesión, null = sin sesión (mostrar login), objeto = logueado.
+  const [currentUser,           setCurrentUser]            = useState(undefined);
   const abortCtrlRef = useRef(null);
 
-  // ── Carga inicial ──────────────────────────────────────────────────────────
+  // ── Sesión (Fase 9 revisada) ────────────────────────────────────────────────
   useEffect(() => {
+    getCurrentUser().then(setCurrentUser);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    setCurrentUser(null);
+  };
+
+  // ── Restricción de navegación para usuarios sin rol admin (migración 019) ──
+  // Sin esto, un usuario no-admin podía llegar a Dashboard/Editar/Reportes/
+  // Administración por el valor por defecto de useUrlState ("dashboard") o
+  // por un enlace compartido con ?view=algo — el botón oculto en la nav
+  // (buildTabs) no alcanza para bloquear eso, solo evita el clic normal.
+  // Corre cada vez que currentUser o view cambian: cubre tanto el estado
+  // inicial como cualquier intento de navegar directo por URL después.
+  useEffect(() => {
+    if (!currentUser || currentUser.esAdmin) return;
+    if (view !== "engineers" && view !== "engineer-report") setView("engineers");
+  }, [currentUser, view, setView]);
+
+  // Aplica el tema al documento y lo persiste. data-theme en <html> activa los
+  // tokens del tema oscuro definidos en App.css.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("wt-theme", theme);
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => (t === "dark" ? "light" : "dark"));
+
+  // ── Carga inicial ──────────────────────────────────────────────────────────
+  // No carga datos de proyecto hasta confirmar la sesión — evita una carrera
+  // donde se pide /api/projects mientras el login todavía se está resolviendo.
+  useEffect(() => {
+    if (!currentUser) return;
     async function init() {
       const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers, externalContacts: savedExternals } = await loadProjects();
       if (saved?.length) {
@@ -70,17 +182,72 @@ export default function App() {
       if (wl) setWeekLabel(wl);
     }
     init();
-  }, []);
+  }, [currentUser]);
 
   // ── Persistencia ───────────────────────────────────────────────────────────
   // Patrón dual-write: localStorage (síncrono, fuente de verdad del cliente) +
   // servidor/SQL (async, fire-and-forget). Si el servidor falla, el dato no se
   // pierde — vive en localStorage hasta el siguiente save exitoso.
-  const persist = useCallback(async (data, engs, changedProjectId) => {
+  const persist = useCallback(async (data, engs, changedProjectId, expectedVersion) => {
     setProjects(data);
-    await saveProjects(data, weekLabel, engs !== undefined ? engs : engineers, externalContacts, changedProjectId);
+    const result = await saveProjects(
+      data, weekLabel, engs !== undefined ? engs : engineers, externalContacts, changedProjectId, expectedVersion
+    );
     setHasUnsaved(false);
+    if (result.ok && changedProjectId && result.version != null) {
+      setProjects(prev => prev.map(p => (p.id === changedProjectId ? { ...p, version: result.version } : p)));
+    }
+    return result;
   }, [weekLabel, engineers, externalContacts]);
+
+  // ── Conflicto de edición (Fase 8 — versión optimista) ──────────────────────
+  // Solo se activa desde el botón "Guardar cambios" del editor: es el único
+  // punto donde dos personas realistamente pueden estar editando EL MISMO
+  // proyecto a la vez. Autosaves de modales y toggles del dashboard no
+  // mandan expectedVersion, así que nunca disparan este modal.
+  const [saveConflict, setSaveConflict] = useState(null); // { projectId, localProject, serverProject }
+  const [planning, setPlanning] = useState(null); // { idx, view } — overlay de planificación abierto desde el dashboard
+
+  const handleSaveEditedProject = useCallback(async () => {
+    const editing = projects[editingIdx];
+    if (!editing) { await persist(projects); return; }
+    const result = await persist(projects, undefined, editing.id, editing.version || 1);
+    if (result.conflict) {
+      setSaveConflict({ projectId: editing.id, localProject: editing, serverProject: result.serverProject });
+    }
+  }, [projects, editingIdx, persist]);
+
+  const resolveConflictOverwrite = useCallback(async () => {
+    if (!saveConflict) return;
+    const { projectId } = saveConflict;
+    setSaveConflict(null);
+    // Reintenta sin expectedVersion: el backend salta el chequeo y guarda igual.
+    await persist(projects, undefined, projectId);
+  }, [saveConflict, projects, persist]);
+
+  // ── Paleta de comandos (Fase 14 — Ctrl+K) ──────────────────────────────────
+  // Mismo guard de cambios sin guardar que navigateTo, pero en el orden
+  // correcto: solo cambia editingIdx si la navegación se confirma — si no,
+  // editingIdx quedaría apuntando a otro proyecto sin que la vista cambiara.
+  const handleGoToProject = useCallback((idx) => {
+    if (hasUnsavedChanges) {
+      const ok = window.confirm("Tienes cambios sin guardar. ¿Descartar y salir?");
+      if (!ok) return;
+      setHasUnsaved(false);
+    }
+    setEditingIdx(idx);
+    setView("edit");
+  }, [hasUnsavedChanges, setView]);
+
+  const resolveConflictDiscard = useCallback(() => {
+    if (!saveConflict) return;
+    const { projectId, serverProject } = saveConflict;
+    if (serverProject) {
+      setProjects(prev => prev.map(p => (p.id === projectId ? serverProject : p)));
+    }
+    setHasUnsaved(false);
+    setSaveConflict(null);
+  }, [saveConflict]);
 
   const persistEngineers = useCallback(async (nextEngineers) => {
     setEngineers(nextEngineers);
@@ -94,8 +261,16 @@ export default function App() {
 
   // ── Limpiado de campos semanales ───────────────────────────────────────────
   const applyWeekReset = async (newDate, newLabel) => {
-    await saveWeekReport(projects, weekLabel);
-    const next = projects.map(p => ({
+    // weekly_achievements/next_week_plan/weekly_detail se recalculan en vivo
+    // con un useEffect en EditView/EngineerReportView, pero ese efecto solo
+    // corre si alguien abrió ese proyecto durante la semana — uno que nadie
+    // tocó llegaría al snapshot con datos de la semana anterior (o vacío).
+    // Se recalculan aquí de forma explícita, para TODOS los proyectos, ANTES
+    // de archivar el snapshot — así el historial siempre queda correcto sin
+    // depender de qué se vio en pantalla.
+    const projectsWithFreshWeekly = projects.map(p => recomputeWeeklyFields(p));
+    await saveWeekReport(projectsWithFreshWeekly, weekLabel);
+    const next = projectsWithFreshWeekly.map(p => ({
       ...p,
       report_date:         newDate,
       weekly_achievements: [],
@@ -267,6 +442,13 @@ export default function App() {
     setEditingIdx(toIdx);
   };
 
+  // Alterna la marca de prioritario de un proyecto y persiste de inmediato.
+  const togglePriority = (id) => {
+    const next = projects.map(p => p.id === id ? { ...p, priority: !p.priority } : p);
+    setProjects(next);
+    saveProjects(next, weekLabel, engineers, externalContacts, id);
+  };
+
   const viewProjectReport = (idx) => { setReportProjectIdx(idx); setView("report"); };
 
   const exportProjectReport = (idx) => {
@@ -314,10 +496,9 @@ export default function App() {
     setGlobalStatusOpen(true);
     setGlobalStatus(null);
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${API_BASE}/api/generate-global-status`, {
+      const res = await fetch(apiUrl("/api/generate-global-status"), {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body:    JSON.stringify({ projects: projectsToAnalyze, weekLabel, engineerCatalog: engineers, mode }),
       });
       const data = await res.json();
@@ -419,8 +600,7 @@ export default function App() {
     );
     if (!ok) return;
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${API_BASE}/api/restore-from-db`, { method: "POST" });
+      const res = await fetch(apiUrl("/api/restore-from-db"), { method: "POST", headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       alert(`✓ Restauración exitosa — ${data.restored} proyectos recuperados.\n\nEl aplicativo se recargará ahora.`);
@@ -454,6 +634,17 @@ export default function App() {
 
   const filteredForAvg = includedInAvg ? projects.filter(p => includedInAvg.has(p.id)) : projects;
   const stats = globalStats(filteredForAvg);
+  const statusCounts = countByStatus(projects);
+
+  // ── Puerta de sesión (Fase 9 revisada) ──────────────────────────────────────
+  // Todos los hooks del componente ya se declararon arriba — este early
+  // return solo decide qué JSX renderizar, no cambia el orden de hooks.
+  if (currentUser === undefined) {
+    return <div className="login-screen"><p style={{ color: "#fff" }}>Verificando sesión…</p></div>;
+  }
+  if (currentUser === null) {
+    return <LoginScreen onLoginSuccess={setCurrentUser} />;
+  }
 
   return (
     <div className="app">
@@ -463,64 +654,109 @@ export default function App() {
           <div className="header__info">
             <h1 className="header__title">Seguimiento Semanal</h1>
             <span className="header__week-range">{getWeekRangeLabel(reportDate)}</span>
-            <div className="header__meta">
-              <div className="header__date-group">
-                <label className="header__date-label">Fecha del Reporte</label>
-                <input
-                  type="date" className="header__date-input"
-                  value={reportDate}
-                  onChange={e => handleReportDateChange(e.target.value)}
-                  title="Fecha del reporte — cambia dentro de la semana sin perder datos"
-                />
-                <button className="btn btn--save-report" onClick={handleSaveReport} title="Guardar snapshot en el historial">
-                  💾 Guardar reporte
-                </button>
+            {/* Fecha del reporte + "Guardar reporte" son acciones de cierre
+                semanal del PORTAFOLIO completo — no tienen sentido para un
+                usuario restringido a su propio dashboard de ingeniero. */}
+            {currentUser?.esAdmin && (
+              <div className="header__meta">
+                <div className="header__date-group">
+                  <label className="header__date-label">Fecha del Reporte</label>
+                  <input
+                    type="date" className="header__date-input"
+                    value={reportDate}
+                    onChange={e => handleReportDateChange(e.target.value)}
+                    title="Fecha del reporte — cambia dentro de la semana sin perder datos"
+                  />
+                  <button className="btn btn--save-report" onClick={handleSaveReport} title="Guardar snapshot en el historial">
+                    💾 Guardar reporte
+                  </button>
+                </div>
+                {saveToast && <span className="header__toast">{saveToast}</span>}
               </div>
-              {saveToast && <span className="header__toast">{saveToast}</span>}
-            </div>
+            )}
           </div>
         </div>
 
         <div className="header__actions">
-          {["dashboard", "edit", "report", "engineers", "quarters"].map(v => (
-            <button
-              key={v}
-              className={`tab-btn ${view === v ? "tab-btn--active" : ""}`}
-              onClick={() => navigateTo(v)}
-            >
-              {v === "dashboard" ? "Dashboard"
-                : v === "edit"      ? "Editar"
-                : v === "report"    ? "Reporte"
-                : v === "engineers" ? "Ingenieros"
-                :                     "Trimestres"}
-            </button>
-          ))}
-          <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
-          <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
+          <nav className="header__nav">
+            {buildTabs(currentUser?.esAdmin).map(tab => tab.key ? (
+              <button
+                key={tab.key}
+                className={`tab-btn ${view === tab.key ? "tab-btn--active" : ""}`}
+                onClick={() => navigateTo(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ) : (
+              <NavGroup
+                key={tab.label}
+                label={tab.label}
+                options={tab.options}
+                activeKey={view}
+                active={tabContainsView(tab, view)}
+                onSelect={navigateTo}
+              />
+            ))}
+          </nav>
+          {/* "Nueva semana" (borra campos semanales de TODOS los proyectos) y
+              "Restaurar respaldo" son acciones destructivas/globales de
+              administración del portafolio — solo para admins. */}
+          {currentUser?.esAdmin && (
+            <>
+              <button className="btn btn--reset" onClick={resetWeek}>↻ Nueva semana</button>
+              <button className="btn btn--restore" onClick={handleRestoreFromDB} title="Restaurar datos desde el último respaldo en la base de datos">⬇ Restaurar respaldo</button>
+            </>
+          )}
+          <UserMenu user={currentUser} theme={theme} onToggleTheme={toggleTheme} onLogout={handleLogout} />
         </div>
       </header>
 
       <main className="main-content">
-        {view !== "edit" && (
+        {/* Avance/KPIs del PORTAFOLIO completo — un no-admin ya queda forzado
+            a view==="engineers" (ver useEffect de arriba), pero esta franja
+            mostraría el avance de TODOS los proyectos, no solo los suyos. */}
+        {currentUser?.esAdmin && view !== "edit" && view !== "reportes" && view !== "admin-users" && (
           <section className="summary">
             <div className="summary__progress">
               <ProgressRing percent={stats.percent} color="var(--accent)" />
               <div>
                 <div className="summary__label">Avance Promedio</div>
                 <div className="summary__value">{Math.round(stats.percent)}%</div>
+                <div className="summary__hint">{projects.length} proyecto{projects.length !== 1 ? "s" : ""} en seguimiento</div>
               </div>
             </div>
-            <div className="summary__stats">
-              {STAT_CARDS.map(({ dot, label }) => (
-                <div key={dot} className="stat-card">
-                  <span className={`stat-card__dot stat-card__dot--${dot}`} />
-                  <div>
-                    <div className="stat-card__num">{getStatValue(dot, stats, projects)}</div>
-                    <div className="stat-card__label">{label}</div>
-                  </div>
+            {view === "dashboard" ? (
+              <div className="summary__stats">
+                <div className="kpi-card kpi-card--ok">
+                  <div className="kpi-card__num">{statusCounts.onTrack}</div>
+                  <div className="kpi-card__label">En curso</div>
                 </div>
-              ))}
-            </div>
+                <div className="kpi-card kpi-card--warn">
+                  <div className="kpi-card__num">{statusCounts.atRisk}</div>
+                  <div className="kpi-card__label">En riesgo</div>
+                </div>
+                <div className="kpi-card kpi-card--crit">
+                  <div className="kpi-card__num">{statusCounts.blocked}</div>
+                  <div className="kpi-card__label">Bloqueados</div>
+                </div>
+                <div className="kpi-card kpi-card--info">
+                  <div className="kpi-card__num">{statusCounts.other}</div>
+                  <div className="kpi-card__label">Otros estados</div>
+                </div>
+              </div>
+            ) : (
+              <div className="summary__stats">
+                {STAT_CARDS.map(({ dot, label }) => (
+                  <div key={dot} className="stat-card">
+                    <span className={`stat-card__dot stat-card__dot--${dot}`} />
+                    <div>
+                      <div className="stat-card__num">{getStatValue(dot, stats, projects)}</div>
+                      <div className="stat-card__label">{label}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -535,14 +771,22 @@ export default function App() {
             onCancelInforme={cancelInforme}
           />
         )}
-        {view === "engineers" && (
-          <EngineersView
+        {(view === "engineers" || view === "engineer-report") && (
+          <EngineerHub
+            key={view}
+            initialSubtab={view === "engineer-report" ? "historial" : "mi-semana"}
             engineers={engineers}
             projects={projects}
+            lockedEngineerId={currentUser?.esAdmin ? null : currentUser?.ingenieroId ?? null}
             onAdd={addEngineer}
             onUpdate={updateEngineer}
             onToggleActive={toggleEngineerActive}
             onUpdateTasks={updateEngineerTasks}
+            onOpenActivity={(projectId, activityId) => {
+              const idx = projects.findIndex(p => p.id === projectId);
+              if (idx === -1) return;
+              setPlanning({ idx, view: "hierarchy", activityId });
+            }}
           />
         )}
         {view === "dashboard" && (
@@ -559,19 +803,28 @@ export default function App() {
             onCancelInforme={cancelInforme}
             includedInAvg={includedInAvg}
             onToggleIncludeInAvg={toggleIncludeInAvg}
+            onTogglePriority={togglePriority}
             globalStatus={globalStatus}
             globalStatusMode={globalStatusMode}
             generatingGlobalStatus={generatingGlobalStatus}
             globalStatusOpen={globalStatusOpen}
             onToggleGlobalStatusOpen={() => setGlobalStatusOpen(o => !o)}
             onGenerateGlobalStatus={handleGenerateGlobalStatus}
+            onOpenPlanning={(idx, which) => setPlanning({ idx, view: which })}
+          />
+        )}
+        {view === "quarters" && (
+          <QuartersView
+            onBack={() => setView("dashboard")}
+            projects={projects}
             quarterInfo={getCurrentQuarterInfo()}
             onQuarterReset={applyQuarterReset}
             onCleanStats={applyCleanStats}
           />
         )}
-        {view === "quarters" && (
-          <QuartersView onBack={() => setView("dashboard")} />
+        {view === "reportes" && <ReportesView projects={projects} engineers={engineers} />}
+        {view === "admin-users" && currentUser?.esAdmin && (
+          <UsersAdminView engineers={engineers} />
         )}
         {view === "edit" && (
           <EditView
@@ -580,7 +833,7 @@ export default function App() {
             onSelectProject={setEditingIdx}
             onUpdateProject={updateProject}
             onUpdateProjectFull={updateProjectFull}
-            onSaveChanges={() => persist(projects)}
+            onSaveChanges={handleSaveEditedProject}
             onSaveProjectsDirect={persist}
             onReorderProjects={reorderProjects}
             onAddProject={addProject}
@@ -600,6 +853,36 @@ export default function App() {
         <span className="footer__copy">© 2026 Oficina de Tecnología — Corte Suprema de Justicia. Todos los derechos reservados.</span>
         <span className="footer__credit">Desarrollado internamente por la Oficina de Tecnología - Corte Suprema de Justicia</span>
       </footer>
+
+      <CommandPalette
+        projects={projects}
+        engineers={engineers}
+        onGoToProject={handleGoToProject}
+        onGoToView={navigateTo}
+      />
+
+      {/* Accesos rápidos de planificación desde las tarjetas del dashboard:
+          se abren en overlay y al cerrarlos se sigue en el dashboard. */}
+      <ProjectPlanningOverlays
+        project={planning ? projects[planning.idx] : null}
+        view={planning?.view}
+        onClose={() => setPlanning(null)}
+        onUpdateProject={updated => updateProjectFull(planning.idx, updated)}
+        engineerCatalog={engineers}
+        externalContacts={externalContacts}
+        StatusBoard={TaskStatusSelector}
+        initialActivityId={planning?.activityId}
+      />
+
+      {saveConflict && (
+        <SaveConflictModal
+          localProject={saveConflict.localProject}
+          serverProject={saveConflict.serverProject}
+          onOverwrite={resolveConflictOverwrite}
+          onDiscard={resolveConflictDiscard}
+          onClose={() => setSaveConflict(null)}
+        />
+      )}
     </div>
   );
 }

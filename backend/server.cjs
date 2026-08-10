@@ -29,246 +29,198 @@ const fs      = require("fs").promises;
 const path    = require("path");
 require("dotenv/config");
 const { toArray } = require("./utils.cjs");
+const { computeQuarterStats, buildResetProjects } = require("./quarter-reset.cjs");
 
-const { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle } = (() => {
-  try {
-    const mod = require("./db-operations.cjs");
-    console.log("[DB] db-operations.cjs cargado correctamente");
-    return mod;
-  } catch (e) {
-    console.error("[DB] Error cargando db-operations.cjs:", e.message);
-    return { saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null };
-  }
-})();
+// Middlewares extraídos (Fase 2.3). El ORDEN en que se montan más abajo es
+// parte del contrato de seguridad — ver los comentarios de cada módulo.
+const { requireApiKey }                    = require("./middleware/api-key.cjs");
+const { montarRateLimits }                 = require("./middleware/rate-limits.cjs");
+const { crearResolverSesion, requireAdmin } = require("./middleware/session.cjs");
 
-const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = (() => {
-  try {
-    return require("./gemini-report.cjs");
-  } catch (e) {
-    console.error("[AI] Error cargando gemini-report.cjs:", e.message);
-    return { generateReportWithAI: null, generateStatusSummaryWithAI: null, generateGlobalStatusWithAI: null };
-  }
-})();
+// Carga defensiva de los módulos opcionales — ver config/modules.cjs. Antes
+// eran 4 bloques IIFE aquí mismo, cada uno con su lista de nulls a mano; esa
+// lista ya había divergido (le faltaba syncExternalContactToSQL, ver el
+// handler de /api/external-contacts/sync-one).
+const { db, ai, auth, reportsRouter } = require("./config/modules.cjs");
+
+const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL,
+        deleteEngineerTaskFromSQL, syncActividadesDetalle, syncExternalContactToSQL,
+        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
+        rebuildDataJsonFromSQL, maxSqlSavedAt,
+        listUsers, createUser, updateUser } = db;
+
+const { parseCookies, hashPassword, verifyPassword, createSession,
+        getSessionUser, deleteSession, SESSION_COOKIE } = auth;
+
+const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = ai;
 
 // ── Configuración ─────────────────────────────────────────────────────────────
+// La resolución del directorio de datos y los helpers de lectura/escritura
+// viven en lib/json-store.cjs. OJO: ese módulo ancla la ruta al directorio del
+// backend con path.join(__dirname, ".."), porque su propio __dirname es
+// backend/lib — usarlo a secas escribiría los datos en el sitio equivocado.
 
-function getDataDir() {
-  // En Azure App Service Linux, HOME=/home y /home es el único directorio
-  // con escritura persistente entre reinicios. En local, usa el directorio del proyecto.
-  return process.env.HOME === "/home" ? "/home/data" : __dirname;
-}
+const { DATA_DIR, DATA_FILE, HISTORY_FILE, readJson, writeJson } = require("./lib/json-store.cjs");
+const { errorBody, asyncHandler, requireModulo } = require("./middleware/error-handler.cjs");
 
-const DATA_DIR     = getDataDir();
-const DATA_FILE    = path.join(DATA_DIR, "data.json");
-const HISTORY_FILE = path.join(DATA_DIR, "history.json");
-const PORT         = process.env.PORT || 3002;
-
-// ── Helpers de archivo ────────────────────────────────────────────────────────
-
-async function readJson(file, fallback) {
-  try { return JSON.parse(await fs.readFile(file, "utf-8")); }
-  catch { return fallback; }
-}
-
-async function writeJson(file, data) {
-  await fs.writeFile(file, JSON.stringify(data, null, 2));
-}
+// config/env.cjs valida FRONTEND_URL y API_KEY al cargarse: en producción hace
+// process.exit(1) si faltan, antes de que la app acepte peticiones.
+const { isProduction, API_KEY, PORT, FRONTEND_URL } = require("./config/env.cjs");
 
 // toArray viene de utils.cjs
+// Migraciones de datos legados y arranque — extraídos a lib/ (Fase 2.4).
+// legacy-migrations.cjs está aislado para poder BORRARLO cuando se confirme
+// que no queda ningún data.json en formato pre-migración.
+const { crearInit } = require("./lib/bootstrap.cjs");
 
-// ── Migración de datos legados (string → array/objeto) ────────────────────────
-// Esta función corre UNA SOLA VEZ al inicio si detecta datos en formato antiguo.
-// Una vez migrados, los datos tienen el campo en array y no vuelve a correr.
-// Se puede eliminar cuando se tenga certeza de que no hay datos pre-migración.
+const init = crearInit({ rebuildDataJsonFromSQL, maxSqlSavedAt });
 
-async function migrateArrayFields() {
-  const data = await readJson(DATA_FILE, null);
-  if (!data?.projects?.length) return;
-
-  let changed = false;
-  data.projects = data.projects.map(p => {
-    const needsMigration =
-      typeof p.activities_identified === "string" ||
-      typeof p.weekly_achievements   === "string" ||
-      typeof p.next_week_plan        === "string" ||
-      typeof p.milestones            === "string" ||
-      typeof p.comments              === "string";
-
-    if (!needsMigration) return p;
-    changed = true;
-
-    const milestonesArr = typeof p.milestones === "string" && p.milestones.trim()
-      ? toArray(p.milestones).map(note => ({ activity: "", date: "", note }))
-      : (Array.isArray(p.milestones) ? p.milestones : []);
-
-    const commentsArr = typeof p.comments === "string" && p.comments.trim()
-      ? toArray(p.comments).map(text => ({ activity: "", date: "", text }))
-      : (Array.isArray(p.comments) ? p.comments : []);
-
-    return {
-      ...p,
-      activities_identified: toArray(p.activities_identified),
-      weekly_achievements:   toArray(p.weekly_achievements),
-      next_week_plan:        toArray(p.next_week_plan),
-      milestones:            milestonesArr,
-      comments:              commentsArr,
-      engineers: (p.engineers || []).map(e => ({
-        ...e,
-        weekly_detail: toArray(e.weekly_detail),
-      })),
-    };
-  });
-
-  if (changed) {
-    await writeJson(DATA_FILE, data);
-    console.log("Migración string→array/objeto completada");
-  }
-}
-
-// ── Migración: comments/milestones de proyecto → act.notes/act.key_dates ─────
-// Corre UNA SOLA VEZ si detecta que algún proyecto aún tiene p.comments o
-// p.milestones en formato antiguo. Mueve cada entrada al array correspondiente
-// dentro de la actividad que referencia. Las entradas sin actividad asociada
-// se guardan en p.orphan_notes / p.orphan_key_dates para no perder datos.
-
-function genId(prefix) {
-  return prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-async function migrateCommentsAndMilestones() {
-  const data = await readJson(DATA_FILE, null);
-  if (!data?.projects?.length) return;
-
-  let changed = false;
-
-  data.projects = data.projects.map(p => {
-    const hasOldComments   = Array.isArray(p.comments)   && p.comments.length   > 0;
-    const hasOldMilestones = Array.isArray(p.milestones) && p.milestones.length > 0;
-    if (!hasOldComments && !hasOldMilestones) return p;
-
-    changed = true;
-
-    // Construye mapa actId → actividad para asignar notas/fechas
-    const actMap = new Map((p.activities_identified || []).map(a => [a.id, a]));
-
-    // Asegura que todas las actividades tengan los campos nuevos
-    const newActs = (p.activities_identified || []).map(a => ({
-      ...a,
-      notes:     Array.isArray(a.notes)     ? a.notes     : [],
-      key_dates: Array.isArray(a.key_dates) ? a.key_dates : [],
-    }));
-    const newActMap = new Map(newActs.map(a => [a.id, a]));
-
-    const orphanNotes    = [...(p.orphan_notes    || [])];
-    const orphanKeyDates = [...(p.orphan_key_dates || [])];
-
-    // Migrar p.comments → act.notes
-    if (hasOldComments) {
-      (p.comments || []).forEach(c => {
-        const note = { id: genId("note"), date: c.date || "", text: c.text || "" };
-        if (c.activity && newActMap.has(c.activity)) {
-          newActMap.get(c.activity).notes.push(note);
-        } else {
-          orphanNotes.push(note);
-        }
-      });
-    }
-
-    // Migrar p.milestones → act.key_dates
-    if (hasOldMilestones) {
-      (p.milestones || []).forEach(m => {
-        const kd = { id: genId("kd"), date: m.date || "", label: m.note || "" };
-        if (m.activity && newActMap.has(m.activity)) {
-          newActMap.get(m.activity).key_dates.push(kd);
-        } else {
-          orphanKeyDates.push(kd);
-        }
-      });
-    }
-
-    const result = {
-      ...p,
-      activities_identified: newActs,
-      comments:   undefined,
-      milestones: undefined,
-    };
-    delete result.comments;
-    delete result.milestones;
-    if (orphanNotes.length)    result.orphan_notes    = orphanNotes;
-    if (orphanKeyDates.length) result.orphan_key_dates = orphanKeyDates;
-    return result;
-  });
-
-  if (changed) {
-    await writeJson(DATA_FILE, data);
-    console.log("Migración comments/milestones → act.notes/key_dates completada");
-  }
-}
-
-// ── Inicialización ────────────────────────────────────────────────────────────
-
-async function init() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    const localData = path.join(__dirname, "data.json");
-    try {
-      await fs.access(localData);
-      await fs.copyFile(localData, DATA_FILE);
-      console.log("data.json copiado al directorio de datos");
-    } catch {
-      await writeJson(DATA_FILE, { projects: [], weekLabel: null, engineers: [] });
-    }
-  }
-
-  await migrateArrayFields();
-  await migrateCommentsAndMilestones();
-
-  if (!(await readJson(HISTORY_FILE, null))) {
-    await writeJson(HISTORY_FILE, { reports: [] });
-  }
-
-  console.log(`Datos en: ${DATA_DIR}`);
-}
 
 // ── Express ───────────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(express.json({ limit: "50mb" }));
+const helmet = require("helmet");
+app.use(helmet());
+// El body parser NO se registra a nivel global: la ruta de adjuntos necesita
+// un límite mucho mayor (base64 de hasta 10MB de archivo) que el resto de
+// rutas, que solo mueven JSON de proyectos/reportes (data.json actual: ~80KB).
+// Cada grupo de rutas monta su propio express.json() con el límite adecuado.
+const jsonParser           = express.json({ limit: "2mb" });
+const attachmentJsonParser = express.json({ limit: "14mb" }); // 10MB archivo + overhead base64/JSON
 
 // CORS activo siempre: el frontend vive en un repo y servidor separado,
 // por lo que el navegador necesita permiso explícito para llamar a esta API.
-// FRONTEND_URL en .env limita el acceso a un origen específico en producción.
-// Si no está definido, permite cualquier origen (útil en desarrollo local).
+// FRONTEND_URL en .env limita el acceso a un origen específico.
+// En producción es obligatorio (el servidor no arranca sin él); en desarrollo
+// local, si no está definido, cae a localhost:5173 (puerto por defecto de Vite).
 const cors = require("cors");
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
+  origin: FRONTEND_URL,
+  credentials: true, // necesario para que el navegador mande/reciba la cookie de sesión (Fase 9)
 }));
 
+// ── Logging de eventos de seguridad ───────────────────────────────────────────
+// Formato JSON de una línea (fácil de grep/parsear) para los eventos que
+// importan para detectar abuso: fallos de auth y límites de rate excedidos.
+// No reemplaza el console.log/error operacional existente en el resto del
+// archivo — es un canal aparte, específico para auditoría de seguridad.
+const { logSecurityEvent } = require("./middleware/security-log.cjs");
+
+// ── Autenticación: API key compartida ─────────────────────────────────────────
+// Herramienta interna: todos los clientes autorizados comparten la misma clave,
+// enviada en el header X-API-Key. No distingue usuarios individuales — para eso
+// se necesitaría un sistema de login completo, fuera del alcance actual.
+//
+// API_KEY debe estar definida en .env. Sin ella, el servidor no arranca en
+// producción (falla cerrado) — la validación vive en config/env.cjs y corre al
+// cargar ese módulo, antes de que la app acepte peticiones.
+
+app.use("/api", requireApiKey);
+
+// Body parser: límite pequeño para toda la API excepto /api/attachments/upload,
+// que monta su propio parser con límite ampliado (ver esa ruta más abajo) antes
+// de que el body llegue aquí. Express ejecuta los parsers en orden de registro,
+// así que basta con excluir esa ruta del parser genérico para que no choquen.
+app.use((req, res, next) => {
+  if (req.path === "/api/attachments/upload") return next();
+  jsonParser(req, res, next);
+});
+
+// ── Rate limiting ──────────────────────────────────────────────────────────
+// Las rutas que llaman a proveedores de IA de pago (Gemini/Groq/OpenRouter) y
+// las operaciones destructivas de trimestre reciben límites propios y más
+// estrictos que el resto de la API, ya que cada llamada tiene costo real
+// (dinero en el caso de IA, pérdida de datos en el caso de quarter-reset).
+//
+// Los 4 limitadores viven en middleware/rate-limits.cjs. Se montan aquí, tras
+// requireApiKey y el body parser, y antes de la resolución de sesión.
+montarRateLimits(app);
+
+// ── Login por base de datos (Fase 9 revisada) ─────────────────────────────
+// Convive con X-API-Key (requireApiKey arriba lo sigue exigiendo en todo
+// /api/*): esto agrega identidad real ENCIMA, no la reemplaza. Sin roles
+// todavía — cualquier usuario logueado puede hacer lo mismo que ya permite
+// la API_KEY. req.user queda disponible para el resto de rutas (ej. Autor
+// real en notas de proyecto) sin bloquear la request si no hay sesión.
+app.use("/api", crearResolverSesion({ getPool, getSessionUser, parseCookies, SESSION_COOKIE }));
+
+// Capa de autorización (migración 019) — distinta de requireApiKey (que
+// sigue siendo el candado general) y de "estar logueado" (que solo exige
+// req.user truthy). Va DESPUÉS del middleware de arriba porque depende de
+// req.user ya resuelto. Solo se aplica a los endpoints de administración de
+// usuarios — nada más del API cambia de comportamiento.
+
+app.post("/api/auth/login", jsonParser, async (req, res) => {
+  if (!createSession) return res.status(503).json({ error: "Módulo de autenticación no disponible" });
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: "Usuario y contraseña son obligatorios" });
+
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("usuario", require("mssql").NVarChar(100), String(username).trim())
+      .query("SELECT UsuarioID, NombreCompleto, Email, PasswordHash, PasswordSalt, Activo, IngenieroID, EsAdmin FROM Usuarios WHERE NombreUsuario = @usuario");
+    const row = result.recordset[0];
+
+    if (!row || !row.Activo || !verifyPassword(password, row.PasswordSalt, row.PasswordHash)) {
+      logSecurityEvent("login_failed", req, { username: String(username).slice(0, 100) });
+      return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
+    }
+
+    const { token, expiraEn } = await createSession(pool, row.UsuarioID);
+    res.cookie(SESSION_COOKIE, token, {
+      httpOnly: true, secure: isProduction, sameSite: "lax", expires: expiraEn, path: "/",
+    });
+    // Mismos campos que getSessionUser (auth.cjs) — así App.jsx no depende
+    // de un segundo round-trip a /api/auth/me para saber si es admin y
+    // decidir qué navegación mostrar.
+    res.json({
+      ok: true,
+      user: { name: row.NombreCompleto, email: row.Email || "", ingenieroId: row.IngenieroID ?? null, esAdmin: !!row.EsAdmin },
+    });
+  } catch (e) {
+    console.error("[AUTH] Error en login:", e.message);
+    res.status(500).json(errorBody("Error iniciando sesión", e));
+  }
+});
+
+app.post("/api/auth/logout", async (req, res) => {
+  try {
+    if (deleteSession) {
+      const pool = await getPool();
+      const { [SESSION_COOKIE]: token } = parseCookies(req);
+      await deleteSession(pool, token);
+    }
+  } catch (e) {
+    console.warn("[AUTH] No se pudo borrar la sesión en BD:", e.message);
+  }
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "No autenticado" });
+  res.json({ user: req.user });
+});
+
+// Router de reportes: montado aquí para heredar requireApiKey y generalLimiter
+// (ambos aplicados por prefijo "/api" arriba) sin tocar el resto de rutas.
+if (reportsRouter) app.use("/api/reports", reportsRouter);
+
 // ── API: Diagnóstico de conexión BD (solo desarrollo) ────────────────────────
+// Deshabilitada en producción: expone nombre de servidor/BD y detalle de error.
 
 app.get("/api/db-ping", async (req, res) => {
+  if (isProduction) {
+    return res.status(404).json({ error: "No encontrado" });
+  }
   if (!saveWeekReportToDB) {
     return res.json({ ok: false, error: "db-operations.cjs no cargó (módulo no encontrado)" });
   }
   try {
-    const sql  = require("mssql");
-    require("dotenv/config");
-    const cfg = {
-      user:     process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      server:   process.env.DB_SERVER || "localhost",
-      port:     1433,
-      database: process.env.DB_NAME,
-      options:  { encrypt: true, trustServerCertificate: true },
-      connectionTimeout: 5000,
-    };
-    console.log("[DB-PING] Intentando conectar con:", { server: cfg.server, database: cfg.database, user: cfg.user });
-    const pool   = await sql.connect(cfg);
+    const pool   = await getPool();
     const result = await pool.request().query("SELECT @@SERVERNAME AS srv, DB_NAME() AS db");
-    await pool.close();
     res.json({ ok: true, ...result.recordset[0] });
   } catch (e) {
     console.error("[DB-PING] Fallo:", e.message);
@@ -288,16 +240,44 @@ app.get("/api/projects", async (req, res) => {
 
 app.post("/api/projects", async (req, res) => {
   try {
-    await writeJson(DATA_FILE, req.body);
-    res.json({ ok: true });
+    const incomingProjects = Array.isArray(req.body?.projects) ? req.body.projects : [];
+    const changedId        = req.body?.changedProjectId || null;
+    const expectedVersion  = req.body?.expectedVersion;
+
+    // Control de versión optimista (Fase 8 — riesgo 10.1): solo se activa
+    // cuando el llamador manda expectedVersion. Los call-sites que ya
+    // mandaban changedProjectId sin expectedVersion (autosave de modales,
+    // toggles del dashboard) siguen guardando sin chequeo, igual que antes
+    // — el contrato es aditivo, no reemplaza nada.
+    if (changedId && expectedVersion != null) {
+      const current = await readJson(DATA_FILE, null);
+      const serverProject = current?.projects?.find(p => p.id === changedId);
+      const serverVersion = serverProject?.version || 1;
+      if (serverProject && serverVersion !== expectedVersion) {
+        return res.status(409).json({ error: "conflict", serverProject });
+      }
+    }
+
+    // Incrementar la versión del proyecto identificado — pasa en CUALQUIER
+    // guardado que traiga changedProjectId (no solo los que chequean
+    // versión), para que un guardado sin chequeo no deje "invisible" un
+    // cambio real y genere un falso negativo en el próximo chequeo.
+    const projectsToSave = changedId
+      ? incomingProjects.map(p => (p.id === changedId ? { ...p, version: (p.version || 1) + 1 } : p))
+      : incomingProjects;
+
+    // savedAt: permite comparar data.json contra el máximo SavedAt de SQL al
+    // arrancar (warnIfDataFileStale) sin cambiar el contrato de la respuesta
+    // ni la latencia percibida — sigue siendo fire-and-forget hacia SQL.
+    await writeJson(DATA_FILE, { ...req.body, projects: projectsToSave, savedAt: new Date().toISOString() });
+    const savedVersion = changedId ? projectsToSave.find(p => p.id === changedId)?.version : undefined;
+    res.json({ ok: true, version: savedVersion });
 
     // Sync operacional: solo el proyecto que cambió (identificado por changedProjectId)
     if (syncActividadesDetalle) {
-      const projects = Array.isArray(req.body?.projects) ? req.body.projects : [];
-      const changedId = req.body?.changedProjectId;
       const toSync = changedId
-        ? projects.filter(p => p.id === changedId)
-        : projects;
+        ? projectsToSave.filter(p => p.id === changedId)
+        : projectsToSave;
 
       for (const project of toSync) {
         syncActividadesDetalle(project)
@@ -320,10 +300,6 @@ app.post("/api/projects", async (req, res) => {
 // ── API: Sincronización de colaboradores externos ─────────────────────────────
 
 app.post("/api/external-contacts/sync-one", async (req, res) => {
-  const { syncExternalContactToSQL } = (() => {
-    try { return require("./db-operations.cjs"); } catch { return {}; }
-  })();
-
   if (!syncExternalContactToSQL) {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
   }
@@ -334,7 +310,7 @@ app.post("/api/external-contacts/sync-one", async (req, res) => {
     res.json({ ok: true, sql_id: sqlId });
   } catch (e) {
     console.error("[SQL] Error sincronizando colaborador externo:", e.message);
-    res.status(500).json({ error: "Error sincronizando colaborador externo", detail: e.message });
+    res.status(500).json(errorBody("Error sincronizando colaborador externo", e));
   }
 });
 
@@ -354,7 +330,7 @@ app.post("/api/engineers/sync-one", async (req, res) => {
     res.json({ ok: true, sql_id: sqlId });
   } catch (e) {
     console.error("[SQL] Error sincronizando ingeniero:", e.message);
-    res.status(500).json({ error: "Error sincronizando ingeniero", detail: e.message });
+    res.status(500).json(errorBody("Error sincronizando ingeniero", e));
   }
 });
 
@@ -377,7 +353,7 @@ app.post("/api/engineers/tasks/sync-one", async (req, res) => {
     res.json({ ok: true, sql_id: engineerSqlId });
   } catch (e) {
     console.error("[SQL] Error sincronizando tarea suelta:", e.message);
-    res.status(500).json({ error: "Error sincronizando tarea suelta", detail: e.message });
+    res.status(500).json(errorBody("Error sincronizando tarea suelta", e));
   }
 });
 
@@ -392,7 +368,132 @@ app.post("/api/engineers/tasks/delete-one", async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[SQL] Error borrando tarea suelta:", e.message);
-    res.status(500).json({ error: "Error borrando tarea suelta", detail: e.message });
+    res.status(500).json(errorBody("Error borrando tarea suelta", e));
+  }
+});
+
+// ── API: Administración de usuarios (migración 019 — solo admins) ────────────
+// No hay endpoint de auto-registro (ver backend/scripts/create-user.cjs):
+// crear/editar usuarios pasa por requireAdmin, así que solo un admin ya
+// logueado puede provisionar cuentas nuevas — no reabre el hueco que
+// create-user.cjs documenta evitar.
+
+app.get("/api/users", requireAdmin, async (req, res) => {
+  if (!listUsers) return res.status(503).json({ error: "Módulo de BD no disponible" });
+  try {
+    res.json(await listUsers());
+  } catch (e) {
+    console.error("[USERS] Error listando usuarios:", e.message);
+    res.status(500).json(errorBody("Error listando usuarios", e));
+  }
+});
+
+app.post("/api/users", requireAdmin, async (req, res) => {
+  if (!createUser) return res.status(503).json({ error: "Módulo de BD no disponible" });
+  try {
+    const id = await createUser(req.body || {});
+    res.json({ ok: true, id });
+  } catch (e) {
+    // Errores de validación (usuario/nombre/contraseña faltante, contraseña
+    // corta) vienen de createUser como Error simple — se devuelven tal cual
+    // al frontend en vez de un genérico 500, igual que query-builder.cjs.
+    const isValidation = /obligatorio|al menos 8 caracteres/.test(e.message);
+    if (isValidation) return res.status(400).json({ error: e.message });
+    console.error("[USERS] Error creando usuario:", e.message);
+    res.status(500).json(errorBody("Error creando usuario", e));
+  }
+});
+
+app.post("/api/users/:id", requireAdmin, async (req, res) => {
+  if (!updateUser) return res.status(503).json({ error: "Módulo de BD no disponible" });
+  try {
+    await updateUser(Number(req.params.id), req.body || {});
+    res.json({ ok: true });
+  } catch (e) {
+    const isValidation = /obligatorio|al menos 8 caracteres/.test(e.message);
+    if (isValidation) return res.status(400).json({ error: e.message });
+    console.error("[USERS] Error actualizando usuario:", e.message);
+    res.status(500).json(errorBody("Error actualizando usuario", e));
+  }
+});
+
+// ── API: Adjuntos de actividades ──────────────────────────────────────────────
+// Los archivos se guardan como bytes en SQL (tabla Actividad_Adjuntos).
+// El frontend envía el contenido en base64. Límite ~10 MB por archivo.
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Limpia el nombre de archivo antes de guardarlo: quita caracteres de control
+// (que podrían usarse para inyección de headers al descargarlo) y lo recorta
+// a una longitud razonable. No restringe el charset a ASCII — nombres con
+// acentos/ñ son normales en este contexto — solo bloquea lo peligroso.
+function sanitizeFilename(name) {
+  return String(name || "")
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .trim()
+    .slice(0, 255) || "adjunto";
+}
+
+app.post("/api/attachments/upload", attachmentJsonParser, async (req, res) => {
+  if (!saveAttachmentToDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { appAdjuntoID, appActividadID, proyectoAppID, nombre, mime, dataBase64 } = req.body || {};
+    if (!appAdjuntoID || !appActividadID || !nombre || !dataBase64) {
+      return res.status(400).json({ error: "Faltan campos del adjunto" });
+    }
+    const buffer = Buffer.from(dataBase64, "base64");
+    if (buffer.length > MAX_ATTACHMENT_BYTES) {
+      return res.status(413).json({ error: `El archivo supera el límite de ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB` });
+    }
+    await saveAttachmentToDB({
+      appAdjuntoID, appActividadID, proyectoAppID,
+      nombre: sanitizeFilename(nombre), mime, size: buffer.length, buffer,
+    });
+    res.json({ ok: true, size: buffer.length });
+  } catch (e) {
+    console.error("[SQL] Error guardando adjunto:", e.message);
+    res.status(500).json(errorBody("Error guardando adjunto", e));
+  }
+});
+
+app.get("/api/attachments/:id", async (req, res) => {
+  if (!getAttachmentFromDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const att = await getAttachmentFromDB(req.params.id);
+    if (!att || !att.buffer) return res.status(404).json({ error: "Adjunto no encontrado" });
+    const safeName = sanitizeFilename(att.nombre);
+    // RFC 5987: filename* con UTF-8 percent-encoded, más robusto para nombres
+    // con acentos/ñ que el solo encodeURIComponent en el atributo filename clásico.
+    // Se incluyen ambas variantes para compatibilidad con navegadores antiguos.
+    res.setHeader("Content-Type", att.mime || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeName.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+    );
+    res.setHeader("Content-Length", att.buffer.length);
+    res.send(att.buffer);
+  } catch (e) {
+    console.error("[SQL] Error descargando adjunto:", e.message);
+    res.status(500).json(errorBody("Error descargando adjunto", e));
+  }
+});
+
+app.post("/api/attachments/delete", async (req, res) => {
+  if (!deleteAttachmentFromDB) {
+    return res.status(503).json({ error: "Módulo de BD no disponible" });
+  }
+  try {
+    const { appAdjuntoID } = req.body || {};
+    if (!appAdjuntoID) return res.status(400).json({ error: "Falta el id del adjunto" });
+    await deleteAttachmentFromDB(appAdjuntoID);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[SQL] Error borrando adjunto:", e.message);
+    res.status(500).json(errorBody("Error borrando adjunto", e));
   }
 });
 
@@ -448,7 +549,7 @@ app.post("/api/report", async (req, res) => {
     }
   } catch (e) {
     console.error("[API] Error en POST /api/report:", e.message, e.stack);
-    res.status(500).json({ error: "Error guardando reporte", detail: e.message });
+    res.status(500).json(errorBody("Error guardando reporte", e));
   }
 });
 
@@ -494,7 +595,7 @@ app.post("/api/generate-report", async (req, res) => {
     res.json({ ok: true, analysis });
   } catch (e) {
     console.error("[AI] Error generando informe:", e.message);
-    res.status(500).json({ error: "Error generando informe con IA", detail: e.message });
+    res.status(500).json(errorBody("Error generando informe con IA", e));
   }
 });
 
@@ -513,7 +614,7 @@ app.post("/api/project-status", async (req, res) => {
     res.json({ ok: true, status });
   } catch (e) {
     console.error("[AI-STATUS] Error:", e.message);
-    res.status(500).json({ error: "Error generando status", detail: e.message });
+    res.status(500).json(errorBody("Error generando status", e));
   }
 });
 
@@ -532,61 +633,33 @@ app.post("/api/generate-global-status", async (req, res) => {
     res.json({ ok: true, analysis });
   } catch (e) {
     console.error("[AI-GLOBAL] Error:", e.message);
-    res.status(500).json({ error: "Error generando status global", detail: e.message });
+    res.status(500).json(errorBody("Error generando status global", e));
   }
 });
 
 // ── API: Restaurar desde BD ───────────────────────────────────────────────────
 
 app.post("/api/restore-from-db", async (req, res) => {
-  if (!saveWeekReportToDB) {
+  if (!rebuildDataJsonFromSQL) {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
   }
   try {
-    const { sql, connect } = require("mssql");
-    const config = {
-      user:              process.env.DB_USER,
-      password:          process.env.DB_PASSWORD,
-      server:            process.env.DB_SERVER || "localhost",
-      port:              1433,
-      database:          process.env.DB_NAME,
-      connectionTimeout: 60000,
-      requestTimeout:    60000,
-      options:           { encrypt: true, trustServerCertificate: true },
-    };
-    const pool = await connect(config);
-
-    // Trae el RawDataJSON más reciente de cada proyecto
-    const result = await pool.request().query(`
-      SELECT r.RawDataJSON
-      FROM ReportesSemanales r
-      INNER JOIN (
-        SELECT ProyectoID, MAX(SavedAt) AS UltimoGuardado
-        FROM ReportesSemanales
-        GROUP BY ProyectoID
-      ) latest ON r.ProyectoID = latest.ProyectoID AND r.SavedAt = latest.UltimoGuardado
-      WHERE r.RawDataJSON IS NOT NULL AND r.RawDataJSON != ''
-    `);
-
-    await pool.close();
-
-    const projects = result.recordset
-      .map(row => { try { return JSON.parse(row.RawDataJSON); } catch { return null; } })
-      .filter(Boolean);
-
-    if (!projects.length) {
+    const rebuilt = await rebuildDataJsonFromSQL();
+    if (!rebuilt) {
       return res.status(404).json({ error: "No hay datos de respaldo en la base de datos" });
     }
 
-    // Sobreescribe el data.json con los proyectos restaurados
+    // A diferencia del rebuild de arranque (donde no hay nada que preservar),
+    // acá sí hay un data.json vivo — se conservan weekLabel/engineers/
+    // externalContacts actuales y solo se reemplazan los proyectos.
     const currentData = await readJson(DATA_FILE, { projects: [], weekLabel: null });
-    await writeJson(DATA_FILE, { ...currentData, projects });
+    await writeJson(DATA_FILE, { ...currentData, projects: rebuilt.projects, savedAt: new Date().toISOString() });
 
-    console.log(`[RESTORE] ✓ Restaurados ${projects.length} proyectos desde la BD`);
-    res.json({ ok: true, restored: projects.length });
+    console.log(`[RESTORE] ✓ Restaurados ${rebuilt.projects.length} proyectos desde la BD`);
+    res.json({ ok: true, restored: rebuilt.projects.length });
   } catch (e) {
     console.error("[RESTORE] Error:", e.message);
-    res.status(500).json({ error: "Error restaurando desde BD", detail: e.message });
+    res.status(500).json(errorBody("Error restaurando desde BD", e));
   }
 });
 
@@ -618,16 +691,7 @@ app.post("/api/quarter-reset", async (req, res) => {
     if (!quarterLabel) return res.status(400).json({ error: "Falta quarterLabel (ej: 'Q2 2026')" });
 
     // ── 1. Calcular estadísticas del trimestre que se cierra ───────────────
-    let totalArchivadas  = 0;
-    let totalTransferidas = 0;
-
-    for (const p of projects) {
-      const completadas = (p.task_status?.completed   || []).length;
-      const enProceso   = (p.task_status?.in_progress || []).length;
-      const noIniciadas = (p.task_status?.not_started || []).length;
-      totalArchivadas   += completadas;
-      totalTransferidas += enProceso + noIniciadas;
-    }
+    const { totalArchivadas, totalTransferidas } = computeQuarterStats(projects);
 
     // ── 2. Guardar snapshot completo en archivo físico de respaldo ─────────
     const archiveDir  = path.join(__dirname, "archive");
@@ -645,18 +709,8 @@ app.post("/api/quarter-reset", async (req, res) => {
     //    Usamos el pool de db-operations si está disponible.
     //    Si falla SQL, el archivo físico ya tiene el backup — no bloqueamos el reset.
     try {
-      const mssql  = require("mssql");
-      const config = {
-        user:              process.env.DB_USER,
-        password:          process.env.DB_PASSWORD,
-        server:            process.env.DB_SERVER || "localhost",
-        port:              1433,
-        database:          process.env.DB_NAME,
-        connectionTimeout: 30000,
-        requestTimeout:    30000,
-        options:           { encrypt: true, trustServerCertificate: true },
-      };
-      const pool = await mssql.connect(config);
+      const mssql = require("mssql");
+      const pool  = await getPool();
       await pool.request()
         .input("quarterLabel",  mssql.NVarChar(50),   quarterLabel)
         .input("fechaInicio",   mssql.Date,           quarterStart ? new Date(quarterStart) : new Date())
@@ -670,7 +724,6 @@ app.post("/api/quarter-reset", async (req, res) => {
           VALUES
             (@quarterLabel, @fechaInicio, @totalProy, @archivadas, @transferidas, @jsonData)
         `);
-      await pool.close();
       console.log(`[QUARTER] ✓ Snapshot guardado en SQL: ${quarterLabel}`);
     } catch (sqlErr) {
       // SQL falló pero el archivo físico ya está guardado — el reset continúa igual
@@ -678,54 +731,7 @@ app.post("/api/quarter-reset", async (req, res) => {
     }
 
     // ── 4. Construir el nuevo estado limpio para el nuevo trimestre ─────────
-    const newProjects = projects.map(p => {
-      const ts          = p.task_status || {};
-      const keepIds     = new Set([...(ts.in_progress || []), ...(ts.not_started || [])]);
-
-      // Solo conservar actividades que NO están completadas
-      const newActs = (p.activities_identified || []).filter(a => keepIds.has(a.id));
-
-      // Conservar solo las entradas de status_history de las actividades que continúan
-      const newHistory  = {};
-      for (const actId of keepIds) {
-        if (ts.status_history?.[actId]) newHistory[actId] = ts.status_history[actId];
-      }
-
-      // Recalcular métricas basadas en las actividades que quedan
-      const newMetrics = {
-        total_tasks:           newActs.length,
-        completed_tasks:       0,
-        in_progress_tasks:     (ts.in_progress || []).length,
-        shared_tasks_discount: 0,
-      };
-
-      // Resetear ingenieros: limpiar contadores históricos y estadísticas semanales
-      const newEngineers = (p.engineers || []).map(e => ({
-        ...e,
-        assigned:      0,
-        completed:     0,
-        in_progress:   0,
-        weekly_total:  0,
-        weekly_detail: [],
-      }));
-
-      return {
-        ...p,
-        activities_identified: newActs,
-        task_status: {
-          completed:      [],
-          in_progress:    ts.in_progress  || [],
-          not_started:    ts.not_started  || [],
-          status_history: newHistory,
-        },
-        manual_metrics:      newMetrics,
-        engineers:           newEngineers,
-        weekly_achievements: [],
-        next_week_plan:      [],
-        impediments:         [],
-        show_closing_fields: false,
-      };
-    });
+    const newProjects = buildResetProjects(projects);
 
     // ── 5. Sobreescribir data.json con el estado del nuevo trimestre ───────
     const currentData = await readJson(DATA_FILE, {});
@@ -750,7 +756,7 @@ app.post("/api/quarter-reset", async (req, res) => {
 
   } catch (e) {
     console.error("[QUARTER] Error en reset:", e.message);
-    res.status(500).json({ error: "Error ejecutando el reset trimestral", detail: e.message });
+    res.status(500).json(errorBody("Error ejecutando el reset trimestral", e));
   }
 });
 
@@ -824,7 +830,7 @@ app.post("/api/clean-stats", async (req, res) => {
     res.json({ ok: true, projectsCleaned: projects.length });
   } catch (e) {
     console.error("[CLEAN-STATS] Error:", e.message);
-    res.status(500).json({ error: "Error limpiando estadísticas", detail: e.message });
+    res.status(500).json(errorBody("Error limpiando estadísticas", e));
   }
 });
 
@@ -838,25 +844,13 @@ app.post("/api/clean-stats", async (req, res) => {
 app.get("/api/quarters", async (req, res) => {
   // Intentar desde SQL primero
   try {
-    const mssql  = require("mssql");
-    const config = {
-      user:              process.env.DB_USER,
-      password:          process.env.DB_PASSWORD,
-      server:            process.env.DB_SERVER || "localhost",
-      port:              1433,
-      database:          process.env.DB_NAME,
-      connectionTimeout: 15000,
-      requestTimeout:    15000,
-      options:           { encrypt: true, trustServerCertificate: true },
-    };
-    const pool   = await mssql.connect(config);
+    const pool   = await getPool();
     const result = await pool.request().query(`
       SELECT TrimestreID, QuarterLabel, FechaInicio, FechaReset,
              TotalProyectos, ActividadesArchivadas, ActividadesTransferidas, CreadoEn
       FROM Trimestres_Archivo
       ORDER BY FechaReset DESC
     `);
-    await pool.close();
     return res.json({ ok: true, source: "sql", quarters: result.recordset });
   } catch (sqlErr) {
     console.warn("[QUARTER] SQL no disponible para listar trimestres, leyendo archivos físicos:", sqlErr.message);
@@ -885,7 +879,7 @@ app.get("/api/quarters", async (req, res) => {
 
     return res.json({ ok: true, source: "files", quarters });
   } catch (e) {
-    res.status(500).json({ error: "Error leyendo trimestres archivados", detail: e.message });
+    res.status(500).json(errorBody("Error leyendo trimestres archivados", e));
   }
 });
 
@@ -902,21 +896,10 @@ app.get("/api/quarters/:id", async (req, res) => {
   if (/^\d+$/.test(id)) {
     try {
       const mssql  = require("mssql");
-      const config = {
-        user:              process.env.DB_USER,
-        password:          process.env.DB_PASSWORD,
-        server:            process.env.DB_SERVER || "localhost",
-        port:              1433,
-        database:          process.env.DB_NAME,
-        connectionTimeout: 15000,
-        requestTimeout:    30000,
-        options:           { encrypt: true, trustServerCertificate: true },
-      };
-      const pool   = await mssql.connect(config);
+      const pool   = await getPool();
       const result = await pool.request()
         .input("id", mssql.Int, parseInt(id))
         .query(`SELECT ArchivedDataJSON, QuarterLabel, FechaInicio, FechaReset FROM Trimestres_Archivo WHERE TrimestreID = @id`);
-      await pool.close();
 
       if (!result.recordset.length) return res.status(404).json({ error: "Trimestre no encontrado" });
 
@@ -932,24 +915,52 @@ app.get("/api/quarters/:id", async (req, res) => {
   try {
     const fs         = require("fs");
     const archiveDir = path.join(__dirname, "archive");
-    // El id puede ser el nombre del archivo (quarter_Q2_2026.json) o el quarterLabel
+    // El id puede ser el nombre del archivo (quarter_Q2_2026.json) o el quarterLabel.
+    // Se valida contra un charset seguro antes de tocar el filesystem para evitar
+    // path traversal vía "../" — path.join() por sí solo NO bloquea esto.
+    if (!/^[\w.\-]+$/.test(id)) {
+      return res.status(400).json({ error: "ID de trimestre inválido" });
+    }
     const fileName   = id.endsWith(".json") ? id : `${id}.json`;
     const filePath   = path.join(archiveDir, fileName);
+
+    // Cinturón y tirantes: confirma que la ruta resuelta sigue dentro de archiveDir.
+    if (!filePath.startsWith(archiveDir + path.sep)) {
+      return res.status(400).json({ error: "Ruta de trimestre inválida" });
+    }
 
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Archivo de trimestre no encontrado" });
 
     const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
     return res.json({ ok: true, source: "file", ...data });
   } catch (e) {
-    res.status(500).json({ error: "Error leyendo trimestre", detail: e.message });
+    res.status(500).json(errorBody("Error leyendo trimestre", e));
   }
 });
 
-init().then(() => {
-  http.createServer(app).listen(PORT, "0.0.0.0", () => {
-    console.log(`Servidor en puerto ${PORT}`);
+// ── Arranque ──────────────────────────────────────────────────────────────────
+// Solo se abre el puerto cuando este archivo es el punto de entrada
+// (`node server.cjs`). Al importarlo con require() —como hacen los tests de
+// contrato de tests/routes/— se exportan `app` e `init` sin escuchar en ningún
+// puerto, que es lo que permite montar la app en un puerto efímero y probar
+// las rutas sin ocupar el 3002 de desarrollo.
+
+async function start() {
+  await init();
+  return new Promise(resolve => {
+    const server = http.createServer(app);
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Servidor en puerto ${PORT}`);
+      resolve(server);
+    });
   });
-}).catch(e => {
-  console.error("Error en inicialización:", e.message);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  start().catch(e => {
+    console.error("Error en inicialización:", e.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, init, start };

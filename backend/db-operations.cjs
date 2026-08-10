@@ -2,57 +2,39 @@
 
 require("dotenv/config");
 const sql = require("mssql");
-const { toArray, buildActivityIndexFlat, buildEngineerIndex, resolveActText, resolveActArr } = require("./utils.cjs");
+const { toArray, buildActivityIndexFlat, buildEngineerIndex, resolveActText, resolveActArr, isoWeekNumber, isoYearOf, todayISO } = require("./utils.cjs");
+const { snapshotFromRows, snapshotFromProject, diffSnapshots, insertEvents } = require("./activity-events.cjs");
+const { hashPassword } = require("./auth.cjs");
 
 // ── Conexión ──────────────────────────────────────────────────────────────────
+// La configuración y el pool viven en db/pool.cjs — fuente única compartida
+// con run-migration.cjs, que antes tenía el mismo objeto copiado literal.
 
-const config = {
-  user:              process.env.DB_USER,
-  password:          process.env.DB_PASSWORD,
-  server:            process.env.DB_SERVER || "localhost",
-  port:              1433,
-  database:          process.env.DB_NAME,
-  connectionTimeout: 60000,
-  requestTimeout:    60000,
-  options:           { encrypt: true, trustServerCertificate: true },
-  pool:              { max: 20, min: 0, idleTimeoutMillis: 60000 },
-};
-
-let _pool = null;
-
-async function getPool() {
-  if (_pool) return _pool;
-  try {
-    _pool = await sql.connect(config);
-    _pool.on("error", () => { _pool = null; });
-  } catch (e) {
-    _pool = null;
-    throw e;
-  }
-  return _pool;
-}
+const { getPool } = require("./db/pool.cjs");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // toArray, buildActivityIndexFlatFlat, buildEngineerIndex, resolveActText, resolveActArr
 // vienen de utils.cjs — funciones compartidas con server.cjs y gemini-report.cjs.
 
-function getWeekNumber(dateStr) {
-  const d = new Date(dateStr + "T12:00:00");
-  const day = d.getDay() || 7;
-  d.setDate(d.getDate() + 4 - day);
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-}
+// getWeekNumber / año ISO viven en utils.cjs (isoWeekNumber / isoYearOf) —
+// compartidos con el motor de reportes y el frontend (Fase 0).
 
 // ── Pre-carga global en una sola query ────────────────────────────────────────
 
 async function preloadCaches(pool, projects) {
-  const appIds = projects.map(p => `'${(p.id || "").replace(/'/g, "''")}'`).join(",");
+  const appIds = projects.map(p => p.id || "").filter(Boolean);
 
   const [engsRes, proysRes] = await Promise.all([
     pool.request().query("SELECT IngenieroID, Nombre FROM Ingenieros WHERE Estado = 1"),
     appIds.length
-      ? pool.request().query(`SELECT ProyectoID, AppID, NombreProyecto, URLPlanner FROM Proyectos WHERE AppID IN (${appIds})`)
+      ? (() => {
+          const req = pool.request();
+          const placeholders = appIds.map((id, i) => {
+            req.input(`appId${i}`, sql.NVarChar, id);
+            return `@appId${i}`;
+          });
+          return req.query(`SELECT ProyectoID, AppID, NombreProyecto, URLPlanner FROM Proyectos WHERE AppID IN (${placeholders.join(",")})`);
+        })()
       : Promise.resolve({ recordset: [] }),
   ]);
 
@@ -116,6 +98,73 @@ async function syncEngineerToSQL(engineer) {
   return ins.recordset[0].IngenieroID;
 }
 
+// ── Administración de usuarios (Fase 3 — solo accesible vía requireAdmin) ────
+// Sin endpoint de auto-registro (ver create-user.cjs): estas funciones solo
+// se llaman desde rutas protegidas por requireAdmin en server.cjs, nunca
+// públicas. PasswordHash/PasswordSalt nunca salen de aquí hacia el cliente.
+
+async function listUsers() {
+  const pool = await getPool();
+  const res = await pool.request().query(`
+    SELECT UsuarioID, NombreUsuario, Email, NombreCompleto, Activo, IngenieroID, EsAdmin, CreadoEn
+    FROM Usuarios ORDER BY NombreCompleto
+  `);
+  return res.recordset.map(r => ({
+    id: r.UsuarioID, username: r.NombreUsuario, email: r.Email || "", name: r.NombreCompleto,
+    active: !!r.Activo, ingenieroId: r.IngenieroID ?? null, esAdmin: !!r.EsAdmin, createdAt: r.CreadoEn,
+  }));
+}
+
+// Crea un usuario nuevo. password es obligatorio en creación (no hay forma
+// de "crear sin contraseña" — no tendría con qué loguearse).
+async function createUser({ username, name, email, password, ingenieroId, esAdmin }) {
+  const pool = await getPool();
+  const clean = String(username || "").trim();
+  if (!clean || !name || !password) throw new Error("Usuario, nombre y contraseña son obligatorios");
+  if (password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres");
+
+  const { hash, salt } = hashPassword(password);
+  const ins = await pool.request()
+    .input("usuario",     sql.NVarChar(100), clean)
+    .input("nombre",      sql.NVarChar(150), name)
+    .input("email",       sql.NVarChar(200), email || null)
+    .input("hash",        sql.Char(128), hash)
+    .input("salt",        sql.Char(32),  salt)
+    .input("ingenieroId", sql.Int, ingenieroId || null)
+    .input("esAdmin",     sql.Bit, !!esAdmin)
+    .query(`
+      INSERT INTO Usuarios (NombreUsuario, NombreCompleto, Email, PasswordHash, PasswordSalt, IngenieroID, EsAdmin)
+      OUTPUT INSERTED.UsuarioID
+      VALUES (@usuario, @nombre, @email, @hash, @salt, @ingenieroId, @esAdmin)
+    `);
+  return ins.recordset[0].UsuarioID;
+}
+
+// Actualiza nombre/email/vínculo/rol/activo de un usuario existente.
+// password es opcional: si viene, se resetea; si no, se conserva la actual.
+async function updateUser(userId, { name, email, ingenieroId, esAdmin, active, password }) {
+  const pool = await getPool();
+  if (!name) throw new Error("El nombre es obligatorio");
+
+  const req = pool.request()
+    .input("id",          sql.Int, userId)
+    .input("nombre",      sql.NVarChar(150), name)
+    .input("email",       sql.NVarChar(200), email || null)
+    .input("ingenieroId", sql.Int, ingenieroId || null)
+    .input("esAdmin",     sql.Bit, !!esAdmin)
+    .input("activo",      sql.Bit, active !== false);
+
+  let setClause = "NombreCompleto=@nombre, Email=@email, IngenieroID=@ingenieroId, EsAdmin=@esAdmin, Activo=@activo";
+  if (password) {
+    if (password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres");
+    const { hash, salt } = hashPassword(password);
+    req.input("hash", sql.Char(128), hash).input("salt", sql.Char(32), salt);
+    setClause += ", PasswordHash=@hash, PasswordSalt=@salt";
+  }
+
+  await req.query(`UPDATE Usuarios SET ${setClause} WHERE UsuarioID=@id`);
+}
+
 // ── Sync de colaboradores externos ───────────────────────────────────────────
 // Crea o actualiza un registro en Colaboradores_Externos.
 // Devuelve el ColaboradorID de SQL para guardarlo como sql_id en el catálogo local.
@@ -150,15 +199,58 @@ async function syncExternalContactToSQL(contact) {
 // consultar en SQL qué tenía un ingeniero en una fecha/rango, en proyectos
 // (Estadisticas_Ingeniero_Semana) Y en tareas sueltas (esta tabla), por separado.
 
+// Extrae las 3 fechas de estado desde el historial de la tarea, con respaldo al
+// campo legacy `date` para la fecha de inscripción de tareas antiguas.
+function taskDates(task) {
+  const h = task.history || {};
+  return {
+    inscrita:   h.added       || task.date || null,
+    inicio:     h.in_progress || null,
+    completada: h.completed   || null,
+  };
+}
+
+// Registra en un request los inputs de los campos ricos (detalle, objetivos,
+// solución, fechas de plan, progreso, horas y el JSON de checklist/notas/fechas
+// clave). Compartido por INSERT y UPDATE para no duplicar.
+function bindTaskRichInputs(request, task) {
+  const extra = JSON.stringify({
+    checklist: Array.isArray(task.checklist) ? task.checklist : [],
+    notes:     Array.isArray(task.notes)     ? task.notes     : [],
+    key_dates: Array.isArray(task.key_dates) ? task.key_dates : [],
+  });
+  return request
+    .input("detalle",   sql.NVarChar,       task.detail     || "")
+    .input("objetivos", sql.NVarChar,       task.objectives || "")
+    .input("solucion",  sql.NVarChar,       task.solution   || "")
+    .input("fInicioP",  sql.Date,           task.start_date || null)
+    .input("fFinP",     sql.Date,           task.due_date   || null)
+    .input("progreso",  sql.Int,            Math.max(0, Math.min(100, Number(task.progress) || 0)))
+    .input("horas",     sql.Decimal(8, 2),  Math.max(0, Number(task.planned_hours) || 0))
+    .input("extra",     sql.NVarChar,       extra);
+}
+
+const RICH_SET_CLAUSE =
+  "Detalle=@detalle, Objetivos=@objetivos, Solucion=@solucion, " +
+  "FechaInicioPlan=@fInicioP, FechaFinPlan=@fFinP, Progreso=@progreso, " +
+  "HorasPlaneadas=@horas, DatosExtra=@extra";
+
 async function updateEngineerTaskByAppId(task) {
   const pool = await getPool();
-  const upd = await pool.request()
-    .input("appId", sql.NVarChar(50), task.id)
-    .input("desc",  sql.NVarChar,     task.description || "")
-    .input("estado",sql.NVarChar(50), task.status || "not_started")
-    .input("fecha", sql.Date,         task.date || null)
-    .query(`UPDATE Tareas_Sueltas_Ingeniero
-            SET Descripcion=@desc, Estado=@estado, Fecha=@fecha, UltimaActualizacion=GETDATE()
+  const d = taskDates(task);
+  const req = bindTaskRichInputs(pool.request(), task)
+    .input("appId",   sql.NVarChar(50), task.id)
+    .input("desc",    sql.NVarChar,     task.description || "")
+    .input("estado",  sql.NVarChar(50), task.status || "not_started")
+    .input("fecha",   sql.Date,         d.inscrita)
+    .input("finsc",   sql.Date,         d.inscrita)
+    .input("finicio", sql.Date,         d.inicio)
+    .input("fcomp",   sql.Date,         d.completada);
+  const upd = await req.query(`UPDATE Tareas_Sueltas_Ingeniero
+            SET Descripcion=@desc, Estado=@estado, Fecha=@fecha,
+                FechaInscrita=@finsc, FechaInicio=@finicio, FechaCompletada=@fcomp,
+                ${RICH_SET_CLAUSE},
+                UltimaActualizacion=GETDATE()
             OUTPUT INSERTED.TareaID
             WHERE AppTaskID=@appId`);
   return upd.recordset[0]?.TareaID ?? null;
@@ -179,15 +271,22 @@ async function syncEngineerTaskToSQL(engineerSqlId, task) {
   }
 
   try {
-    const ins = await pool.request()
-      .input("ingId", sql.Int,          engineerSqlId)
-      .input("appId", sql.NVarChar(50), task.id)
-      .input("desc",  sql.NVarChar,     task.description || "")
-      .input("estado",sql.NVarChar(50), task.status || "not_started")
-      .input("fecha", sql.Date,         task.date || null)
-      .query(`INSERT INTO Tareas_Sueltas_Ingeniero (IngenieroID, AppTaskID, Descripcion, Estado, Fecha)
+    const d = taskDates(task);
+    const req = bindTaskRichInputs(pool.request(), task)
+      .input("ingId",   sql.Int,          engineerSqlId)
+      .input("appId",   sql.NVarChar(50), task.id)
+      .input("desc",    sql.NVarChar,     task.description || "")
+      .input("estado",  sql.NVarChar(50), task.status || "not_started")
+      .input("fecha",   sql.Date,         d.inscrita)
+      .input("finsc",   sql.Date,         d.inscrita)
+      .input("finicio", sql.Date,         d.inicio)
+      .input("fcomp",   sql.Date,         d.completada);
+    const ins = await req.query(`INSERT INTO Tareas_Sueltas_Ingeniero
+                (IngenieroID, AppTaskID, Descripcion, Estado, Fecha, FechaInscrita, FechaInicio, FechaCompletada,
+                 Detalle, Objetivos, Solucion, FechaInicioPlan, FechaFinPlan, Progreso, HorasPlaneadas, DatosExtra)
               OUTPUT INSERTED.TareaID
-              VALUES (@ingId, @appId, @desc, @estado, @fecha)`);
+              VALUES (@ingId, @appId, @desc, @estado, @fecha, @finsc, @finicio, @fcomp,
+                 @detalle, @objetivos, @solucion, @fInicioP, @fFinP, @progreso, @horas, @extra)`);
     return ins.recordset[0].TareaID;
   } catch (e) {
     if (e.number === 2627 || e.number === 2601) return updateEngineerTaskByAppId(task);
@@ -259,8 +358,8 @@ async function syncActividades(pool, proyectoID, activitiesArr) {
 async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCache, engineerCatalogIndex) {
   const proyectoID  = await resolveProject(pool, project, proyCache);
   const reportDate  = new Date().toISOString().slice(0, 10);
-  const semana      = getWeekNumber(reportDate);
-  const anio        = new Date(reportDate + "T12:00:00").getFullYear();
+  const semana      = isoWeekNumber(reportDate);
+  const anio        = isoYearOf(reportDate);
   const m           = project.manual_metrics || {};
   const total       = Number(m.total_tasks          || 0);
   const completadas = Number(m.completed_tasks       || 0);
@@ -496,16 +595,55 @@ async function saveWeekReportToDB(projects, weekLabel, savedAt, engineersCatalog
 
 const toDateOrNull = (v) => (v && typeof v === "string" && v.trim() ? new Date(v) : null);
 
-const q = (v) => {
-  if (v === null || v === undefined) return "NULL";
-  if (v instanceof Date)             return `'${v.toISOString()}'`;
-  return `'${String(v).replace(/'/g, "''")}'`;
-};
+// Mantiene Proyectos.NombreProyecto/URLPlanner al día en CADA guardado
+// normal, no solo al "Guardar reporte" semanal (que es lo único que corría
+// resolveProject antes). Sin esto, renombrar un proyecto en EditView nunca
+// se reflejaba en Reportes/Ingenieros hasta la próxima vez que se cerrara
+// la semana — esas vistas hacen JOIN Proyectos y proyectan NombreProyecto.
+// MERGE en vez de SELECT-then-decide: evita la carrera de insertar dos
+// filas para el mismo AppID si dos guardados llegan casi al mismo tiempo.
+async function syncProjectMeta(pool, project) {
+  const appId = project.id || "";
+  if (!appId) return;
+  const name = project.project_name || "Sin nombre";
+  const url  = project.planner_url  || "";
+
+  await pool.request()
+    .input("appId", sql.NVarChar, appId)
+    .input("name",  sql.NVarChar, name)
+    .input("url",   sql.NVarChar, url)
+    .query(`
+      MERGE Proyectos AS t
+      USING (SELECT @appId AS AppID) AS s ON t.AppID = s.AppID
+      WHEN MATCHED AND (t.NombreProyecto <> @name OR t.URLPlanner <> @url) THEN
+        UPDATE SET NombreProyecto = @name, URLPlanner = @url
+      WHEN NOT MATCHED THEN
+        INSERT (AppID, NombreProyecto, URLPlanner) VALUES (@appId, @name, @url);
+    `);
+}
 
 async function syncActividadesDetalle(project) {
   const pool = await getPool();
 
+  await syncProjectMeta(pool, project);
+
   const proyectoAppID = project.id || "";
+
+  // Fase 1 — SELECT previo para el event log. Degradación explícita: si falla,
+  // el guardado normal de abajo procede idéntico a como funcionaba antes de
+  // esta fase — se pierde el evento, nunca el dato operacional.
+  let prevSnapshot = null;
+  try {
+    const prevRes = await pool.request()
+      .input("proyId", sql.NVarChar(60), proyectoAppID)
+      .query(`SELECT AppActividadID, Estado, Progreso, FechaInicio, FechaFin, HorasPlaneadas
+              FROM Actividades_Detalle WHERE ProyectoAppID = @proyId`);
+    prevSnapshot = snapshotFromRows(prevRes.recordset);
+  } catch (e) {
+    console.warn(`[EVENTOS] ⚠ SELECT previo falló para ${proyectoAppID}:`, e.message);
+    prevSnapshot = null;
+  }
+
   const acts = Array.isArray(project.activities_identified) ? project.activities_identified : [];
   const ts   = project.task_status || {};
   const hist = ts.status_history   || {};
@@ -517,76 +655,125 @@ async function syncActividadesDetalle(project) {
     return "not_started";
   };
 
-  // Construir filas para cada tabla
-  const detRows = [], chkRows = [], notaRows = [], kdRows = [];
+  // Construir filas para cada tabla como placeholders parametrizados —
+  // cada valor se liga vía .input(), nunca se interpola directo en el SQL.
+  const detReq = pool.request();
+  const detRows = [];
+  const chkReq = pool.request();
+  const chkRows = [];
+  const notaReq = pool.request();
+  const notaRows = [];
+  const kdReq = pool.request();
+  const kdRows = [];
+  let di = 0, ci = 0, ni = 0, ki = 0;
 
   for (const act of acts) {
     if (!act?.id) continue;
     const actHist = hist[act.id] || {};
     const estado  = statusOf(act.id);
 
-    detRows.push(
-      `(${q(act.id)},${q(proyectoAppID)},${q(act.text||"")},${q(act.priority||"media")},` +
-      `${q(toDateOrNull(act.start_date))},${q(toDateOrNull(act.due_date))},${q(act.description||"")},${q(estado)},` +
-      `${q(toDateOrNull(actHist.added))},${q(toDateOrNull(actHist.in_progress))},${q(toDateOrNull(actHist.completed))},GETDATE())`
-    );
+    const progreso = Math.max(0, Math.min(100, Math.round(Number(act.progress) || 0)));
+    const horas    = Math.max(0, Number(act.planned_hours) || 0);
 
-    (act.checklist || []).forEach((item, i) => {
+    detReq.input(`dActId${di}`,     sql.NVarChar(60),  act.id);
+    detReq.input(`dProyId${di}`,    sql.NVarChar(60),  proyectoAppID);
+    detReq.input(`dTexto${di}`,     sql.NVarChar,      act.text || "");
+    detReq.input(`dFInicio${di}`,   sql.Date,          toDateOrNull(act.start_date));
+    detReq.input(`dFFin${di}`,      sql.Date,          toDateOrNull(act.due_date));
+    detReq.input(`dDesc${di}`,      sql.NVarChar,      act.description || "");
+    detReq.input(`dObj${di}`,       sql.NVarChar,      act.objectives || "");
+    detReq.input(`dSol${di}`,       sql.NVarChar,      act.solution || "");
+    detReq.input(`dEstado${di}`,    sql.NVarChar(50),  estado);
+    detReq.input(`dFInsc${di}`,     sql.Date,          toDateOrNull(actHist.added));
+    detReq.input(`dFEnProc${di}`,   sql.Date,          toDateOrNull(actHist.in_progress));
+    detReq.input(`dFComp${di}`,     sql.Date,          toDateOrNull(actHist.completed));
+    detReq.input(`dProgreso${di}`,  sql.Int,           progreso);
+    detReq.input(`dHoras${di}`,     sql.Decimal(8, 2), horas);
+    detRows.push(
+      `(@dActId${di},@dProyId${di},@dTexto${di},@dFInicio${di},@dFFin${di},` +
+      `@dDesc${di},@dObj${di},@dSol${di},@dEstado${di},` +
+      `@dFInsc${di},@dFEnProc${di},@dFComp${di},GETDATE(),@dProgreso${di},@dHoras${di})`
+    );
+    di++;
+
+    (act.checklist || []).forEach((item, idx) => {
       if (!item?.id) return;
-      chkRows.push(`(${q(act.id)},${q(item.id)},${q(item.text||"")},${item.done?1:0},${i})`);
+      chkReq.input(`cActId${ci}`, sql.NVarChar(60), act.id);
+      chkReq.input(`cItemId${ci}`, sql.NVarChar(60), item.id);
+      chkReq.input(`cTexto${ci}`, sql.NVarChar, item.text || "");
+      chkReq.input(`cHecho${ci}`, sql.Bit, item.done ? 1 : 0);
+      chkReq.input(`cOrden${ci}`, sql.Int, idx);
+      chkRows.push(`(@cActId${ci},@cItemId${ci},@cTexto${ci},@cHecho${ci},@cOrden${ci})`);
+      ci++;
     });
 
     (act.notes || []).forEach(nota => {
       if (!nota?.id) return;
-      notaRows.push(`(${q(act.id)},${q(nota.id)},${q(toDateOrNull(nota.date))},${q(nota.text||"")})`);
+      notaReq.input(`nActId${ni}`, sql.NVarChar(60), act.id);
+      notaReq.input(`nNotaId${ni}`, sql.NVarChar(60), nota.id);
+      notaReq.input(`nFecha${ni}`, sql.Date, toDateOrNull(nota.date));
+      notaReq.input(`nTexto${ni}`, sql.NVarChar, nota.text || "");
+      notaRows.push(`(@nActId${ni},@nNotaId${ni},@nFecha${ni},@nTexto${ni})`);
+      ni++;
     });
 
     (act.key_dates || []).forEach(kd => {
       if (!kd?.id) return;
-      kdRows.push(`(${q(act.id)},${q(kd.id)},${q(toDateOrNull(kd.date))},${q(kd.label||"")})`);
+      kdReq.input(`kActId${ki}`, sql.NVarChar(60), act.id);
+      kdReq.input(`kFechaId${ki}`, sql.NVarChar(60), kd.id);
+      kdReq.input(`kFecha${ki}`, sql.Date, toDateOrNull(kd.date));
+      kdReq.input(`kEtiqueta${ki}`, sql.NVarChar, kd.label || "");
+      kdRows.push(`(@kActId${ki},@kFechaId${ki},@kFecha${ki},@kEtiqueta${ki})`);
+      ki++;
     });
   }
 
+  // actIds parametrizados, para los 3 DELETE ... WHERE AppActividadID IN (...).
+  // Cada mssql.Request solo se puede ejecutar una vez, así que se genera una
+  // request nueva por cada DELETE reutilizando la misma lista de placeholders.
+  const actIdList = acts.filter(a => a?.id).map(a => a.id);
+  const idPlaceholders = actIdList.map((_, i) => `@aid${i}`);
+  const deleteByActIds = (table) => {
+    if (!idPlaceholders.length) return Promise.resolve();
+    const req = pool.request();
+    actIdList.forEach((id, i) => req.input(`aid${i}`, sql.NVarChar(60), id));
+    return req.query(`DELETE FROM ${table} WHERE AppActividadID IN (${idPlaceholders.join(",")})`);
+  };
+
   try {
-    // Tabla Actividades_Detalle: DELETE por proyecto + INSERT bulk
+    // Tabla Actividades_Detalle: DELETE por proyecto + INSERT bulk parametrizado
     await pool.request().input("proyId", sql.NVarChar(60), proyectoAppID)
       .query(`DELETE FROM Actividades_Detalle WHERE ProyectoAppID = @proyId`);
     if (detRows.length) {
-      await pool.request().query(
+      await detReq.query(
         `INSERT INTO Actividades_Detalle
-           (AppActividadID,ProyectoAppID,TextoActividad,Prioridad,FechaInicio,FechaFin,
-            Descripcion,Estado,FechaInscripcion,FechaEnProceso,FechaCompletada,UltimaActualizacion)
+           (AppActividadID,ProyectoAppID,TextoActividad,FechaInicio,FechaFin,
+            Descripcion,Objetivos,Solucion,Estado,FechaInscripcion,FechaEnProceso,FechaCompletada,UltimaActualizacion,
+            Progreso,HorasPlaneadas)
          VALUES ${detRows.join(",")}`
       );
     }
 
     // Tabla Actividad_Checklist: DELETE por actividades del proyecto + INSERT bulk
-    const actIds = acts.filter(a => a?.id).map(a => q(a.id)).join(",");
-    if (actIds) {
-      await pool.request().query(`DELETE FROM Actividad_Checklist WHERE AppActividadID IN (${actIds})`);
-    }
+    await deleteByActIds("Actividad_Checklist");
     if (chkRows.length) {
-      await pool.request().query(
+      await chkReq.query(
         `INSERT INTO Actividad_Checklist (AppActividadID,AppChecklistID,Texto,Hecho,Orden) VALUES ${chkRows.join(",")}`
       );
     }
 
     // Tabla Actividad_Notas
-    if (actIds) {
-      await pool.request().query(`DELETE FROM Actividad_Notas WHERE AppActividadID IN (${actIds})`);
-    }
+    await deleteByActIds("Actividad_Notas");
     if (notaRows.length) {
-      await pool.request().query(
+      await notaReq.query(
         `INSERT INTO Actividad_Notas (AppActividadID,AppNotaID,Fecha,Texto) VALUES ${notaRows.join(",")}`
       );
     }
 
     // Tabla Actividad_FechasClave
-    if (actIds) {
-      await pool.request().query(`DELETE FROM Actividad_FechasClave WHERE AppActividadID IN (${actIds})`);
-    }
+    await deleteByActIds("Actividad_FechasClave");
     if (kdRows.length) {
-      await pool.request().query(
+      await kdReq.query(
         `INSERT INTO Actividad_FechasClave (AppActividadID,AppFechaID,Fecha,Etiqueta) VALUES ${kdRows.join(",")}`
       );
     }
@@ -594,8 +781,109 @@ async function syncActividadesDetalle(project) {
     console.error(`[SQL] ✗ Error en bulk sync proyecto ${proyectoAppID}:`, e.message);
     throw e;
   }
+
+  // Fase 1 — insertar eventos como efecto secundario, sin bloquear el guardado
+  // (sin await, con .catch propio: si falla, se reintenta en el próximo save).
+  if (prevSnapshot) {
+    const nextSnapshot = snapshotFromProject(project);
+    const eventos = diffSnapshots(prevSnapshot, nextSnapshot, { proyectoAppID, fechaEvento: todayISO(), origen: "app" });
+    if (eventos.length) {
+      insertEvents(pool, eventos).catch(e => console.warn(`[EVENTOS] ⚠ Insert falló para ${proyectoAppID}:`, e.message));
+    }
+  }
+}
+
+// ── Adjuntos de actividades ─────────────────────────────────────────────────
+// Los bytes viven SOLO en SQL (tabla Actividad_Adjuntos). En data.json/la
+// actividad se guarda únicamente la metadata (id, nombre, tipo, tamaño).
+
+async function saveAttachmentToDB({ appAdjuntoID, appActividadID, proyectoAppID, nombre, mime, size, buffer }) {
+  const pool = await getPool();
+  await pool.request()
+    .input("appId",   sql.NVarChar(60),  appAdjuntoID)
+    .input("actId",   sql.NVarChar(60),  appActividadID)
+    .input("proyId",  sql.NVarChar(60),  proyectoAppID || null)
+    .input("nombre",  sql.NVarChar(400), nombre)
+    .input("mime",    sql.NVarChar(200), mime || null)
+    .input("size",    sql.BigInt,        size || 0)
+    .input("contenido", sql.VarBinary(sql.MAX), buffer)
+    .query(`
+      MERGE dbo.Actividad_Adjuntos AS t
+      USING (SELECT @appId AS AppAdjuntoID) AS s
+      ON t.AppAdjuntoID = s.AppAdjuntoID
+      WHEN MATCHED THEN UPDATE SET
+        NombreArchivo=@nombre, TipoMime=@mime, Tamano=@size,
+        Contenido=@contenido, AppActividadID=@actId, ProyectoAppID=@proyId
+      WHEN NOT MATCHED THEN INSERT
+        (AppAdjuntoID, AppActividadID, ProyectoAppID, NombreArchivo, TipoMime, Tamano, Contenido)
+        VALUES (@appId, @actId, @proyId, @nombre, @mime, @size, @contenido);
+    `);
+}
+
+async function getAttachmentFromDB(appAdjuntoID) {
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("appId", sql.NVarChar(60), appAdjuntoID)
+    .query(`SELECT NombreArchivo, TipoMime, Tamano, Contenido
+            FROM dbo.Actividad_Adjuntos WHERE AppAdjuntoID = @appId`);
+  const row = r.recordset[0];
+  if (!row) return null;
+  return { nombre: row.NombreArchivo, mime: row.TipoMime, size: row.Tamano, buffer: row.Contenido };
+}
+
+async function deleteAttachmentFromDB(appAdjuntoID) {
+  const pool = await getPool();
+  await pool.request()
+    .input("appId", sql.NVarChar(60), appAdjuntoID)
+    .query(`DELETE FROM dbo.Actividad_Adjuntos WHERE AppAdjuntoID = @appId`);
+}
+
+// ── Reconstrucción de data.json desde SQL (Fase 7 — riesgo 10.3) ─────────────
+// SQL es la fuente de verdad; data.json es la caché rápida que sirve cada
+// GET /api/projects. Si esa caché desaparece o se corrompe (ej. un reinicio
+// de Azure App Service sin disco persistente), esto reconstruye el estado
+// de proyectos desde el último RawDataJSON guardado de cada uno.
+//
+// Limitación conocida: el catálogo de ingenieros NO se reconstruye acá. Los
+// ids de ingeniero (eng_xxx) son locales a la app y no existen en SQL (solo
+// existe IngenieroID numérico) — generar ids nuevos rompería la relación con
+// activities_identified[].assigned_engineers de las actividades restauradas.
+// Devuelve engineers/externalContacts vacíos a propósito; se reconstruyen
+// solos a medida que se vuelve a usar la app.
+async function rebuildDataJsonFromSQL() {
+  const pool = await getPool();
+  const result = await pool.request().query(`
+    SELECT r.RawDataJSON
+    FROM ReportesSemanales r
+    INNER JOIN (
+      SELECT ProyectoID, MAX(SavedAt) AS UltimoGuardado
+      FROM ReportesSemanales
+      GROUP BY ProyectoID
+    ) latest ON r.ProyectoID = latest.ProyectoID AND r.SavedAt = latest.UltimoGuardado
+    WHERE r.RawDataJSON IS NOT NULL AND r.RawDataJSON != ''
+  `);
+
+  const projects = result.recordset
+    .map(row => { try { return JSON.parse(row.RawDataJSON); } catch { return null; } })
+    .filter(Boolean);
+
+  if (!projects.length) return null;
+  return { projects, weekLabel: null, engineers: [], externalContacts: [], savedAt: new Date().toISOString() };
+}
+
+async function maxSqlSavedAt() {
+  const pool = await getPool();
+  const res = await pool.request().query("SELECT MAX(SavedAt) AS maxSavedAt FROM ReportesSemanales");
+  return res.recordset[0]?.maxSavedAt || null;
 }
 
 // ── Exportar ──────────────────────────────────────────────────────────────────
 
-module.exports = { saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncExternalContactToSQL, syncActividadesDetalle };
+module.exports = {
+  getPool,
+  saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
+  syncExternalContactToSQL, syncActividadesDetalle,
+  saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
+  rebuildDataJsonFromSQL, maxSqlSavedAt,
+  listUsers, createUser, updateUser,
+};

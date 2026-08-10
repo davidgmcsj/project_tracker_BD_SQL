@@ -7,24 +7,49 @@
 
 // ── Fecha ────────────────────────────────────────────────────────────────────
 
+import { isoWeekNumber, todayISO } from "./isoWeek.js";
+
 const MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
+// Semana ISO 8601 (antes: días transcurridos / 7, que no alinea con lunes ni
+// respeta años bisiestos de 53 semanas). El número puede diferir en ±1 del
+// cálculo anterior — es la corrección esperada.
 export function getWeekLabel() {
-  const now   = new Date();
-  const start = new Date(now.getFullYear(), 0, 1);
-  const week  = Math.ceil((now - start) / 604800000);
+  const now  = new Date();
+  const week = isoWeekNumber(todayISO());
   return `Semana ${week} — ${now.getDate()} ${MONTHS_SHORT[now.getMonth()]} ${now.getFullYear()}`;
 }
 
+/**
+ * Date → "YYYY-MM-DD". El patrón `toISOString().slice(0, 10)` estaba repetido
+ * 29 veces por toda la app; este helper le pone nombre y un único sitio donde
+ * corregirlo si algún día hace falta.
+ *
+ * OJO: toISOString() convierte a UTC, así que para una hora local de la noche
+ * puede devolver el día siguiente. Todo el código existente ya dependía de
+ * este comportamiento, así que se conserva tal cual — cambiarlo aquí movería
+ * fechas en toda la aplicación.
+ */
+export function toISODate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export function getToday() {
-  return new Date().toISOString().slice(0, 10);
+  return toISODate(new Date());
+}
+
+// Formatea "YYYY-MM-DD" a "DD/MM/YYYY". Vacío → "—".
+export function formatDateDMY(dateStr) {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
 }
 
 export function getMondayOf(dateStr) {
   const d    = new Date(dateStr + "T12:00:00");
   const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return toISODate(d);
 }
 
 export function isSameWeek(dateA, dateB) {
@@ -38,7 +63,7 @@ export function getNextFriday() {
   const diff = day < 5 ? 5 - day + 7 : day === 5 ? 7 : 6;
   const fri  = new Date(now);
   fri.setDate(now.getDate() + diff);
-  return fri.toISOString().slice(0, 10);
+  return toISODate(fri);
 }
 
 export function getWeekRangeLabel(dateStr) {
@@ -91,6 +116,8 @@ export function createDefaultProject() {
     id:           Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     project_name: "",
     status:       "on-track",
+    priority:     false,   // proyecto prioritario (marca de estrella ⭐) para filtrar en Reporte
+    version:      1,       // control de versión optimista — se incrementa en cada guardado identificado
     planner_url:  "",
     report_date:  getToday(),
     manual_metrics: {
@@ -121,28 +148,131 @@ export function genActivityId() {
   return "act_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-export function createActivity(text = "") {
+export function createActivity(text = "", parentId = null, sequenceOrder = 0) {
   return {
     id: genActivityId(),
+    parent_id: parentId,           // id de otra actividad, o null = nivel raíz (jerarquía de subtareas)
+    sequence_order: sequenceOrder, // orden entre hermanas del mismo padre — usado por el motor de cascada
     text,
     assigned_engineers: [],
     assigned_date: null,
-    priority: "media",
     start_date: "",
     due_date: "",
     description: "",
+    objectives: "",
+    solution: "",
+    progress: 0,          // % de cumplimiento manual (0-100)
+    planned_hours: 0,     // horas planeadas (manual)
     checklist: [],
     notes: [],
     key_dates: [],
+    attachments: [],      // metadata de adjuntos (bytes en SQL)
+    planner_task_number: null, // "Número de tarea" de Planner (clave estable de sync). null = creada a mano.
+    archived: false,      // true si desapareció de Planner en una importación (oculta, recuperable)
+    archived_reason: "",  // motivo del archivado (p. ej. fecha de la importación que la retiró)
   };
 }
 
+// ── Actividades archivadas ────────────────────────────────────────────────────
+// Una actividad archivada (archived: true) desapareció del Planner en una
+// importación pero NO se borra: se oculta de listas, métricas y reportes, y
+// queda recuperable en activities_identified. isArchived tolera actividades
+// antiguas que aún no tienen el campo (undefined → false).
+
+export const isArchived = (a) => !!a && a.archived === true;
+
+export function visibleActivities(acts) {
+  return (Array.isArray(acts) ? acts : []).filter(a => !isArchived(a));
+}
+
+// ── Cálculo de horas hábiles ──────────────────────────────────────────────────
+// Cuenta días hábiles (lun-vie, excluyendo festivos de Colombia) entre dos fechas
+// inclusive y multiplica por la jornada. Sirve para SUGERIR horas planeadas.
+
+const HOURS_PER_DAY = 8;
+
+// Festivos de Colombia. Formato "MM-DD" para los fijos + fechas completas para
+// los que dependen del año (Semana Santa, etc.). Actualizar por año según cambien.
+// Para simplicidad usamos un set de fechas completas "YYYY-MM-DD" que cubre los
+// años en uso; los fijos se generan por año on-the-fly.
+const FIXED_HOLIDAYS_MMDD = [
+  "01-01", // Año nuevo
+  "05-01", // Día del trabajo
+  "07-20", // Independencia
+  "08-07", // Batalla de Boyacá
+  "12-08", // Inmaculada Concepción
+  "12-25", // Navidad
+];
+
+// Festivos móviles / trasladables por año (Ley Emiliani y Semana Santa).
+// Se pueden ampliar por año. Vacío por defecto = solo se usan los fijos.
+const MOVABLE_HOLIDAYS = {
+  2026: [
+    "01-12","03-23","03-30","04-02","04-03","05-18","06-08","06-15",
+    "06-29","08-17","10-12","11-02","11-16",
+  ],
+};
+
+function isColombianHoliday(date) {
+  const mmdd = `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  if (FIXED_HOLIDAYS_MMDD.includes(mmdd)) return true;
+  const year = date.getFullYear();
+  return (MOVABLE_HOLIDAYS[year] || []).includes(mmdd);
+}
+
+// Devuelve el número de días hábiles entre start y due (ambos inclusive).
+export function businessDaysBetween(startStr, dueStr) {
+  if (!startStr || !dueStr) return 0;
+  const start = new Date(startStr + "T12:00:00");
+  const end   = new Date(dueStr   + "T12:00:00");
+  if (isNaN(start) || isNaN(end) || end < start) return 0;
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6 && !isColombianHoliday(cur)) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+// Horas hábiles sugeridas = días hábiles × jornada.
+export function suggestedWorkHours(startStr, dueStr, hoursPerDay = HOURS_PER_DAY) {
+  return businessDaysBetween(startStr, dueStr) * hoursPerDay;
+}
+
+// Suma de horas planeadas de todas las actividades del proyecto.
+export function totalPlannedHours(activities) {
+  return (Array.isArray(activities) ? activities : [])
+    .reduce((s, a) => s + (Number(a.planned_hours) || 0), 0);
+}
+
+// Promedio de % de cumplimiento sobre las actividades que tienen fechas o progreso.
+// Devuelve null si no hay ninguna actividad con progreso definido.
+export function avgActivityProgress(activities) {
+  const acts = (Array.isArray(activities) ? activities : [])
+    .filter(a => a.start_date || a.due_date || Number(a.progress) > 0);
+  if (!acts.length) return null;
+  const sum = acts.reduce((s, a) => s + (Number(a.progress) || 0), 0);
+  return Math.round(sum / acts.length);
+}
+
 // Construye un índice id → { text, position } a partir de activities_identified.
-// "position" es siempre la posición ACTUAL (1-based), nunca se guarda.
+// "position" es el número jerárquico "N" o "N.M.O…" (ver formatHierarchyNumber),
+// nunca se guarda, se recalcula en cada llamada — misma fuente que usa el
+// Cronograma (HierarchyTable, vía flattenTree).
+//
+// Antes numeraba por posición en el array plano (1, 2, 3…), ignorando quién
+// era padre de quién: el Kanban podía mostrar "2. Anexo Técnico" para la misma
+// actividad que el Cronograma mostraba como "1.1" — dos numeraciones distintas
+// para el mismo dato. Ahora ambas vistas derivan del mismo árbol, así que el
+// número SIEMPRE coincide en toda la app.
 export function buildActivityIndex(activities) {
   const map = new Map();
-  (Array.isArray(activities) ? activities : []).forEach((a, i) => {
-    if (a && a.id != null) map.set(a.id, { text: a.text || "", position: i + 1 });
+  flattenTree(activities).forEach(({ activity, path }) => {
+    if (activity && activity.id != null) {
+      map.set(activity.id, { text: activity.text || "", position: formatHierarchyNumber(path) });
+    }
   });
   return map;
 }
@@ -152,10 +282,176 @@ export function activityText(index, id) {
   return index.get(id)?.text ?? id ?? "";
 }
 
-// Resuelve un id a su label numerado "N. texto" para mostrar en reportes/listas.
+// Resuelve un id a su label numerado "N. texto" o "N.M. texto" para mostrar en
+// Kanban/reportes/listas — mismo número jerárquico que el Cronograma.
 export function activityLabel(index, id) {
   const entry = index.get(id);
   return entry ? `${entry.position}. ${entry.text}` : (id || "");
+}
+
+// ── Jerarquía de subtareas (parent_id plano) ──────────────────────────────────
+// Las actividades siguen viviendo en un array PLANO (activities_identified);
+// parent_id es la única adición. El árbol se reconstruye en memoria, on-demand,
+// solo donde se necesita (HierarchyTable) — el resto del sistema (Gantt, Kanban,
+// reportes, sync a SQL) sigue viendo el mismo array plano sin cambios.
+//
+// sequence_order fija el orden entre hermanas del mismo padre. Actividades sin
+// el campo (datos existentes anteriores a esta funcionalidad) se ordenan por su
+// posición actual en el array la primera vez que se construye el árbol.
+
+// Construye { rootIds, childrenOf } a partir del array plano de actividades.
+// childrenOf: Map<parentId|null, Activity[]>, cada lista ya ordenada por
+// sequence_order (con fallback a la posición original del array).
+// Ignora referencias huérfanas (parent_id apunta a un id que no existe) y
+// ciclos (una actividad que, siguiendo parent_id hacia arriba, se referencia
+// a sí misma) tratándolas como raíz — nunca cuelga el recorrido.
+export function buildActivityTree(activities) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const byId = new Map(acts.map(a => [a.id, a]));
+
+  const isDescendantCycle = (id, parentId) => {
+    let cur = parentId;
+    const seen = new Set();
+    while (cur != null) {
+      if (cur === id) return true;
+      if (seen.has(cur)) return true; // ciclo preexistente en los datos, no relacionado con `id`
+      seen.add(cur);
+      cur = byId.get(cur)?.parent_id ?? null;
+    }
+    return false;
+  };
+
+  const childrenOf = new Map();
+  const rootIds = [];
+
+  acts.forEach((a, i) => {
+    const rawParent = a.parent_id ?? null;
+    const validParent = rawParent != null && byId.has(rawParent) && !isDescendantCycle(a.id, rawParent)
+      ? rawParent
+      : null;
+    if (validParent === null) rootIds.push(a.id);
+    const key = validParent;
+    if (!childrenOf.has(key)) childrenOf.set(key, []);
+    childrenOf.get(key).push({ activity: a, originalIndex: i });
+  });
+
+  const bySeq = (x, y) => {
+    const sx = Number(x.activity.sequence_order);
+    const sy = Number(y.activity.sequence_order);
+    if (Number.isFinite(sx) && Number.isFinite(sy) && sx !== sy) return sx - sy;
+    return x.originalIndex - y.originalIndex;
+  };
+
+  for (const list of childrenOf.values()) {
+    list.sort(bySeq);
+  }
+  rootIds.sort((idA, idB) => {
+    const a = byId.get(idA), b = byId.get(idB);
+    const sa = Number(a?.sequence_order), sb = Number(b?.sequence_order);
+    if (Number.isFinite(sa) && Number.isFinite(sb) && sa !== sb) return sa - sb;
+    return acts.indexOf(a) - acts.indexOf(b);
+  });
+
+  const childrenOfFlat = new Map();
+  for (const [key, list] of childrenOf.entries()) {
+    childrenOfFlat.set(key, list.map(x => x.activity));
+  }
+
+  return { rootIds, childrenOf: childrenOfFlat };
+}
+
+// Recorre el árbol en preorden (respetando sequence_order) y devuelve un array
+// plano de { activity, level, path }. path = [1,1,13,3,1] — números 1-based por
+// nivel; level = path.length - 1. La numeración NUNCA se guarda, se calcula en
+// cada llamada (mismo principio que buildActivityIndex de arriba).
+//
+// collapsedIds: Set<id> de actividades cuyos hijos se omiten del resultado
+// (permanece la propia fila, se ocultan sus descendientes) — usado por
+// HierarchyTable para colapsar ramas sin perder el resto del árbol.
+export function flattenTree(activities, { collapsedIds } = {}) {
+  const { rootIds, childrenOf } = buildActivityTree(activities);
+  const byId = new Map((Array.isArray(activities) ? activities : []).map(a => [a.id, a]));
+  const collapsed = collapsedIds instanceof Set ? collapsedIds : new Set();
+  const out = [];
+
+  const visit = (id, path) => {
+    const activity = byId.get(id);
+    if (!activity) return;
+    out.push({ activity, level: path.length - 1, path });
+    if (collapsed.has(id)) return;
+    const children = childrenOf.get(id) || [];
+    children.forEach((child, i) => visit(child.id, [...path, i + 1]));
+  };
+
+  rootIds.forEach((id, i) => visit(id, [i + 1]));
+  return out;
+}
+
+export function formatHierarchyNumber(path) {
+  return Array.isArray(path) ? path.join(".") : "";
+}
+
+// Actividades sin hijos — las únicas que cuentan en totales/métricas del
+// proyecto. Un padre con subtareas es un contenedor organizativo, no una
+// unidad de trabajo medible: contarlo aparte infla el total (un padre con 5
+// hijas terminadas aparecería como 6 tareas, no 5).
+//
+// No usa buildActivityTree (evita reconstruir el árbol completo cuando solo
+// hace falta filtrar). Un parent_id huérfano (apunta a un id inexistente en
+// el array) no excluye a nadie — esa actividad se trata como hoja.
+export function leafActivities(activities) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const parentIds = new Set(acts.map(a => a.parent_id).filter(id => id != null));
+  return acts.filter(a => !parentIds.has(a.id));
+}
+
+// Un padre no puede marcarse como completado mientras tenga AL MENOS UNA
+// subtarea (directa o indirecta) que no esté completada. Evita que el estado
+// visual de un contenedor mienta sobre el trabajo real pendiente debajo.
+//
+// Recorre TODA la descendencia (no solo hijos directos): un abuelo con un
+// nieto pendiente también queda bloqueado, aunque su hijo directo ya esté
+// completado. Una hoja (sin descendientes) siempre puede completarse.
+export function canMarkCompleted(activityId, activities, taskStatus) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const completed = new Set((taskStatus && Array.isArray(taskStatus.completed)) ? taskStatus.completed : []);
+  const { childrenOf } = buildActivityTree(acts);
+
+  const descendientesPendientes = (id) => {
+    const children = childrenOf.get(id) || [];
+    return children.some(child => !completed.has(child.id) || descendientesPendientes(child.id));
+  };
+
+  return !descendientesPendientes(activityId);
+}
+
+// Progreso agregado de un nodo con hijos: promedio simple de los hijos DIRECTOS,
+// recursivo (si un hijo también tiene hijos, su valor ya viene agregado). Nodos
+// sin hijos devuelven su propio act.progress manual tal cual. Puramente derivado
+// para presentación — nunca se persiste en el dato de la actividad.
+export function aggregatedProgress(activity, childrenOf) {
+  const children = childrenOf.get(activity.id) || [];
+  if (!children.length) return Math.max(0, Math.min(100, Number(activity.progress) || 0));
+  const sum = children.reduce((s, child) => s + aggregatedProgress(child, childrenOf), 0);
+  return Math.round(sum / children.length);
+}
+
+// Protege contra mover una tarea a un descendiente suyo (crearía un ciclo).
+// Devuelve true si asignar newParentId como padre de activityId formaría un ciclo
+// (incluye el caso trivial newParentId === activityId).
+export function wouldCreateCycle(activities, activityId, newParentId) {
+  if (newParentId == null) return false;
+  if (newParentId === activityId) return true;
+  const byId = new Map((Array.isArray(activities) ? activities : []).map(a => [a.id, a]));
+  let cur = newParentId;
+  const seen = new Set();
+  while (cur != null) {
+    if (cur === activityId) return true;
+    if (seen.has(cur)) return false; // ciclo preexistente ajeno a este movimiento — no lo agrava
+    seen.add(cur);
+    cur = byId.get(cur)?.parent_id ?? null;
+  }
+  return false;
 }
 
 export const createDefaultMilestone  = () => ({ activity: "", date: "", note: "" });
@@ -216,12 +512,79 @@ export function engineerName(index, id) {
   return index.get(id) ?? id ?? "";
 }
 
+// "Cristian Mauricio Rodriguez" → "Cristian M." — usado donde el espacio es
+// reducido (celdas de tabla) y basta con distinguir personas por su primer
+// nombre + inicial. Un solo nombre (sin segunda palabra) se devuelve tal cual.
+export function shortEngineerName(fullName) {
+  const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || "";
+  return `${parts[0]} ${parts[1][0].toUpperCase()}.`;
+}
+
 export function genEngineerTaskId() {
   return "etask_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
 export function createEngineerTask(description = "") {
-  return { id: genEngineerTaskId(), description, status: "not_started", date: "" };
+  // Modelo rico, análogo a una actividad de proyecto pero con estado + fechas
+  // dentro de la propia tarea (no en un task_status externo).
+  // history: fechas de las 3 transiciones de estado (added = inscrita).
+  // Se auto-registran al cambiar de estado. `date` se conserva por
+  // compatibilidad con tareas creadas antes de que existiera el historial.
+  return {
+    id: genEngineerTaskId(),
+    description,
+    status: "not_started",
+    date: "",
+    history: { added: getToday(), in_progress: "", completed: "" },
+    detail:        "",
+    objectives:    "",
+    solution:      "",
+    start_date:    "",
+    due_date:      "",
+    progress:      0,
+    planned_hours: 0,
+    checklist:     [],
+    notes:         [],
+    key_dates:     [],
+  };
+}
+
+// Normaliza una tarea (posiblemente antigua) al modelo rico completo, sin perder
+// datos existentes. Úsalo al abrir el modal para garantizar todos los campos.
+export function normalizeEngineerTask(task) {
+  const t = task || {};
+  return {
+    id:            t.id || genEngineerTaskId(),
+    description:   t.description || "",
+    status:        t.status || "not_started",
+    date:          t.date || "",
+    history:       { added: t.date || "", in_progress: "", completed: "", ...(t.history || {}) },
+    detail:        t.detail || "",
+    objectives:    t.objectives || "",
+    solution:      t.solution || "",
+    start_date:    t.start_date || "",
+    due_date:      t.due_date || "",
+    progress:      Number(t.progress) || 0,
+    planned_hours: Number(t.planned_hours) || 0,
+    checklist:     Array.isArray(t.checklist) ? t.checklist : [],
+    notes:         Array.isArray(t.notes)     ? t.notes     : [],
+    key_dates:     Array.isArray(t.key_dates) ? t.key_dates : [],
+  };
+}
+
+// Aplica un cambio de estado a una tarea suelta, auto-registrando la fecha de la
+// transición si es la primera vez que se alcanza ese estado. Devuelve la tarea nueva.
+// Normaliza tareas antiguas que aún no tienen `history`.
+export function applyEngineerTaskStatus(task, newStatus) {
+  const history = { added: "", in_progress: "", completed: "", ...(task.history || {}) };
+  if (!history.added) history.added = task.date || getToday();
+  if (newStatus === "in_progress" && !history.in_progress) history.in_progress = getToday();
+  if (newStatus === "completed") {
+    if (!history.in_progress) history.in_progress = getToday();
+    if (!history.completed)   history.completed   = getToday();
+  }
+  return { ...task, status: newStatus, history };
 }
 
 // ── Reporte ASCII ─────────────────────────────────────────────────────────────
@@ -250,6 +613,21 @@ function resolveIds(index, ids) {
   return (Array.isArray(ids) ? ids : []).filter(Boolean).map(id => activityText(index, id));
 }
 
+// Igual que resolveIds pero anexa " — 60% · 8h" cuando la actividad tiene esos datos.
+// Recibe el array de actividades (objetos) para leer progress/planned_hours.
+function resolveIdsWithMeta(index, ids, acts) {
+  const byId = new Map((Array.isArray(acts) ? acts : []).map(a => [a.id, a]));
+  return (Array.isArray(ids) ? ids : []).filter(Boolean).map(id => {
+    const text = activityText(index, id);
+    const a    = byId.get(id);
+    if (!a) return text;
+    const bits = [];
+    if (Number(a.progress) > 0)      bits.push(`${Math.round(Number(a.progress))}%`);
+    if (Number(a.planned_hours) > 0) bits.push(`${Number(a.planned_hours)}h`);
+    return bits.length ? `${text} — ${bits.join(" · ")}` : text;
+  });
+}
+
 function projectBlock(p, i, engineerIndex) {
   const m        = p.manual_metrics || {};
   const total    = m.total_tasks       || 0;
@@ -260,7 +638,7 @@ function projectBlock(p, i, engineerIndex) {
   const icon     = STATUS_ICONS[p.status]  || "🟡";
   const label    = STATUS_LABELS[p.status] || p.status;
   const blockers = (p.impediments || []).filter(im => im.category === "blocker");
-  const acts     = Array.isArray(p.activities_identified) ? p.activities_identified : [];
+  const acts     = visibleActivities(p.activities_identified); // excluye archivadas de Planner
   const actIndex = buildActivityIndex(acts);
   const actTexts = acts.map(a => a.text || "");
 
@@ -273,6 +651,11 @@ function projectBlock(p, i, engineerIndex) {
   txt += `${col("Avance",22)}${col(pct+"%",18)}${done} completadas · ${wip} en proceso.\n`;
   txt += `${col("Estado de Tareas",22)}${col(`${done} de ${total}`,18)}${pending} no iniciado${pending !== 1 ? "s" : ""}${pending === 0 ? " — todo completado." : "."}\n`;
   txt += `${col("Bloqueantes",22)}${col(blockers.length,18)}${blockers.length === 0 ? "Sin bloqueantes." : blockers[0].description.split("\n")[0]}\n`;
+  const plannedHrs = totalPlannedHours(acts);
+  if (plannedHrs > 0) {
+    const nWithHrs = acts.filter(a => Number(a.planned_hours) > 0).length;
+    txt += `${col("Horas planeadas",22)}${col(plannedHrs+" h",18)}${nWithHrs} actividad${nWithHrs !== 1 ? "es" : ""} con horas estimadas.\n`;
+  }
   txt += `${"─".repeat(72)}\n\n`;
 
   if (p.indicators?.length) {
@@ -319,9 +702,9 @@ function projectBlock(p, i, engineerIndex) {
   if (acts.length) txt += `• Actividades Identificadas:\n${arrToNumbered(actTexts)}\n\n`;
 
   const ts = p.task_status || {};
-  const tsDone = resolveIds(actIndex, ts.completed);
-  const tsWip  = resolveIds(actIndex, ts.in_progress);
-  const tsNot  = resolveIds(actIndex, ts.not_started);
+  const tsDone = resolveIdsWithMeta(actIndex, ts.completed,    acts);
+  const tsWip  = resolveIdsWithMeta(actIndex, ts.in_progress,  acts);
+  const tsNot  = resolveIdsWithMeta(actIndex, ts.not_started,  acts);
   if (tsDone.length || tsWip.length || tsNot.length) {
     txt += `ESTADO DE ACTIVIDADES\n${"─".repeat(60)}\n`;
     if (tsDone.length) { txt += `✅ Completadas (${tsDone.length}):\n${arrToBullets(tsDone)}\n\n`; }
@@ -340,7 +723,10 @@ function projectBlock(p, i, engineerIndex) {
     txt += "\n";
   }
 
-  if (p.show_closing_fields) {
+  // weekly_achievements/next_week_plan se calculan automáticamente (ver
+  // NextWeekPlanningSection en EditView.jsx) — ya no dependen del antiguo
+  // checkbox show_closing_fields, cada bloque se omite solo si queda vacío.
+  {
     const ach  = resolveIds(actIndex, p.weekly_achievements);
     const plan = resolveIds(actIndex, p.next_week_plan);
     if (ach.length)  txt += `✓ Qué se hizo esta semana:\n${arrToBullets(ach)}\n\n`;
@@ -423,7 +809,7 @@ export function generateAssignmentsByEngineer(projects, engineerCatalog, weekLab
 
   projects.forEach(p => {
     const projectName = p.project_name || "Proyecto sin nombre";
-    (p.activities_identified || []).forEach(a => {
+    visibleActivities(p.activities_identified).forEach(a => {
       const assignees = a.assigned_engineers || [];
       if (assignees.length === 0) {
         unassigned.push({ project: projectName, text: a.text });
@@ -475,7 +861,7 @@ export function generateAssignmentsMarkdown(projects, weekLabel) {
 
   projects.forEach((p, idx) => {
     md += `## Proyecto: ${p.project_name || `Proyecto ${idx + 1}`}\n`;
-    const acts = p.activities_identified || [];
+    const acts = visibleActivities(p.activities_identified);
     if (acts.length === 0) {
       md += `*Sin actividades registradas.*\n\n`;
       return;
@@ -504,7 +890,7 @@ export function generateAssignmentsPlainText(projects, weekLabel) {
   projects.forEach((p, idx) => {
     txt += `Proyecto: ${p.project_name || `Proyecto ${idx + 1}`}\n`;
     txt += `--------------------------------------------------------------------------------\n`;
-    const acts = p.activities_identified || [];
+    const acts = visibleActivities(p.activities_identified);
     if (acts.length === 0) {
       txt += `  Sin actividades registradas.\n\n`;
       return;

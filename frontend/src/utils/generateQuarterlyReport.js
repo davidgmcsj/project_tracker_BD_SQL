@@ -7,11 +7,12 @@
 //   4. Se reempaqueta y descarga el .docx con formato institucional intacto
 
 import JSZip from "jszip";
+import { API_BASE, authHeaders } from "./api.js";
 
 const MONTHS     = ["enero","febrero","marzo","abril","mayo","junio","julio",
                     "agosto","septiembre","octubre","noviembre","diciembre"];
 const MONTHS_CAP = MONTHS.map(m => m.charAt(0).toUpperCase() + m.slice(1));
-const API_BASE   = import.meta.env.VITE_API_URL || "";
+// API_BASE viene de utils/api.js — fuente única (antes duplicado en 5 archivos).
 
 function fmtDateLong(dateStr) {
   if (!dateStr) return "—";
@@ -196,7 +197,7 @@ export async function generateQuarterlyReport(project, engineerCatalog = [], sig
   try {
     const res = await fetch(`${API_BASE}/api/generate-report`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body:    JSON.stringify({ project, quarterLabel, engineerCatalog }),
       ...(signal ? { signal } : {}),
     });
