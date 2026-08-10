@@ -75,38 +75,15 @@ const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusW
 })();
 
 // ── Configuración ─────────────────────────────────────────────────────────────
+// La resolución del directorio de datos y los helpers de lectura/escritura
+// viven en lib/json-store.cjs. OJO: ese módulo ancla la ruta al directorio del
+// backend con path.join(__dirname, ".."), porque su propio __dirname es
+// backend/lib — usarlo a secas escribiría los datos en el sitio equivocado.
 
-function getDataDir() {
-  // En Azure App Service Linux, HOME=/home y /home es el único directorio
-  // con escritura persistente entre reinicios. En local, usa el directorio del proyecto.
-  return process.env.HOME === "/home" ? "/home/data" : __dirname;
-}
+const { DATA_DIR, DATA_FILE, HISTORY_FILE, readJson, writeJson } = require("./lib/json-store.cjs");
+const { errorBody, asyncHandler, requireModulo } = require("./middleware/error-handler.cjs");
 
-const DATA_DIR     = getDataDir();
-const DATA_FILE    = path.join(DATA_DIR, "data.json");
-const HISTORY_FILE = path.join(DATA_DIR, "history.json");
-const PORT         = process.env.PORT || 3002;
-
-// ── Helpers de archivo ────────────────────────────────────────────────────────
-
-async function readJson(file, fallback) {
-  try { return JSON.parse(await fs.readFile(file, "utf-8")); }
-  catch { return fallback; }
-}
-
-async function writeJson(file, data) {
-  await fs.writeFile(file, JSON.stringify(data, null, 2));
-}
-
-// Construye el cuerpo de una respuesta de error: el mensaje de error interno
-// (e.message) solo se incluye fuera de producción, para no filtrar detalles
-// de SQL/filesystem a clientes no confiables. El detalle completo siempre
-// queda en el log del servidor vía console.error, sin importar el ambiente.
-function errorBody(publicMessage, e) {
-  return process.env.NODE_ENV === "production"
-    ? { error: publicMessage }
-    : { error: publicMessage, detail: e.message };
-}
+const PORT = process.env.PORT || 3002;
 
 // toArray viene de utils.cjs
 
@@ -361,16 +338,7 @@ app.use(cors({
 // importan para detectar abuso: fallos de auth y límites de rate excedidos.
 // No reemplaza el console.log/error operacional existente en el resto del
 // archivo — es un canal aparte, específico para auditoría de seguridad.
-function logSecurityEvent(event, req, extra = {}) {
-  console.warn(JSON.stringify({
-    ts:     new Date().toISOString(),
-    event,
-    ip:     req.ip || req.socket?.remoteAddress || "unknown",
-    path:   req.originalUrl || req.path,
-    method: req.method,
-    ...extra,
-  }));
-}
+const { logSecurityEvent } = require("./middleware/security-log.cjs");
 
 // ── Autenticación: API key compartida ─────────────────────────────────────────
 // Herramienta interna: todos los clientes autorizados comparten la misma clave,
