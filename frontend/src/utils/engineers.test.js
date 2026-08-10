@@ -160,7 +160,10 @@ test("getLiveWeekActivitiesInProject devuelve el mismo shape que getEngineerActi
     status_history: { a1: { added: "2026-08-01" } },
   }, "e1");
   const [row] = getLiveWeekActivitiesInProject("e1", p, TODAY);
-  assert.deepEqual(row, { id: "a1", text: "a1", position: 1, history: { added: "2026-08-01" } });
+  // position es el número jerárquico "N"/"N.M…" (formatHierarchyNumber), un
+  // string desde que buildActivityIndex numera por árbol y no por posición
+  // plana — ver formulas.test.js "numeración jerárquica". Sin padre, es "1".
+  assert.deepEqual(row, { id: "a1", text: "a1", position: "1", history: { added: "2026-08-01" } });
 });
 
 test("getLiveWeekActivitiesInProject sin actividades esta semana devuelve vacío", () => {

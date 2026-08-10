@@ -4,7 +4,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday, leafActivities, canMarkCompleted } from "./formulas.js";
+import {
+  projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday,
+  leafActivities, canMarkCompleted, buildActivityIndex, activityLabel, activityText,
+} from "./formulas.js";
 
 // ── toISODate ─────────────────────────────────────────────────────────────────
 
@@ -231,4 +234,69 @@ test("canMarkCompleted permite el abuelo cuando toda la cadena de descendientes 
     { id: "nieto",  parent_id: "padre" },
   ];
   assert.equal(canMarkCompleted("abuelo", acts, { completed: ["padre", "nieto"] }), true);
+});
+
+// ── buildActivityIndex / activityLabel — numeración jerárquica ────────────────
+// Antes numeraba por posición en el array plano (1, 2, 3…), sin distinguir
+// padres de hijas — el Kanban mostraba "2. Anexo Técnico" para una actividad
+// que el Cronograma (jerárquico) mostraba como "1.1". Ahora ambos derivan del
+// mismo árbol (flattenTree), así que el número SIEMPRE coincide entre
+// pantallas: es la única fuente de numeración en toda la app.
+
+test("buildActivityIndex numera raíces sin jerarquía como 1, 2, 3…", () => {
+  const acts = [{ id: "a", text: "Uno", parent_id: null }, { id: "b", text: "Dos", parent_id: null }];
+  const index = buildActivityIndex(acts);
+  assert.equal(activityLabel(index, "a"), "1. Uno");
+  assert.equal(activityLabel(index, "b"), "2. Dos");
+});
+
+test("buildActivityIndex numera una subtarea como N.M, no como su posición en el array", () => {
+  // "Anexo Técnico" es la 2da del array mas tiene padre "Nueva actividad" (1ra):
+  // debe salir "1.1", nunca "2" — el caso exacto reportado por el usuario.
+  const acts = [
+    { id: "padre", text: "Nueva actividad",  parent_id: null },
+    { id: "hijo",  text: "Anexo Técnico GTH", parent_id: "padre" },
+  ];
+  const index = buildActivityIndex(acts);
+  assert.equal(activityLabel(index, "padre"), "1. Nueva actividad");
+  assert.equal(activityLabel(index, "hijo"),  "1.1. Anexo Técnico GTH");
+});
+
+test("buildActivityIndex numera una jerarquía de 3 niveles como N.M.O", () => {
+  const acts = [
+    { id: "abuelo", text: "Abuelo", parent_id: null },
+    { id: "padre",  text: "Padre",  parent_id: "abuelo" },
+    { id: "nieto",  text: "Nieto",  parent_id: "padre" },
+  ];
+  const index = buildActivityIndex(acts);
+  assert.equal(activityLabel(index, "nieto"), "1.1.1. Nieto");
+});
+
+test("buildActivityIndex numera varias hijas del mismo padre en el orden de sequence_order", () => {
+  const acts = [
+    { id: "padre", text: "Padre", parent_id: null },
+    { id: "h2",    text: "Hija B", parent_id: "padre", sequence_order: 1 },
+    { id: "h1",    text: "Hija A", parent_id: "padre", sequence_order: 0 },
+  ];
+  const index = buildActivityIndex(acts);
+  assert.equal(activityLabel(index, "h1"), "1.1. Hija A");
+  assert.equal(activityLabel(index, "h2"), "1.2. Hija B");
+});
+
+test("activityText resuelve el texto plano sin el número", () => {
+  const acts = [{ id: "a", text: "Solo texto", parent_id: null }];
+  const index = buildActivityIndex(acts);
+  assert.equal(activityText(index, "a"), "Solo texto");
+});
+
+test("activityLabel/activityText devuelven el id tal cual ante una referencia huérfana", () => {
+  const index = buildActivityIndex([]);
+  assert.equal(activityText(index, "id-inexistente"), "id-inexistente");
+  assert.equal(activityLabel(index, "id-inexistente"), "id-inexistente");
+});
+
+test("buildActivityIndex con array vacío o no-array no lanza", () => {
+  assert.equal(buildActivityIndex([]).size, 0);
+  assert.equal(buildActivityIndex(null).size, 0);
+  assert.equal(buildActivityIndex(undefined).size, 0);
 });

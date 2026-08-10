@@ -258,11 +258,21 @@ export function avgActivityProgress(activities) {
 }
 
 // Construye un índice id → { text, position } a partir de activities_identified.
-// "position" es siempre la posición ACTUAL (1-based), nunca se guarda.
+// "position" es el número jerárquico "N" o "N.M.O…" (ver formatHierarchyNumber),
+// nunca se guarda, se recalcula en cada llamada — misma fuente que usa el
+// Cronograma (HierarchyTable, vía flattenTree).
+//
+// Antes numeraba por posición en el array plano (1, 2, 3…), ignorando quién
+// era padre de quién: el Kanban podía mostrar "2. Anexo Técnico" para la misma
+// actividad que el Cronograma mostraba como "1.1" — dos numeraciones distintas
+// para el mismo dato. Ahora ambas vistas derivan del mismo árbol, así que el
+// número SIEMPRE coincide en toda la app.
 export function buildActivityIndex(activities) {
   const map = new Map();
-  (Array.isArray(activities) ? activities : []).forEach((a, i) => {
-    if (a && a.id != null) map.set(a.id, { text: a.text || "", position: i + 1 });
+  flattenTree(activities).forEach(({ activity, path }) => {
+    if (activity && activity.id != null) {
+      map.set(activity.id, { text: activity.text || "", position: formatHierarchyNumber(path) });
+    }
   });
   return map;
 }
@@ -272,7 +282,8 @@ export function activityText(index, id) {
   return index.get(id)?.text ?? id ?? "";
 }
 
-// Resuelve un id a su label numerado "N. texto" para mostrar en reportes/listas.
+// Resuelve un id a su label numerado "N. texto" o "N.M. texto" para mostrar en
+// Kanban/reportes/listas — mismo número jerárquico que el Cronograma.
 export function activityLabel(index, id) {
   const entry = index.get(id);
   return entry ? `${entry.position}. ${entry.text}` : (id || "");
