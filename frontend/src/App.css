@@ -2662,6 +2662,16 @@
 /* ═══ SELECTORES INLINE PARA ACTIVIDADES ═══ */
 .list-field-draft--activity {
   width: 100%;
+  /* 5 controles (texto, responsable, estado, "es subtarea de", confirmar/
+     cancelar) no caben en una fila en pantallas angostas. Sin wrap se
+     desborda horizontalmente en vez de acomodarse en varias líneas. */
+  flex-wrap: wrap;
+}
+/* El campo de texto ocupa toda la fila superior cuando envuelve, para que
+   los controles secundarios (responsable/estado/padre/confirmar) queden
+   agrupados debajo en vez de partirse en cualquier punto intermedio. */
+.list-field-draft--activity .list-field-draft__input {
+  flex-basis: 100%;
 }
 .list-field-draft__select {
   padding: 6px 10px !important;
