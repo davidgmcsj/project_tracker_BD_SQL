@@ -10,15 +10,30 @@
 **Para retomar: leer solo esta sección primero.** El resto del documento es el
 plan original completo (§0-11); esta sección resume qué de eso ya se hizo.
 
+### ⚠️ Cambio de base: todo esto ya está en `main`
+
+`feature/modulo-reportes` (y su descendiente `feature/jerarquia-planner-import`,
+que agregó jerarquía de subtareas / importación de Planner con padres /
+numeración unificada) se mergearon a `main` el 10 de agosto de 2026
+(commit `35230df`). Las 19 migraciones SQL de ese trabajo YA estaban
+aplicadas en la base de datos real antes del merge — se verificó consultando
+`Migraciones_Aplicadas`, no se asumió.
+
+**La refactorización continúa en la rama `refactor/continuacion`, creada
+desde `main` ya actualizado.** Ya no se trabaja sobre `feature/modulo-reportes`.
+
 ### Punto de respaldo
 
 ```bash
-git log --oneline pre-refactor..HEAD   # ver todo lo hecho desde el inicio
-git reset --hard pre-refactor          # volver al estado previo a cualquier cambio
+git log --oneline pre-refactor..feature/modulo-reportes   # historial hasta el merge
+git log --oneline main..refactor/continuacion              # lo hecho después del merge
+git reset --hard main                                       # volver al main recién mergeado
 ```
 
-Rama `feature/modulo-reportes`, todo commiteado y subido a `origin`. Árbol de
-trabajo limpio al cerrar esta sesión.
+`pre-refactor` sigue siendo el respaldo del estado previo a TODA la
+refactorización (antes de agosto), en el árbol de `feature/modulo-reportes`.
+Para deshacer solo el trabajo de `refactor/continuacion`, alcanza con volver a
+`main`.
 
 ### Hecho (11 commits, de `c0f4d9d` a `005e3dc`)
 
@@ -52,8 +67,8 @@ inventados para justificar el trabajo):
    mover a `routes/*.cjs`. Orden ya decidido en §5:
    `diagnostics → ai → users → attachments → engineers → history → quarters → maintenance → projects → auth` (la más delicada, al final, porque de ella depende `req.user`).
 2. **Fase 3**: `db-operations.cjs` (911 líneas) → fachada + 9 repos en `db/`.
-3. **Fase 4**: `EditView.jsx` (2.245 líneas, **sigue sobre el techo de 1.000**) → 14 archivos.
-4. **Fase 7.1**: `App.css` (5.222 líneas, **sigue sobre el techo**) → 14 archivos en `styles/`. Es la más delicada visualmente — requiere comparación de CSS compilado antes/después (método ya documentado en §8bis) y revisión manual en navegador, que el agente no puede hacer.
+3. **Fase 4**: `EditView.jsx` (2.301 líneas al mergear la jerarquía de subtareas, **sigue sobre el techo de 1.000**) → 14 archivos. La feature de jerarquía (selector "Es subtarea de", validación de padres) se sumó DESPUÉS de que se escribiera el diseño original de esta fase — revisar que la división propuesta siga contemplando esas piezas nuevas.
+4. **Fase 7.1**: `App.css` (5.232 líneas, **sigue sobre el techo**) → 14 archivos en `styles/`. Es la más delicada visualmente — requiere comparación de CSS compilado antes/después (método ya documentado en §8bis) y revisión manual en navegador, que el agente no puede hacer.
 5. **Fase 5, 6, 7.2, 7.3**: el resto, menor riesgo.
 
 **Verificación rápida de por dónde vamos** (debe devolver solo `App.css` y `EditView.jsx` hoy):
