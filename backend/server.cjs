@@ -32,47 +32,22 @@ require("dotenv/config");
 const { toArray } = require("./utils.cjs");
 const { computeQuarterStats, buildResetProjects } = require("./quarter-reset.cjs");
 
-const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncActividadesDetalle,
-        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, rebuildDataJsonFromSQL, maxSqlSavedAt,
-        listUsers, createUser, updateUser } = (() => {
-  try {
-    const mod = require("./db-operations.cjs");
-    console.log("[DB] db-operations.cjs cargado correctamente");
-    return mod;
-  } catch (e) {
-    console.error("[DB] Error cargando db-operations.cjs:", e.message);
-    return { getPool: null, saveWeekReportToDB: null, syncEngineerToSQL: null, syncEngineerTaskToSQL: null, deleteEngineerTaskFromSQL: null, syncActividadesDetalle: null,
-             saveAttachmentToDB: null, getAttachmentFromDB: null, deleteAttachmentFromDB: null, rebuildDataJsonFromSQL: null, maxSqlSavedAt: null,
-             listUsers: null, createUser: null, updateUser: null };
-  }
-})();
+// Carga defensiva de los módulos opcionales — ver config/modules.cjs. Antes
+// eran 4 bloques IIFE aquí mismo, cada uno con su lista de nulls a mano; esa
+// lista ya había divergido (le faltaba syncExternalContactToSQL, ver el
+// handler de /api/external-contacts/sync-one).
+const { db, ai, auth, reportsRouter } = require("./config/modules.cjs");
 
-const reportsRouter = (() => {
-  try {
-    return require("./reports/index.cjs");
-  } catch (e) {
-    console.error("[REPORTS] Error cargando reports/index.cjs:", e.message);
-    return null;
-  }
-})();
+const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL,
+        deleteEngineerTaskFromSQL, syncActividadesDetalle, syncExternalContactToSQL,
+        saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
+        rebuildDataJsonFromSQL, maxSqlSavedAt,
+        listUsers, createUser, updateUser } = db;
 
-const { parseCookies, hashPassword, verifyPassword, createSession, getSessionUser, deleteSession, SESSION_COOKIE } = (() => {
-  try {
-    return require("./auth.cjs");
-  } catch (e) {
-    console.error("[AUTH] Error cargando auth.cjs:", e.message);
-    return { parseCookies: null, hashPassword: null, verifyPassword: null, createSession: null, getSessionUser: null, deleteSession: null, SESSION_COOKIE: "sid" };
-  }
-})();
+const { parseCookies, hashPassword, verifyPassword, createSession,
+        getSessionUser, deleteSession, SESSION_COOKIE } = auth;
 
-const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = (() => {
-  try {
-    return require("./gemini-report.cjs");
-  } catch (e) {
-    console.error("[AI] Error cargando gemini-report.cjs:", e.message);
-    return { generateReportWithAI: null, generateStatusSummaryWithAI: null, generateGlobalStatusWithAI: null };
-  }
-})();
+const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusWithAI } = ai;
 
 // ── Configuración ─────────────────────────────────────────────────────────────
 // La resolución del directorio de datos y los helpers de lectura/escritura
@@ -83,7 +58,9 @@ const { generateReportWithAI, generateStatusSummaryWithAI, generateGlobalStatusW
 const { DATA_DIR, DATA_FILE, HISTORY_FILE, readJson, writeJson } = require("./lib/json-store.cjs");
 const { errorBody, asyncHandler, requireModulo } = require("./middleware/error-handler.cjs");
 
-const PORT = process.env.PORT || 3002;
+// config/env.cjs valida FRONTEND_URL y API_KEY al cargarse: en producción hace
+// process.exit(1) si faltan, antes de que la app acepte peticiones.
+const { isProduction, API_KEY, PORT, FRONTEND_URL } = require("./config/env.cjs");
 
 // toArray viene de utils.cjs
 
@@ -321,15 +298,9 @@ const attachmentJsonParser = express.json({ limit: "14mb" }); // 10MB archivo + 
 // En producción es obligatorio (el servidor no arranca sin él); en desarrollo
 // local, si no está definido, cae a localhost:5173 (puerto por defecto de Vite).
 const cors = require("cors");
-const isProduction = process.env.NODE_ENV === "production";
-
-if (isProduction && !process.env.FRONTEND_URL) {
-  console.error("[FATAL] FRONTEND_URL debe estar definido en producción (NODE_ENV=production).");
-  process.exit(1);
-}
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: FRONTEND_URL,
   credentials: true, // necesario para que el navegador mande/reciba la cookie de sesión (Fase 9)
 }));
 
@@ -346,17 +317,8 @@ const { logSecurityEvent } = require("./middleware/security-log.cjs");
 // se necesitaría un sistema de login completo, fuera del alcance actual.
 //
 // API_KEY debe estar definida en .env. Sin ella, el servidor no arranca en
-// producción (falla cerrado). En desarrollo, si falta, se loguea una advertencia
-// y la API queda abierta — solo para no bloquear el flujo local de un dev nuevo.
-const API_KEY = process.env.API_KEY || "";
-
-if (!API_KEY) {
-  if (isProduction) {
-    console.error("[FATAL] API_KEY debe estar definida en producción (NODE_ENV=production).");
-    process.exit(1);
-  }
-  console.warn("[WARN] API_KEY no definida — la API queda sin autenticación (solo aceptable en desarrollo local).");
-}
+// producción (falla cerrado) — la validación vive en config/env.cjs y corre al
+// cargar ese módulo, antes de que la app acepte peticiones.
 
 function requireApiKey(req, res, next) {
   if (!API_KEY) return next(); // solo en desarrollo, ver advertencia arriba
@@ -619,10 +581,6 @@ app.post("/api/projects", async (req, res) => {
 // ── API: Sincronización de colaboradores externos ─────────────────────────────
 
 app.post("/api/external-contacts/sync-one", async (req, res) => {
-  const { syncExternalContactToSQL } = (() => {
-    try { return require("./db-operations.cjs"); } catch { return {}; }
-  })();
-
   if (!syncExternalContactToSQL) {
     return res.status(503).json({ error: "Módulo de BD no disponible" });
   }
