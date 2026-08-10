@@ -1,205 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
-import { uploadAttachment, deleteAttachment, downloadAttachment } from "../utils/storage";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection, SubtasksSection } from "./ActivityFormSections";
-import { ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
-
-// ── Constantes ────────────────────────────────────────────────────────────────
-
-// Fuente única del vocabulario de estados (utils/filtroOpciones.js).
-const STATUS_OPTIONS = ESTADOS_ACTIVIDAD_OPERACIONAL;
-
-// Lista de horas planeadas: 0 (sin definir), 0.5, y luego de 1 en 1 hasta 40.
-const HOURS_OPTIONS = [0, 0.5, ...Array.from({ length: 40 }, (_, i) => i + 1)];
-
-// Redondea un número de horas a la opción más cercana disponible en HOURS_OPTIONS.
-function closestHoursOption(hours) {
-  return HOURS_OPTIONS.reduce((best, opt) =>
-    Math.abs(opt - hours) < Math.abs(best - hours) ? opt : best
-  , HOURS_OPTIONS[0]);
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getActivityStatus(taskStatus, actId) {
-  if (!taskStatus) return "not_started";
-  if ((taskStatus.completed   || []).includes(actId)) return "completed";
-  if ((taskStatus.in_progress || []).includes(actId)) return "in_progress";
-  if ((taskStatus.not_started || []).includes(actId)) return "not_started";
-  return "not_started";
-}
-
-// ── Adjuntos ──────────────────────────────────────────────────────────────────
-
-function formatBytes(n) {
-  if (!n) return "0 B";
-  const k = 1024, units = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(n) / Math.log(k));
-  return `${(n / Math.pow(k, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
-}
-
-function fileIcon(mime = "", name = "") {
-  const m = (mime || "").toLowerCase();
-  const ext = (name.split(".").pop() || "").toLowerCase();
-  if (m.startsWith("image/")) return "🖼️";
-  if (m === "application/pdf" || ext === "pdf") return "📕";
-  if (m.includes("word") || ["doc", "docx"].includes(ext)) return "📘";
-  if (m.includes("sheet") || m.includes("excel") || ["xls", "xlsx", "csv"].includes(ext)) return "📗";
-  if (m.includes("zip") || ["zip", "rar", "7z"].includes(ext)) return "🗜️";
-  return "📎";
-}
-
-function AttachmentsSection({ items, activityId, projectId, onChange }) {
-  const [busy, setBusy]   = useState(false);
-  const [error, setError] = useState("");
-  const inputRef = useRef(null);
-
-  const MAX_BYTES = 10 * 1024 * 1024;
-
-  const handleFiles = async (fileList) => {
-    setError("");
-    const files = Array.from(fileList || []);
-    if (!files.length) return;
-
-    for (const file of files) {
-      if (file.size > MAX_BYTES) {
-        setError(`"${file.name}" supera el límite de 10 MB.`);
-        continue;
-      }
-      setBusy(true);
-      try {
-        const meta = await uploadAttachment(file, {
-          appActividadID: activityId,
-          proyectoAppID:  projectId,
-        });
-        onChange([...items, meta]);
-      } catch (e) {
-        setError(`No se pudo subir "${file.name}". ${e.message || ""}`);
-      } finally {
-        setBusy(false);
-      }
-    }
-    if (inputRef.current) inputRef.current.value = "";
-  };
-
-  const handleRemove = async (att) => {
-    setError("");
-    try {
-      await deleteAttachment(att.id);
-    } catch {
-      // aunque falle el borrado en SQL, lo quitamos de la lista local
-    }
-    onChange(items.filter(a => a.id !== att.id));
-  };
-
-  const handleDownload = async (att) => {
-    setError("");
-    try {
-      await downloadAttachment(att.id, att.filename);
-    } catch {
-      setError(`No se pudo descargar "${att.filename}".`);
-    }
-  };
-
-  return (
-    <div className="adm-section">
-      <div className="adm-section__header">
-        <span className="adm-section__title">Adjuntos</span>
-        <button
-          type="button"
-          className="adm-add-btn"
-          onClick={() => inputRef.current?.click()}
-          disabled={busy}
-        >
-          {busy ? "Subiendo…" : "+ Subir archivo"}
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          style={{ display: "none" }}
-          onChange={e => handleFiles(e.target.files)}
-        />
-      </div>
-
-      {error && <p className="adm-attach-error">{error}</p>}
-
-      {items.length > 0 ? (
-        <ul className="adm-attach-list">
-          {items.map(att => (
-            <li key={att.id} className="adm-attach-item">
-              <span className="adm-attach-item__icon">{fileIcon(att.mime, att.filename)}</span>
-              <button
-                type="button"
-                className="adm-attach-item__name adm-attach-item__name--link"
-                onClick={() => handleDownload(att)}
-                title="Descargar"
-              >
-                {att.filename}
-              </button>
-              <span className="adm-attach-item__size">{formatBytes(att.size)}</span>
-              <button
-                type="button"
-                className="adm-attach-item__remove"
-                onClick={() => handleRemove(att)}
-                title="Eliminar adjunto"
-              >✕</button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        !busy && <p className="adm-empty-hint">Sin archivos adjuntos. Máx. 10 MB por archivo.</p>
-      )}
-    </div>
-  );
-}
-
-// ── Detección de cambios ──────────────────────────────────────────────────────
-
-function hasChanges(activity, local, originalHistory) {
-  if ((activity.text        || "")      !== local.text)        return true;
-  if ((activity.start_date  || "")      !== local.start_date)  return true;
-  if ((activity.due_date    || "")      !== local.due_date)    return true;
-  if ((activity.description || "")      !== local.description) return true;
-  if ((activity.objectives  || "")      !== local.objectives)  return true;
-  if ((activity.solution    || "")      !== local.solution)    return true;
-  if ((Number(activity.progress)      || 0) !== local.progress)      return true;
-  if ((Number(activity.planned_hours) || 0) !== local.planned_hours) return true;
-  if (JSON.stringify(activity.assigned_engineers || []) !== JSON.stringify(local.assigned_engineers)) return true;
-  if (JSON.stringify(activity.checklist  || []) !== JSON.stringify(local.checklist))  return true;
-  if (JSON.stringify(activity.notes      || []) !== JSON.stringify(local.notes))      return true;
-  if (JSON.stringify(activity.key_dates  || []) !== JSON.stringify(local.key_dates))  return true;
-  const oh = originalHistory || {};
-  if ((oh.added || "") !== local.history.added)             return true;
-  if ((oh.in_progress || "") !== local.history.in_progress) return true;
-  if ((oh.completed || "") !== local.history.completed)     return true;
-  return false;
-}
-
-// ── Modal de confirmación de cierre ──────────────────────────────────────────
-
-function DiscardConfirmDialog({ onSaveAndClose, onDiscard, onCancel }) {
-  return (
-    <div className="adm-confirm-overlay">
-      <div className="adm-confirm-dialog">
-        <p className="adm-confirm-dialog__msg">
-          Tienes cambios sin guardar. ¿Qué deseas hacer?
-        </p>
-        <div className="adm-confirm-dialog__actions">
-          <button type="button" className="adm-confirm-btn adm-confirm-btn--cancel"  onClick={onCancel}>
-            Seguir editando
-          </button>
-          <button type="button" className="adm-confirm-btn adm-confirm-btn--discard" onClick={onDiscard}>
-            Descartar cambios
-          </button>
-          <button type="button" className="adm-confirm-btn adm-confirm-btn--save"    onClick={onSaveAndClose}>
-            Guardar y cerrar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { STATUS_OPTIONS, HOURS_OPTIONS, closestHoursOption, getActivityStatus, hasChanges } from "./activity-detail/shared";
+import AttachmentsSection from "./activity-detail/AttachmentsSection";
+import DiscardConfirmDialog from "./activity-detail/DiscardConfirmDialog";
 
 // ── Modal principal ───────────────────────────────────────────────────────────
 
@@ -297,14 +101,13 @@ export default function ActivityDetailModal({
     const onKey = (e) => { if (e.key === "Escape") requestClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty]);
 
   // Click en overlay
   const handleOverlayClick = (e) => {
     if (e.target === overlayRef.current) requestClose();
   };
-
-  const assigned = activity.assigned_engineers || [];
 
   // Sugerencias automáticas
   const checklistTotal = local.checklist.length;
