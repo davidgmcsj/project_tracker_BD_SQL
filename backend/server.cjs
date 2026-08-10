@@ -27,10 +27,15 @@ const express = require("express");
 const http    = require("http");
 const fs      = require("fs").promises;
 const path    = require("path");
-const crypto  = require("crypto");
 require("dotenv/config");
 const { toArray } = require("./utils.cjs");
 const { computeQuarterStats, buildResetProjects } = require("./quarter-reset.cjs");
+
+// Middlewares extraídos (Fase 2.3). El ORDEN en que se montan más abajo es
+// parte del contrato de seguridad — ver los comentarios de cada módulo.
+const { requireApiKey }                    = require("./middleware/api-key.cjs");
+const { montarRateLimits }                 = require("./middleware/rate-limits.cjs");
+const { crearResolverSesion, requireAdmin } = require("./middleware/session.cjs");
 
 // Carga defensiva de los módulos opcionales — ver config/modules.cjs. Antes
 // eran 4 bloques IIFE aquí mismo, cada uno con su lista de nulls a mano; esa
@@ -320,19 +325,6 @@ const { logSecurityEvent } = require("./middleware/security-log.cjs");
 // producción (falla cerrado) — la validación vive en config/env.cjs y corre al
 // cargar ese módulo, antes de que la app acepte peticiones.
 
-function requireApiKey(req, res, next) {
-  if (!API_KEY) return next(); // solo en desarrollo, ver advertencia arriba
-  const provided = req.headers["x-api-key"] || "";
-  const a = Buffer.from(String(provided));
-  const b = Buffer.from(API_KEY);
-  const valid = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!valid) {
-    logSecurityEvent("auth_failed", req);
-    return res.status(401).json({ error: "No autorizado" });
-  }
-  next();
-}
-
 app.use("/api", requireApiKey);
 
 // Body parser: límite pequeño para toda la API excepto /api/attachments/upload,
@@ -349,56 +341,10 @@ app.use((req, res, next) => {
 // las operaciones destructivas de trimestre reciben límites propios y más
 // estrictos que el resto de la API, ya que cada llamada tiene costo real
 // (dinero en el caso de IA, pérdida de datos en el caso de quarter-reset).
-const rateLimit = require("express-rate-limit");
-
-// handler común: loguea el evento antes de responder con el mensaje del limiter.
-function rateLimitHandler(event) {
-  return (req, res, next, options) => {
-    logSecurityEvent(event, req);
-    res.status(options.statusCode).json(options.message);
-  };
-}
-
-const aiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Demasiadas solicitudes de generación con IA, intenta de nuevo más tarde" },
-  handler: rateLimitHandler("rate_limit_ai_exceeded"),
-});
-
-const destructiveLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hora
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Demasiadas operaciones destructivas, intenta de nuevo más tarde" },
-  handler: rateLimitHandler("rate_limit_destructive_exceeded"),
-});
-
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Demasiadas solicitudes, intenta de nuevo más tarde" },
-  handler: rateLimitHandler("rate_limit_general_exceeded"),
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10, // login de humanos, no de scripts — bajo a propósito para frenar fuerza bruta
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Demasiados intentos de inicio de sesión, intenta de nuevo más tarde" },
-  handler: rateLimitHandler("rate_limit_auth_exceeded"),
-});
-
-app.use("/api", generalLimiter);
-app.use(["/api/generate-report", "/api/project-status", "/api/generate-global-status"], aiLimiter);
-app.use(["/api/quarter-reset", "/api/clean-stats"], destructiveLimiter);
-app.use("/api/auth/login", authLimiter);
+//
+// Los 4 limitadores viven en middleware/rate-limits.cjs. Se montan aquí, tras
+// requireApiKey y el body parser, y antes de la resolución de sesión.
+montarRateLimits(app);
 
 // ── Login por base de datos (Fase 9 revisada) ─────────────────────────────
 // Convive con X-API-Key (requireApiKey arriba lo sigue exigiendo en todo
@@ -406,31 +352,13 @@ app.use("/api/auth/login", authLimiter);
 // todavía — cualquier usuario logueado puede hacer lo mismo que ya permite
 // la API_KEY. req.user queda disponible para el resto de rutas (ej. Autor
 // real en notas de proyecto) sin bloquear la request si no hay sesión.
-app.use("/api", async (req, res, next) => {
-  if (!getSessionUser) return next();
-  try {
-    const pool = await getPool();
-    const { [SESSION_COOKIE]: token } = parseCookies(req);
-    req.user = await getSessionUser(pool, token);
-  } catch {
-    req.user = null;
-  }
-  next();
-});
+app.use("/api", crearResolverSesion({ getPool, getSessionUser, parseCookies, SESSION_COOKIE }));
 
 // Capa de autorización (migración 019) — distinta de requireApiKey (que
 // sigue siendo el candado general) y de "estar logueado" (que solo exige
 // req.user truthy). Va DESPUÉS del middleware de arriba porque depende de
 // req.user ya resuelto. Solo se aplica a los endpoints de administración de
 // usuarios — nada más del API cambia de comportamiento.
-function requireAdmin(req, res, next) {
-  if (!req.user) return res.status(401).json({ error: "No autenticado" });
-  if (!req.user.esAdmin) {
-    logSecurityEvent("admin_required_denied", req, { userId: req.user.id });
-    return res.status(403).json({ error: "Requiere rol de administrador" });
-  }
-  next();
-}
 
 app.post("/api/auth/login", jsonParser, async (req, res) => {
   if (!createSession) return res.status(503).json({ error: "Módulo de autenticación no disponible" });
