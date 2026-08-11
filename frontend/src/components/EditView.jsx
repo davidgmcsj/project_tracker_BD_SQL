@@ -507,6 +507,7 @@ export default function EditView({
           taskStatus={p.task_status}
           engineerCatalog={engineerCatalog}
           externalContacts={externalContacts}
+          allActivities={activities}
           onSave={handleActivityModalSave}
           onDelete={handleActivityModalDelete}
           onClose={() => setModalActId(null)}

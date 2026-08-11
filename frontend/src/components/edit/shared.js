@@ -4,8 +4,12 @@
 // Solo vive aquí lo que cruza más de un componente destino. Lo que un solo
 // componente usa se queda en su propio archivo.
 
-import { getToday } from "../../utils/formulas";
+import { getToday, canMarkCompleted } from "../../utils/formulas";
 import { weekRange, nextWeekRange, SITUATION_LABEL } from "../../utils/weekPlanning";
+
+// Fechas que se registran automáticamente por columna — mismo mapa que usa
+// TaskStatusSelector (Kanban) internamente.
+const STATUS_DATE_FIELD = { not_started: null, in_progress: "in_progress", completed: "completed" };
 
 // Semana en curso, calculada una vez al cargar el módulo — suficiente para
 // una sesión de trabajo normal (el caso extremo de dejar la pestaña abierta
@@ -45,6 +49,51 @@ export function buildAssignables(engineerCatalog, externalContacts) {
     id: c.id, name: c.name, company: c.company || "", type: "external",
   }));
   return [...engineers, ...externals];
+}
+
+// Mueve una actividad entre los 3 buckets de task_status (completed/in_progress/
+// not_started), igual que TaskStatusSelector.move() al arrastrar una tarjeta
+// en el Kanban — misma lógica, reutilizada aquí para el selector de estado del
+// modal de detalle (ActivityDetailModal._newStatus). Devuelve el task_status
+// actualizado, o el original sin cambios si el destino es "completed" y la
+// actividad tiene subtareas pendientes (canMarkCompleted).
+export function moveTaskStatus(taskStatus, activities, activityId, toKey) {
+  const ts = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
+  const acts = safeActs(activities);
+  if (toKey === "completed" && !canMarkCompleted(activityId, acts, ts)) return ts;
+
+  const fromKey = ["completed", "in_progress", "not_started"].find(k => safeArr(ts[k]).includes(activityId));
+  const next = {
+    ...ts,
+    completed:   safeArr(ts.completed).filter(id => id !== activityId),
+    in_progress: safeArr(ts.in_progress).filter(id => id !== activityId),
+    not_started: safeArr(ts.not_started).filter(id => id !== activityId),
+  };
+  next[toKey] = [...next[toKey], activityId];
+
+  const cDates = { ...(ts.completed_dates || {}) };
+  if (toKey === "completed") cDates[activityId] = getToday();
+  else if (fromKey === "completed") delete cDates[activityId];
+  next.completed_dates = cDates;
+
+  const hist = { ...(ts.status_history || {}) };
+  if (!hist[activityId]) hist[activityId] = { added: getToday() };
+  const dateField = STATUS_DATE_FIELD[toKey];
+  if (dateField) hist[activityId] = { ...hist[activityId], [dateField]: getToday() };
+  if (fromKey === "in_progress" && toKey !== "in_progress") { const h = { ...hist[activityId] }; delete h.in_progress; hist[activityId] = h; }
+  if (fromKey === "completed"   && toKey !== "completed")   { const h = { ...hist[activityId] }; delete h.completed;   hist[activityId] = h; }
+  next.status_history = hist;
+
+  const act = acts.find(a => a.id === activityId);
+  const completedBy = { ...(ts.completed_by || {}) };
+  if (toKey === "completed" && (act?.assigned_engineers || []).length > 0) {
+    completedBy[activityId] = act.assigned_engineers.map(e => ({ engineer_id: e.id, engineer_name: e.name }));
+  } else if (fromKey === "completed") {
+    delete completedBy[activityId];
+  }
+  next.completed_by = completedBy;
+
+  return next;
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────

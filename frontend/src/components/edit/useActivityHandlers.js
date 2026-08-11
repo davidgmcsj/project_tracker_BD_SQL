@@ -7,7 +7,7 @@ import {
   createDefaultEngineer, createActivity, visibleActivities, leafActivities, getToday,
 } from "../../utils/formulas";
 import { mergePlannerImport, normalizeName } from "../../utils/plannerImport";
-import { safeArr } from "./shared";
+import { safeArr, moveTaskStatus } from "./shared";
 
 // Fechas que se registran automáticamente por columna — mismo mapa que usa
 // TaskStatusSelector internamente, duplicado aquí porque handleUpdateActivityMeta
@@ -303,22 +303,24 @@ export function useActivityHandlers({
   const handleActivityModalSave = (updatedAct) => {
     // _history (fechas de transición Inscrita/En proceso/Completada) viene del modal
     // pero NO vive en la actividad: se escribe en task_status.status_history[actId].
-    const { _history, ...actClean } = updatedAct;
+    // _newStatus (cambio de columna del Kanban) tampoco: mueve el id entre los
+    // buckets de task_status vía moveTaskStatus (misma lógica que el Kanban).
+    const { _history, _newStatus, ...actClean } = updatedAct;
     const newActs = activities.map(a => a.id === actClean.id ? actClean : a);
     let updatedProject = { ...p, activities_identified: newActs };
+    let ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
     if (_history) {
-      const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
       const cleanHist = {};
       if (_history.added)       cleanHist.added       = _history.added;
       if (_history.in_progress) cleanHist.in_progress = _history.in_progress;
       if (_history.completed)   cleanHist.completed   = _history.completed;
-      updatedProject = {
-        ...updatedProject,
-        task_status: {
-          ...ts,
-          status_history: { ...(ts.status_history || {}), [actClean.id]: cleanHist },
-        },
-      };
+      ts = { ...ts, status_history: { ...(ts.status_history || {}), [actClean.id]: cleanHist } };
+    }
+    if (_newStatus) {
+      ts = moveTaskStatus(ts, newActs, actClean.id, _newStatus);
+    }
+    if (_history || _newStatus) {
+      updatedProject = { ...updatedProject, task_status: ts, manual_metrics: buildAutoMetrics(newActs, ts) };
     }
     const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
     onUpdateProjectFull(editingIdx, updatedProject);
@@ -348,14 +350,28 @@ export function useActivityHandlers({
 
   // Crea una subtarea real (actividad hija) y devuelve su id, para abrir
   // inmediatamente la tarjeta de la subtarea recién creada desde la sección
-  // "Subtareas" del modal de detalle.
+  // "Subtareas" del modal de detalle o desde "+ Agregar tarea principal" en
+  // Planificación completa (parentId null). También se usa para agregar
+  // tareas principales, no solo subtareas — el nombre quedó del primer uso.
+  //
+  // Se agrega a task_status.not_started (con su status_history.added) al
+  // crearla — sin esto la actividad quedaba fuera de los tres buckets del
+  // Kanban ("sin clasificar" en vez de nacer directo en "No iniciadas",
+  // que es donde aparece toda actividad creada por cualquier otro camino).
   const handleHierarchyAddChild = (parentId, sequenceOrder) => {
     const newAct = createActivity("Nueva subtarea", parentId, sequenceOrder);
     const newActs = [...activities, newAct];
+    const ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+    const newTs = {
+      ...ts,
+      not_started: [...safeArr(ts.not_started), newAct.id],
+      status_history: { ...(ts.status_history || {}), [newAct.id]: { added: getToday() } },
+    };
     onUpdateProjectFull(editingIdx, {
       ...p,
       activities_identified: newActs,
-      manual_metrics: buildAutoMetrics(newActs, p.task_status || {}),
+      task_status: newTs,
+      manual_metrics: buildAutoMetrics(newActs, newTs),
     });
     return newAct.id;
   };

@@ -2,10 +2,16 @@
 // Único punto de control del calendario: reemplaza a los antiguos "Zoom"
 // (arriba) y "panel de fechas" (abajo), que mostraban la misma idea dos veces.
 
-import { toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS, STATUS_FILTERS, SCOPE_FILTERS } from "./ganttHelpers";
+import { toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS, STATUS_FILTERS, SCOPE_FILTERS, SCOPE_FILTERS_WITH_PARENT } from "./ganttHelpers";
+import ParentTaskFilter from "./ParentTaskFilter";
 
-export default function FilterBar({ range, statusFilter, scopeFilter, counts, onPickCustomRange, onPickPreset, onSetStatusFilter, onSetScopeFilter, onClearCustom, hasCustom, today, weekAnchor, onWeekNav, isWeekPreset }) {
+export default function FilterBar({
+  range, statusFilter, scopeFilter, parentOptions, parentFilter, counts,
+  onPickCustomRange, onPickPreset, onSetStatusFilter, onSetScopeFilter, onSetParentFilter, onClearCustom,
+  hasCustom, today, weekAnchor, onWeekNav, isWeekPreset,
+}) {
   const year = today.getFullYear();
+  const scopeOptions = parentFilter ? SCOPE_FILTERS_WITH_PARENT : SCOPE_FILTERS;
 
   // Al editar un solo extremo a mano, el otro extremo del `range` puede venir
   // todavía del auto-range (si el usuario no había elegido nada explícito) —
@@ -77,8 +83,12 @@ export default function FilterBar({ range, statusFilter, scopeFilter, counts, on
         ))}
 
         <span className="gantt__toolbar-sep" />
+        <span className="gantt-filterbar__label">Tarea padre:</span>
+        <ParentTaskFilter options={parentOptions} selectedId={parentFilter} onSelect={onSetParentFilter} />
+
+        <span className="gantt__toolbar-sep" />
         <span className="gantt-filterbar__label">Mostrar:</span>
-        {SCOPE_FILTERS.map(f => (
+        {scopeOptions.map(f => (
           <button
             key={f.value} type="button"
             className={`gantt__filter-chip${scopeFilter === f.value ? " gantt__filter-chip--on" : ""}`}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
+import { suggestedWorkHours, businessDaysBetween, wouldCreateCycle, buildActivityIndex, activityLabel, getToday } from "../utils/formulas";
 import { validateStartEnd, validateTransitionDates } from "../utils/dateValidation";
 import { KeyDatesSection, NotesSection, DateBadgesSection, SubtasksSection } from "./ActivityFormSections";
 import { STATUS_OPTIONS, HOURS_OPTIONS, closestHoursOption, getActivityStatus, hasChanges } from "./activity-detail/shared";
@@ -30,6 +30,12 @@ export default function ActivityDetailModal({
   // actividad tiene subtareas. En ese caso el % deja de ser editable a mano:
   // es siempre el promedio de las subtareas.
   computedProgress,
+  // Todas las actividades del proyecto (no solo subtasks, que son únicamente
+  // las hijas directas) — necesarias para poblar el selector "Es subtarea
+  // de" y validar con wouldCreateCycle que el nuevo padre no sea la propia
+  // actividad ni uno de sus descendientes. Opcional: si no se pasa, el
+  // selector de padre no se muestra (mismo criterio que subtasks !== undefined).
+  allActivities,
 }) {
   const hasSubtasks = Array.isArray(subtasks) && subtasks.length > 0;
   const overlayRef = useRef(null);
@@ -39,6 +45,8 @@ export default function ActivityDetailModal({
 
   const [local, setLocal] = useState({
     text:               activity.text               || "",
+    parent_id:          activity.parent_id           ?? null,
+    status:             status,
     start_date:         activity.start_date         || "",
     due_date:           activity.due_date           || "",
     description:        activity.description        || "",
@@ -79,6 +87,28 @@ export default function ActivityDetailModal({
     });
   };
 
+  // Cambia el estado (columna del Kanban) desde el selector del modal. El
+  // estado en sí no vive en la actividad — vive en task_status del proyecto
+  // — así que no se persiste aquí directo: buildSaved lo manda como
+  // _newStatus y el padre (EditView/ProjectPlanningOverlays) mueve el id
+  // entre buckets, igual que hace TaskStatusSelector.move() al arrastrar una
+  // tarjeta. Auto-registra la fecha de transición (mismo criterio que el
+  // Kanban) y fuerza 100% al pasar a completada.
+  const changeStatus = (newStatus) => {
+    setLocal(prev => {
+      const nextHistory = { ...prev.history };
+      if (!nextHistory.added) nextHistory.added = getToday();
+      if (newStatus === "in_progress" && !nextHistory.in_progress) nextHistory.in_progress = getToday();
+      if (newStatus === "completed" && !nextHistory.completed) nextHistory.completed = getToday();
+      return {
+        ...prev,
+        status: newStatus,
+        history: nextHistory,
+        progress: newStatus === "completed" ? 100 : prev.progress,
+      };
+    });
+  };
+
   const dateErrors = {
     startEnd: validateStartEnd(local.start_date, local.due_date),
     transitions: validateTransitionDates({
@@ -103,14 +133,23 @@ export default function ActivityDetailModal({
   // que el usuario haya tocado nada — es intencional: fuerza a persistir el
   // valor correcto en el próximo guardado en vez de dejarlo desincronizado.
 
-  const dirty = hasChanges(activity, local, history, displayProgress);
+  const dirty = hasChanges(activity, local, history, displayProgress, status);
 
   // Separa el history (va a task_status) del resto de campos de la actividad.
   // EditView lee _history y lo escribe en task_status.status_history.
   // progress usa displayProgress, no local.progress — ver su comentario.
+  // _newStatus solo se manda si el estado cambió: el caller lo usa para
+  // mover el id entre los buckets de task_status (igual que
+  // TaskStatusSelector.move() al arrastrar una tarjeta en el Kanban).
   const buildSaved = () => {
-    const { history: hist, ...actFields } = local;
-    return { ...activity, ...actFields, progress: displayProgress, _history: hist };
+    const { history: hist, status: newStatus, ...actFields } = local;
+    return {
+      ...activity,
+      ...actFields,
+      progress: displayProgress,
+      _history: hist,
+      ...(newStatus !== status ? { _newStatus: newStatus } : {}),
+    };
   };
 
   const requestClose = () => {
@@ -169,11 +208,19 @@ export default function ActivityDetailModal({
   // Sugerencias automáticas
   const bizDays  = businessDaysBetween(local.start_date, local.due_date);
   const suggHours = suggestedWorkHours(local.start_date, local.due_date);
-  const statusLabel  = STATUS_OPTIONS.find(o => o.value === status)?.label || "—";
   const statusClass =
-    status === "completed"   ? "adm-status-pill--completed" :
-    status === "in_progress" ? "adm-status-pill--inprogress" :
-                               "adm-status-pill--notstarted";
+    local.status === "completed"   ? "adm-status-pill--completed" :
+    local.status === "in_progress" ? "adm-status-pill--inprogress" :
+                                     "adm-status-pill--notstarted";
+
+  // Opciones válidas para "Es subtarea de": todo el proyecto MENOS la propia
+  // actividad y sus descendientes (wouldCreateCycle cubre ambos casos) —
+  // convertirla en hija de su propia hija formaría un ciclo. Solo se muestra
+  // si el caller pasó allActivities (mismo criterio opcional que subtasks).
+  const parentOptions = Array.isArray(allActivities)
+    ? allActivities.filter(a => a.id !== activity.id && !wouldCreateCycle(allActivities, activity.id, a.id))
+    : null;
+  const parentOptionsIndex = parentOptions ? buildActivityIndex(allActivities) : null;
 
   return (
     <div className="adm-overlay" ref={overlayRef} onClick={handleOverlayClick}>
@@ -191,7 +238,16 @@ export default function ActivityDetailModal({
         <div className="adm-header">
           <div className="adm-header__top">
             <span className="adm-header__project">{projectName}</span>
-            <span className={`adm-status-pill ${statusClass}`}>{statusLabel}</span>
+            <select
+              className={`adm-status-pill adm-status-pill--select ${statusClass}`}
+              value={local.status}
+              onChange={e => changeStatus(e.target.value)}
+              title="Cambiar estado"
+            >
+              {STATUS_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
             {dirty && <span className="adm-dirty-badge">Sin guardar</span>}
             <div className="adm-header__spacer" />
             <button
@@ -220,8 +276,28 @@ export default function ActivityDetailModal({
             placeholder="Nombre de la actividad…"
           />
 
+          {/* "Es subtarea de" — mover esta actividad a otro padre, o subirla
+              a raíz eligiendo "Ninguno". Solo se muestra si el caller pasó
+              allActivities (ver comentario del prop). */}
+          {parentOptions && (
+            <div className="adm-parent-select">
+              <label className="adm-label" htmlFor="adm-parent-select">Es subtarea de</label>
+              <select
+                id="adm-parent-select"
+                className="adm-select"
+                value={local.parent_id ?? ""}
+                onChange={e => set("parent_id", e.target.value || null)}
+              >
+                <option value="">— Ninguno (actividad principal) —</option>
+                {parentOptions.map(a => (
+                  <option key={a.id} value={a.id}>{activityLabel(parentOptionsIndex, a.id)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Fechas de transición (editables — útil al importar de Planner) */}
-          <DateBadgesSection status={status} history={local.history} onChange={setHistory} />
+          <DateBadgesSection status={local.status} history={local.history} onChange={setHistory} />
           {dateErrors.transitions && (
             <p className="adm-date-error">
               {dateErrors.transitions.in_progress || dateErrors.transitions.completed}

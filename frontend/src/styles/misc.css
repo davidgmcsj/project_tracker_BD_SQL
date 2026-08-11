@@ -88,6 +88,17 @@
 
 .fs-overlay__body .task-status-col__list { max-height: none; flex: 1; }
 
+/* Mismo problema que task-status-board: dentro del formulario el Gantt no
+   necesita más alto que sus propias filas (30px cada una), pero a pantalla
+   completa con pocas actividades quedaba con un hueco en blanco enorme
+   debajo — .gantt no tenía ningún height/flex propio, solo crecía con el
+   contenido real. min-height (no height fijo) para que el fondo/borde del
+   panel llene el overlay sin forzar el propio scroll interno de la tabla,
+   que ya maneja su ancho con .gantt__scroll. */
+.fs-overlay__body .gantt { display: flex; flex-direction: column; min-height: 100%; }
+
+.fs-overlay__body .gantt__scroll { flex: 1; }
+
 
 /* ═══════════════════════════════════════════════════════════════════
    PALETA DE COMANDOS (Ctrl+K) — Fase 14

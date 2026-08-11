@@ -101,6 +101,18 @@
   outline: none;
 }
 
+.adm-parent-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.adm-parent-select .adm-select {
+  flex: 1;
+  max-width: 320px;
+}
+
 
 .adm-close-btn {
   background: none;
@@ -136,6 +148,17 @@
 .adm-status-pill--inprogress  { background: var(--amber-bg); color: var(--amber); }
 
 .adm-status-pill--notstarted  { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+/* Variante editable — mismo look de pastilla, pero es un <select> nativo
+   (permite cambiar el estado directo desde el modal, sin pasar por el Kanban). */
+.adm-status-pill--select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.adm-status-pill--select:hover { filter: brightness(0.95); }
 
 
 /* ── Badges de fechas de depósito ── */

@@ -215,3 +215,68 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 .gantt__legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
 .gantt__legend-swatch--today { background: var(--inst-amarillo); box-shadow: inset 0 -2px 0 var(--inst-azul); }
+
+
+/* ── Filtro "Tarea padre" (ParentTaskFilter) — dropdown con buscador de una
+   sola tarea principal, mismo patrón visual que assignee-dropdown (portal a
+   document.body + menú flotante), pero single-select y sin agrupar. ── */
+.parent-task-filter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.parent-task-filter__input {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 4px 6px;
+  min-width: 220px; max-width: 320px;
+}
+
+.parent-task-filter__clear {
+  background: transparent; border: none; cursor: pointer; color: var(--text-3);
+  font-size: 12px; padding: 2px 4px; border-radius: var(--radius-sm);
+}
+
+.parent-task-filter__clear:hover { background: var(--surface-2); color: var(--text); }
+
+.parent-task-filter__menu {
+  position: fixed;
+  z-index: 2000;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.13);
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.parent-task-filter__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.parent-task-filter__option:hover { background: var(--surface-2); }
+
+.parent-task-filter__option--all {
+  font-weight: 600;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+.parent-task-filter__empty {
+  padding: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  margin: 0;
+}

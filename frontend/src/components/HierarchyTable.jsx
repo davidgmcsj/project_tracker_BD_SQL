@@ -7,15 +7,23 @@
 // el mismo array plano que usan el Gantt, el Kanban y los reportes — el
 // árbol se reconstruye en memoria aquí, sin cambiar la forma de los datos.
 //
-// De solo lectura salvo las fechas de inicio/fin: asignado, progreso y estado
-// se editan desde las tarjetas (TaskStatusSelector/GlobalBoardView) y desde
-// ActivityDetailModal (clic en el nombre de la fila). Esto evita que la misma
-// actividad tenga dos caminos de edición divergentes para el mismo campo.
+// De solo lectura salvo fechas de inicio/fin, estado (columna "Estado", vía
+// onChangeStatus — mismo mecanismo que TaskStatusSelector.move()/el selector
+// de ActivityDetailModal, para no tener tres implementaciones divergentes de
+// "mover una actividad entre buckets de task_status") y el orden de las filas
+// (drag & drop entre hermanas — ver reorderSiblings). Asignado y progreso
+// siguen editándose solo desde ActivityDetailModal (clic en el nombre).
+//
+// El número "1.1, 1.2…" es puramente posicional (deriva de sequence_order,
+// no se guarda como tal) — antes solo reflejaba el orden de creación, sin
+// forma de cambiarlo salvo borrar y recrear. Arrastrar una fila sobre otra
+// hermana (mismo parent_id) renumera todo ese grupo; soltar sobre una fila
+// de otro padre no hace nada (reorderSiblings devuelve null).
 
 import { useMemo, useState } from "react";
 import {
   buildActivityTree, flattenTree, formatHierarchyNumber,
-  aggregatedProgress, getActivityStatus, shortEngineerName,
+  aggregatedProgress, getActivityStatus, shortEngineerName, canMarkCompleted, reorderSiblings,
 } from "../utils/formulas";
 import { rescheduleAfterChange } from "../utils/scheduling";
 import { ESTADO_ACTIVIDAD_LABEL, estadoActividadKey } from "../utils/filtroOpciones";
@@ -41,6 +49,10 @@ const STATUS_CLASS = {
   completed:   "htable__status-pill--completed",
 };
 
+// Mismo orden que las columnas del Kanban (TaskStatusSelector) — claves
+// internas en inglés, label vía ESTADO_ACTIVIDAD_LABEL (fuente única).
+const STATUS_SELECT_KEYS = ["not_started", "in_progress", "completed"];
+
 function statusKey(taskStatus, actId) {
   return estadoActividadKey(getActivityStatus(taskStatus, actId));
 }
@@ -57,15 +69,19 @@ function nextSequenceOrder(activities, parentId) {
 
 function Row({
   row, hasChildren, isCollapsed, onToggleCollapse,
-  taskStatus,
-  onAddChild, onDeleteActivity, onDateChange, onOpenActivity,
+  taskStatus, activities,
+  onAddChild, onDeleteActivity, onDateChange, onOpenActivity, onChangeStatus,
   aggProgress,
+  canReorder, isDragging, isDropTarget, onRowDragStart, onRowDragOver, onRowDragLeave, onRowDrop, onRowDragEnd,
 }) {
   const { activity: a, level, path } = row;
   const status = statusKey(taskStatus, a.id);
   const number = formatHierarchyNumber(path);
   const isReadOnlyDates = hasChildren; // fechas gobernadas por el motor de cascada cuando tiene hijos
   const firstAssignee = (a.assigned_engineers || [])[0];
+  // Igual que el Kanban: no se puede marcar completada una actividad con
+  // subtareas pendientes (ver canMarkCompleted, formulas.js).
+  const completedBlocked = !canMarkCompleted(a.id, activities, taskStatus);
 
   const [hover, setHover] = useState(false);
 
@@ -75,11 +91,25 @@ function Row({
 
   return (
     <tr
-      className={`htable__row${hasChildren ? " htable__row--parent" : ""}`}
+      className={[
+        "htable__row",
+        hasChildren && "htable__row--parent",
+        isDragging && "htable__row--dragging",
+        isDropTarget && "htable__row--drop-target",
+      ].filter(Boolean).join(" ")}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      draggable={canReorder}
+      onDragStart={canReorder ? () => onRowDragStart(a.id) : undefined}
+      onDragOver={canReorder ? (e) => { e.preventDefault(); onRowDragOver(a.id); } : undefined}
+      onDragLeave={canReorder ? () => onRowDragLeave(a.id) : undefined}
+      onDrop={canReorder ? (e) => { e.preventDefault(); onRowDrop(a.id); } : undefined}
+      onDragEnd={canReorder ? onRowDragEnd : undefined}
     >
-      <td className="htable__cell htable__cell--num">{number}</td>
+      <td className="htable__cell htable__cell--num">
+        {canReorder && <span className="htable__drag-handle" title="Arrastra para reordenar entre hermanas">⠿</span>}
+        {number}
+      </td>
       <td className="htable__cell htable__cell--name">
         <div className="htable__indent" style={{ paddingLeft: level * 20 }}>
           {hasChildren ? (
@@ -125,7 +155,18 @@ function Row({
         <span className="htable__readonly-text">{hasChildren ? aggProgress : (a.progress || 0)}%</span>
       </td>
       <td className="htable__cell htable__cell--status">
-        <span className={`htable__status-pill ${STATUS_CLASS[status]}`}>{ESTADO_ACTIVIDAD_LABEL[status]}</span>
+        <select
+          className={`htable__status-pill htable__status-pill--select ${STATUS_CLASS[status]}`}
+          value={status}
+          onChange={e => onChangeStatus(a.id, e.target.value)}
+          title="Cambiar estado"
+        >
+          {STATUS_SELECT_KEYS.map(key => (
+            <option key={key} value={key} disabled={key === "completed" && completedBlocked}>
+              {ESTADO_ACTIVIDAD_LABEL[key]}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="htable__cell htable__cell--actions">
         <button type="button" className="htable__icon-btn htable__icon-btn--danger" onClick={() => onDeleteActivity(a.id)} title="Eliminar">🗑</button>
@@ -142,10 +183,13 @@ export default function HierarchyTable({
   onAddChild,        // (parentId, sequenceOrder) => void
   onDeleteActivity,  // (id) => void
   onOpenActivity,    // (id) => void — abre ActivityDetailModal desde una fila
+  onChangeStatus,    // (activityId, newStatusKey) => void — mueve entre buckets de task_status
 }) {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [cascadeNotice, setCascadeNotice] = useState(null); // { count } — aviso no bloqueante tras un recálculo
   const [statusFilter, setStatusFilter] = useState("all");
+  const [draggedId, setDraggedId] = useState(null);
+  const [dropTargetId, setDropTargetId] = useState(null);
 
   const acts = useMemo(() => (Array.isArray(activities) ? activities : []), [activities]);
   const { childrenOf } = useMemo(() => buildActivityTree(acts), [acts]);
@@ -215,6 +259,17 @@ export default function HierarchyTable({
     }
   };
 
+  // Reordenar cambia el número "1.1, 1.2…" (puramente posicional, ver
+  // reorderSiblings) — no es un cambio de fecha, pero se persiste por el
+  // mismo canal (onApplyDateChange acepta cualquier patch por id, no solo
+  // fechas) para no abrir un segundo camino de escritura al proyecto.
+  const handleRowDrop = (targetId) => {
+    const patches = draggedId ? reorderSiblings(acts, draggedId, targetId) : null;
+    if (patches) onApplyDateChange(patches);
+    setDraggedId(null);
+    setDropTargetId(null);
+  };
+
   if (!acts.length) {
     return <div className="htable-empty">No hay actividades registradas en este proyecto todavía.</div>;
   }
@@ -233,6 +288,9 @@ export default function HierarchyTable({
           </button>
         ))}
         <span className="htable-toolbar__count">{rows.length} de {allRows.length}</span>
+        {statusFilter !== "all" && (
+          <span className="htable-toolbar__hint">Con un filtro activo no se puede reordenar — elige "Todas" primero.</span>
+        )}
       </div>
 
       {cascadeNotice && (
@@ -242,6 +300,23 @@ export default function HierarchyTable({
       )}
       <div className="htable-scroll">
         <table className="htable">
+          {/* table-layout:fixed necesita <colgroup> para que una columna sin
+              width tome el espacio sobrante — sin esto (como antes), el
+              ancho de "Nombre" salía del <th> de esa misma columna (una
+              palabra corta) en vez de repartir el resto del 100% de la
+              tabla, dejando un hueco en blanco a su lado. Con colgroup, la
+              columna de Nombre (sin <col> propio) es la única que absorbe
+              el espacio libre; el resto tiene su ancho fijo real. */}
+          <colgroup>
+            <col style={{ width: 44 }} />
+            <col />
+            <col style={{ width: 160 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 140 }} />
+            <col style={{ width: 40 }} />
+          </colgroup>
           <thead>
             <tr>
               <th className="htable__cell--num">#</th>
@@ -263,11 +338,21 @@ export default function HierarchyTable({
                 isCollapsed={collapsedIds.has(row.activity.id)}
                 onToggleCollapse={toggleCollapse}
                 taskStatus={taskStatus}
+                activities={acts}
                 onAddChild={handleAddChild}
                 onDeleteActivity={onDeleteActivity}
                 onDateChange={handleDateChange}
                 onOpenActivity={onOpenActivity}
+                onChangeStatus={onChangeStatus}
                 aggProgress={aggregatedProgress(row.activity, childrenOf)}
+                canReorder={statusFilter === "all"}
+                isDragging={draggedId === row.activity.id}
+                isDropTarget={dropTargetId === row.activity.id && draggedId !== row.activity.id}
+                onRowDragStart={setDraggedId}
+                onRowDragOver={setDropTargetId}
+                onRowDragLeave={(id) => setDropTargetId(prev => (prev === id ? null : prev))}
+                onRowDrop={handleRowDrop}
+                onRowDragEnd={() => { setDraggedId(null); setDropTargetId(null); }}
               />
             ))}
           </tbody>

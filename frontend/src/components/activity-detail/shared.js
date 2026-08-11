@@ -46,8 +46,12 @@ export function fileIcon(mime = "", name = "") {
 // comparar/guardar es el calculado (computedProgress en ActivityDetailModal),
 // no local.progress — ver displayProgress ahí. Sin override, compara
 // local.progress como siempre.
-export function hasChanges(activity, local, originalHistory, progressOverride) {
+// originalStatus: el estado vive en task_status, no en la actividad — se
+// pasa aparte (getActivityStatus(taskStatus, activity.id) en el caller).
+export function hasChanges(activity, local, originalHistory, progressOverride, originalStatus) {
   if ((activity.text        || "")      !== local.text)        return true;
+  if ((activity.parent_id   ?? null)    !== (local.parent_id ?? null)) return true;
+  if (originalStatus !== undefined && originalStatus !== local.status) return true;
   if ((activity.start_date  || "")      !== local.start_date)  return true;
   if ((activity.due_date    || "")      !== local.due_date)    return true;
   if ((activity.description || "")      !== local.description) return true;

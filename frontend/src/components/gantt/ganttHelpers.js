@@ -38,10 +38,18 @@ export const STATUS_FILTERS = [
   { value: "completed",   label: "Completadas" },
 ];
 
-// Qué niveles de la jerarquía se listan como filas del calendario.
+// Qué niveles de la jerarquía se listan como filas del calendario. Sin una
+// tarea padre elegida en parentFilter, "Solo principales" tiene sentido
+// (recorta a las raíces); con un padre elegido, esa opción sobra (la lista
+// quedaría con 0 o 1 fila) — SCOPE_FILTERS_WITH_PARENT la reemplaza por
+// "Solo subtareas" (oculta la fila del propio padre).
 export const SCOPE_FILTERS = [
   { value: "all",   label: "Principales y subtareas" },
   { value: "roots", label: "Solo principales" },
+];
+export const SCOPE_FILTERS_WITH_PARENT = [
+  { value: "all",       label: "Padre y subtareas" },
+  { value: "childrenOnly", label: "Solo subtareas" },
 ];
 
 // Un único panel de rango de fechas reemplaza al "Zoom" — cada atajo YA

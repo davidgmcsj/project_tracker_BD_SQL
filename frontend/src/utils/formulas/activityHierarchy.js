@@ -133,6 +133,41 @@ export function formatHierarchyNumber(path) {
   return Array.isArray(path) ? path.join(".") : "";
 }
 
+// Recalcula sequence_order para TODO el grupo de hermanas (mismo parent_id)
+// tras arrastrar draggedId a la posición de targetId — usado por
+// HierarchyTable (drag & drop de filas). El número "1.1, 1.2…" es puramente
+// posicional (deriva de sequence_order vía buildActivityTree/flattenTree),
+// así que moverlo aquí es lo único que hace falta para "renumerar" la fila
+// sin tocar ningún otro campo. Devuelve null si el drop no es válido (no son
+// hermanas, o alguno de los dos ids no existe) — el caller no hace nada en
+// ese caso, en vez de reordenar entre padres distintos de forma silenciosa.
+export function reorderSiblings(activities, draggedId, targetId) {
+  const acts = Array.isArray(activities) ? activities : [];
+  if (draggedId === targetId) return null;
+  const byId = new Map(acts.map(a => [a.id, a]));
+  const dragged = byId.get(draggedId);
+  const target  = byId.get(targetId);
+  if (!dragged || !target) return null;
+  const parentId = dragged.parent_id ?? null;
+  if ((target.parent_id ?? null) !== parentId) return null;
+
+  const siblings = acts
+    .filter(a => (a.parent_id ?? null) === parentId)
+    .sort((a, b) => {
+      const sa = Number(a.sequence_order), sb = Number(b.sequence_order);
+      if (Number.isFinite(sa) && Number.isFinite(sb) && sa !== sb) return sa - sb;
+      return acts.indexOf(a) - acts.indexOf(b);
+    });
+
+  const fromIdx = siblings.findIndex(a => a.id === draggedId);
+  const toIdx   = siblings.findIndex(a => a.id === targetId);
+  const next = [...siblings];
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+
+  return next.map((a, i) => ({ id: a.id, sequence_order: i }));
+}
+
 // Actividades sin hijos — las únicas que cuentan en totales/métricas del
 // proyecto. Un padre con subtareas es un contenedor organizativo, no una
 // unidad de trabajo medible: contarlo aparte infla el total (un padre con 5

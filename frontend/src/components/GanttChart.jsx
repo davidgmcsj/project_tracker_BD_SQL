@@ -12,7 +12,10 @@ import FilterBar from "./gantt/FilterBar";
 
 export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
   const [statusFilter, setStatusFilter] = useState("all");
-  const [scopeFilter, setScopeFilter] = useState("all"); // "all" | "roots" — ver SCOPE_FILTERS
+  // "all" | "roots" sin parentFilter — "all" | "childrenOnly" con parentFilter
+  // (SCOPE_FILTERS vs SCOPE_FILTERS_WITH_PARENT, ver FilterBar).
+  const [scopeFilter, setScopeFilter] = useState("all");
+  const [parentFilter, setParentFilter] = useState(null); // id de tarea principal, o null = todas
   const [hoverRow, setHoverRow] = useState(null);
   const [hoverCol, setHoverCol] = useState(null);
   const [weekAnchor, setWeekAnchor] = useState(null); // no-null = modo "semana navegable" activo
@@ -49,6 +52,17 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
     return { numberById: numbers, depthById: depths };
   }, [activities]);
 
+  // Opciones del selector "Tarea padre": solo raíces (parent_id null), en su
+  // orden original, numeradas con el mismo número jerárquico que ya se
+  // muestra en la fila — así el usuario reconoce la tarea por el mismo
+  // número que ve en el calendario y en Planificación completa.
+  const parentOptions = useMemo(() => {
+    const acts = activities || [];
+    return acts
+      .filter(a => !a.parent_id)
+      .map(a => ({ id: a.id, label: `${numberById.get(a.id)}. ${a.text || "(sin nombre)"}` }));
+  }, [activities, numberById]);
+
   const counts = useMemo(() => {
     const c = { not_started: 0, in_progress: 0, completed: 0 };
     (activities || []).forEach(a => {
@@ -58,21 +72,53 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
     return c;
   }, [activities, taskStatus]);
 
+  // Descendientes (todos los niveles, no solo hijos directos) de una tarea
+  // padre — necesario para "Padre y subtareas"/"Solo subtareas": una
+  // subtarea de 2do nivel también debe entrar cuando se filtra por su abuela.
+  const descendantIds = useMemo(() => {
+    if (!parentFilter) return null;
+    const acts = activities || [];
+    const childrenOf = new Map();
+    acts.forEach(a => {
+      if (!a.parent_id) return;
+      if (!childrenOf.has(a.parent_id)) childrenOf.set(a.parent_id, []);
+      childrenOf.get(a.parent_id).push(a.id);
+    });
+    const ids = new Set();
+    const walk = (id) => (childrenOf.get(id) || []).forEach(childId => { ids.add(childId); walk(childId); });
+    walk(parentFilter);
+    return ids;
+  }, [activities, parentFilter]);
+
   // Filas del calendario, en orden jerárquico (cada subtarea debajo de su
   // tarea principal) en vez del orden crudo del array. Solo se listan las que
   // tienen alguna fecha — una fila sin fechas no tiene celda que pintar.
+  //
+  // parentFilter + scopeFilter se combinan (junto con statusFilter y el rango
+  // de fechas, aplicado más abajo vía `range`) para los 3 casos pedidos:
+  // "solo principales" (sin parentFilter, scope=roots), "un padre con sus
+  // subtareas" (parentFilter + scope=all) y "solo las subtareas de tal padre"
+  // (parentFilter + scope=childrenOnly).
   const dated = useMemo(() => {
     const acts = activities || [];
-    const visible = acts.filter(a =>
-      (a.start_date || a.due_date) &&
-      (statusFilter === "all" || statusOf(taskStatus, a.id) === statusFilter) &&
-      (scopeFilter === "all" || !a.parent_id)
-    );
-    if (scopeFilter === "roots") return visible;
+    const visible = acts.filter(a => {
+      if (!(a.start_date || a.due_date)) return false;
+      if (statusFilter !== "all" && statusOf(taskStatus, a.id) !== statusFilter) return false;
+      if (parentFilter) {
+        const isTheParent = a.id === parentFilter;
+        const isDescendant = descendantIds.has(a.id);
+        if (!isTheParent && !isDescendant) return false;
+        if (scopeFilter === "childrenOnly" && isTheParent) return false;
+        return true;
+      }
+      return scopeFilter === "all" || !a.parent_id;
+    });
+    if (scopeFilter === "roots" && !parentFilter) return visible;
 
-    // Ordena por jerarquía: raíces en su orden original y, tras cada una, sus
-    // descendientes. Las huérfanas (padre inexistente o filtrado por estado)
-    // se listan al final para que nunca desaparezcan del calendario.
+    // Ordena por jerarquía: raíces (o la tarea padre elegida) en su orden
+    // original y, tras cada una, sus descendientes. Las huérfanas (padre
+    // inexistente o filtrado por estado) se listan al final para que nunca
+    // desaparezcan del calendario.
     const byId = new Map(visible.map(a => [a.id, a]));
     const childrenOf = new Map();
     visible.forEach(a => {
@@ -87,9 +133,12 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
         walk(a.id);
       });
     };
-    walk(null);
+    // Con parentFilter + childrenOnly, la propia tarea padre no está en
+    // `visible` (se excluyó arriba) — walk debe arrancar en sus hijos
+    // directos, no en null (ahí no colgaría nada).
+    walk(parentFilter && scopeFilter === "childrenOnly" ? parentFilter : null);
     return ordered;
-  }, [activities, taskStatus, statusFilter, scopeFilter]);
+  }, [activities, taskStatus, statusFilter, scopeFilter, parentFilter, descendantIds]);
 
   // Rango efectivo, en orden de prioridad:
   // 1. weekAnchor — modo semana navegable, 7 días fijos, ◀/▶ para moverse.
@@ -139,6 +188,15 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
     setWeekAnchor(d => { const n = new Date(d); n.setDate(n.getDate() + deltaDays); return n; });
   };
 
+  // Cambiar de padre elegido a "todas" (o viceversa) invalida el valor de
+  // scopeFilter del otro contexto ("roots" no existe con padre elegido,
+  // "childrenOnly" no existe sin padre) — se resetea a "all" para no quedar
+  // en un valor fantasma que FilterBar ya no renderiza como chip activo.
+  const handleSetParentFilter = (id) => {
+    setParentFilter(id);
+    setScopeFilter("all");
+  };
+
   const handleClearCustom = () => { setCustomRange(null); setWeekAnchor(null); setForceAll(false); };
 
   const handleCustomRangeInput = (r) => {
@@ -149,11 +207,15 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
 
   if (!dated.length) {
     const totalDated = (activities || []).filter(a => a.start_date || a.due_date).length;
-    if (statusFilter !== "all" && totalDated > 0) {
+    if ((statusFilter !== "all" || parentFilter) && totalDated > 0) {
       return (
         <div className="gantt-empty">
           Ninguna actividad con fechas coincide con el filtro seleccionado.{" "}
-          <button type="button" className="gantt-empty__link" onClick={() => setStatusFilter("all")}>Mostrar todas</button>
+          <button
+            type="button"
+            className="gantt-empty__link"
+            onClick={() => { setStatusFilter("all"); handleSetParentFilter(null); }}
+          >Mostrar todas</button>
         </div>
       );
     }
@@ -217,11 +279,14 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
         range={effectiveRange}
         statusFilter={statusFilter}
         scopeFilter={scopeFilter}
+        parentOptions={parentOptions}
+        parentFilter={parentFilter}
         counts={counts}
         onPickCustomRange={handleCustomRangeInput}
         onPickPreset={handlePickPreset}
         onSetStatusFilter={setStatusFilter}
         onSetScopeFilter={setScopeFilter}
+        onSetParentFilter={handleSetParentFilter}
         onClearCustom={handleClearCustom}
         hasCustom={!!customRange || !!weekAnchor || forceAll}
         today={today}

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday,
   leafActivities, canMarkCompleted, buildActivityIndex, activityLabel, activityText, sortByName,
+  reorderSiblings,
 } from "./formulas.js";
 
 // ── toISODate ─────────────────────────────────────────────────────────────────
@@ -324,4 +325,87 @@ test("sortByName con array vacío o no-array no lanza", () => {
   assert.deepEqual(sortByName([]), []);
   assert.deepEqual(sortByName(null), []);
   assert.deepEqual(sortByName(undefined), []);
+});
+
+// ── reorderSiblings ──────────────────────────────────────────────────────────
+
+test("reorderSiblings mueve una hermana a la posición de otra (adelante)", () => {
+  const acts = [
+    { id: "a", parent_id: null, sequence_order: 0 },
+    { id: "b", parent_id: null, sequence_order: 1 },
+    { id: "c", parent_id: null, sequence_order: 2 },
+  ];
+  // Mover "c" a la posición de "a" → queda c, a, b
+  const patches = reorderSiblings(acts, "c", "a");
+  assert.deepEqual(patches, [
+    { id: "c", sequence_order: 0 },
+    { id: "a", sequence_order: 1 },
+    { id: "b", sequence_order: 2 },
+  ]);
+});
+
+test("reorderSiblings mueve una hermana a la posición de otra (atrás)", () => {
+  const acts = [
+    { id: "a", parent_id: null, sequence_order: 0 },
+    { id: "b", parent_id: null, sequence_order: 1 },
+    { id: "c", parent_id: null, sequence_order: 2 },
+  ];
+  // Mover "a" a la posición de "c" → queda b, c, a
+  const patches = reorderSiblings(acts, "a", "c");
+  assert.deepEqual(patches, [
+    { id: "b", sequence_order: 0 },
+    { id: "c", sequence_order: 1 },
+    { id: "a", sequence_order: 2 },
+  ]);
+});
+
+test("reorderSiblings devuelve null si las dos actividades no son hermanas (padres distintos)", () => {
+  const acts = [
+    { id: "parent1", parent_id: null },
+    { id: "parent2", parent_id: null },
+    { id: "child1",  parent_id: "parent1", sequence_order: 0 },
+    { id: "child2",  parent_id: "parent2", sequence_order: 0 },
+  ];
+  assert.equal(reorderSiblings(acts, "child1", "child2"), null);
+});
+
+test("reorderSiblings devuelve null si el id arrastrado y el destino son el mismo", () => {
+  const acts = [{ id: "a", parent_id: null, sequence_order: 0 }];
+  assert.equal(reorderSiblings(acts, "a", "a"), null);
+});
+
+test("reorderSiblings devuelve null si alguno de los ids no existe", () => {
+  const acts = [{ id: "a", parent_id: null, sequence_order: 0 }];
+  assert.equal(reorderSiblings(acts, "a", "ghost"), null);
+  assert.equal(reorderSiblings(acts, "ghost", "a"), null);
+});
+
+test("reorderSiblings reordena subtareas de un padre sin afectar otros grupos", () => {
+  const acts = [
+    { id: "root",  parent_id: null },
+    { id: "s1",    parent_id: "root", sequence_order: 0 },
+    { id: "s2",    parent_id: "root", sequence_order: 1 },
+    { id: "s3",    parent_id: "root", sequence_order: 2 },
+    { id: "other", parent_id: null, sequence_order: 0 },
+  ];
+  const patches = reorderSiblings(acts, "s3", "s1");
+  assert.deepEqual(patches, [
+    { id: "s3", sequence_order: 0 },
+    { id: "s1", sequence_order: 1 },
+    { id: "s2", sequence_order: 2 },
+  ]);
+});
+
+test("reorderSiblings usa el orden del array como fallback cuando sequence_order falta", () => {
+  const acts = [
+    { id: "a", parent_id: null },
+    { id: "b", parent_id: null },
+    { id: "c", parent_id: null },
+  ];
+  const patches = reorderSiblings(acts, "a", "c");
+  assert.deepEqual(patches, [
+    { id: "b", sequence_order: 0 },
+    { id: "c", sequence_order: 1 },
+    { id: "a", sequence_order: 2 },
+  ]);
 });

@@ -8,7 +8,8 @@
 // comportamiento sin duplicar lógica.
 
 import { useEffect, useState } from "react";
-import { createActivity, visibleActivities, buildActivityTree, aggregatedProgress } from "../utils/formulas";
+import { createActivity, visibleActivities, buildActivityTree, aggregatedProgress, getToday } from "../utils/formulas";
+import { moveTaskStatus } from "./edit/shared";
 import FullscreenOverlay from "./FullscreenOverlay";
 import GanttChart from "./GanttChart";
 import HierarchyTable from "./HierarchyTable";
@@ -87,10 +88,27 @@ export default function ProjectPlanningOverlays({
     commit(newActs, newTaskStatus);
   };
 
+  // Cambia el estado de una actividad desde la columna "Estado" de la tabla
+  // jerárquica — mismo mecanismo que el selector del modal de detalle
+  // (moveTaskStatus, misma lógica que TaskStatusSelector.move() del Kanban).
+  const handleChangeActivityStatus = (activityId, newStatus) => {
+    commit(activities, moveTaskStatus(taskStatus, activities, activityId, newStatus));
+  };
+
   // Devuelve el id para poder abrir la tarjeta de la subtarea recién creada.
+  // La agrega también a task_status.not_started (con su status_history.added)
+  // — sin esto la actividad quedaba en activities_identified pero fuera de
+  // los tres buckets del Kanban, mostrándose como "sin clasificar" en vez
+  // de aparecer directo en "No iniciadas", que es donde nace toda actividad
+  // nueva creada por cualquier otro camino (handleAddActivity en EditView).
   const handleAddChild = (parentId, sequenceOrder) => {
     const newAct = createActivity("Nueva subtarea", parentId, sequenceOrder);
-    commit([...activities, newAct]);
+    const newTs = {
+      ...taskStatus,
+      not_started: [...safeArr(taskStatus.not_started), newAct.id],
+      status_history: { ...(taskStatus.status_history || {}), [newAct.id]: { added: getToday() } },
+    };
+    commit([...activities, newAct], newTs);
     return newAct.id;
   };
 
@@ -116,9 +134,11 @@ export default function ProjectPlanningOverlays({
   };
 
   // _history (fechas de transición) no vive en la actividad: se escribe en
-  // task_status.status_history.
+  // task_status.status_history. _newStatus (cambio de columna del Kanban
+  // desde el modal) tampoco: mueve el id entre buckets vía moveTaskStatus
+  // (misma lógica que TaskStatusSelector.move()).
   const handleActivitySave = (updatedAct) => {
-    const { _history, ...actClean } = updatedAct;
+    const { _history, _newStatus, ...actClean } = updatedAct;
     const newActs = activities.map(a => a.id === actClean.id ? actClean : a);
     let newTs = taskStatus;
     if (_history) {
@@ -127,9 +147,12 @@ export default function ProjectPlanningOverlays({
       if (_history.in_progress) cleanHist.in_progress = _history.in_progress;
       if (_history.completed)   cleanHist.completed   = _history.completed;
       newTs = {
-        ...taskStatus,
-        status_history: { ...(taskStatus.status_history || {}), [actClean.id]: cleanHist },
+        ...newTs,
+        status_history: { ...(newTs.status_history || {}), [actClean.id]: cleanHist },
       };
+    }
+    if (_newStatus) {
+      newTs = moveTaskStatus(newTs, newActs, actClean.id, _newStatus);
     }
     commit(newActs, newTs);
   };
@@ -177,6 +200,7 @@ export default function ProjectPlanningOverlays({
             onAddChild={handleAddChild}
             onDeleteActivity={handleDeleteActivity}
             onOpenActivity={setModalActId}
+            onChangeStatus={handleChangeActivityStatus}
           />
         )}
       </FullscreenOverlay>
@@ -189,6 +213,7 @@ export default function ProjectPlanningOverlays({
           taskStatus={project.task_status}
           engineerCatalog={engineerCatalog}
           externalContacts={externalContacts}
+          allActivities={activities}
           onSave={handleActivitySave}
           onDelete={handleDeleteActivity}
           onClose={() => setModalActId(null)}
