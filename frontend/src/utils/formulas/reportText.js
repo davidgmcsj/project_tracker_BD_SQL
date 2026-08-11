@@ -208,9 +208,16 @@ export function generateSingleProjectReportText(p, weekLabel, engineers) {
   return txt;
 }
 
+// Prioridad Completada > Ambiente Producción > Ambiente Pruebas > En proceso
+// > No iniciada — MISMA jerarquía duplicada (a propósito, ver comentario de
+// filtroOpciones.js) en utils/engineers.js (activityStatusIn),
+// activity-detail/shared.js (getActivityStatus, devuelve clave interna) y
+// backend/db/activity-detail.repo.cjs (statusOf) — mantener sincronizadas.
 export function getActivityStatus(ts, actId) {
   if (!ts) return "No iniciada";
   if (Array.isArray(ts.completed) && ts.completed.includes(actId)) return "Completada";
+  if (Array.isArray(ts.ambiente_produccion) && ts.ambiente_produccion.includes(actId)) return "Ambiente Producción";
+  if (Array.isArray(ts.ambiente_pruebas) && ts.ambiente_pruebas.includes(actId)) return "Ambiente Pruebas";
   if (Array.isArray(ts.in_progress) && ts.in_progress.includes(actId)) return "En proceso";
   if (Array.isArray(ts.not_started) && ts.not_started.includes(actId)) return "No iniciada";
   return "No iniciada";

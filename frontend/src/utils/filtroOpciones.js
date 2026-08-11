@@ -58,10 +58,25 @@ export const TIPOS_NOTA = [
 // Estado operacional vivo de una actividad (Actividades_Detalle.Estado) —
 // distinto del vocabulario de ESTADOS_PROYECTO. Usado por la consulta
 // "actividades_estado" para filtrar en proceso / no iniciadas / completadas.
+//
+// ambiente_pruebas/ambiente_produccion: depósitos intermedios entre
+// "en proceso" y "completada" para actividades marcadas "es_desarrollo"
+// (ver activityModel.js) — una actividad de desarrollo no puede completarse
+// hasta pasar por ambos, con subtareas de control creadas automáticamente
+// (ver transitionActivityStatus, components/edit/shared.js). Para
+// actividades SIN esa marca, estos 2 valores nunca aparecen: ni se muestran
+// en los selectores (ActivityDetailModal los oculta), ni son alcanzables
+// (canTransitionTo, formulas/activityHierarchy.js, los bloquea).
+//
+// NOTA: EngineerTaskModal.jsx (tareas adicionales del ingeniero, sin
+// jerarquía padre/hijo) usa su PROPIA lista de 3 estados en vez de esta —
+// el flujo de ambiente no aplica ahí.
 export const ESTADOS_ACTIVIDAD_OPERACIONAL = [
-  { value: "not_started", label: "No iniciada" },
-  { value: "in_progress", label: "En proceso" },
-  { value: "completed",   label: "Completada" },
+  { value: "not_started",         label: "No iniciada" },
+  { value: "in_progress",         label: "En proceso" },
+  { value: "ambiente_pruebas",    label: "Ambiente Pruebas" },
+  { value: "ambiente_produccion", label: "Ambiente Producción" },
+  { value: "completed",           label: "Completada" },
 ];
 
 // ── Derivados de ESTADOS_ACTIVIDAD_OPERACIONAL ───────────────────────────────

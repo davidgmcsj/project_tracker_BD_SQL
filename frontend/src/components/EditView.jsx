@@ -119,7 +119,7 @@ export default function EditView({
     handleActivitiesChange, handleApplyPlannerImport, handleUpdateActivityMeta,
     handleBulkAssign, handleAddActivity, handleActivityModalSave,
     handleActivityModalDelete: handleActivityModalDeleteBase,
-    handleHierarchyAddChild, handleHierarchyDelete,
+    handleHierarchyAddChild, handleHierarchyDelete, handleApplyDateChange,
   } = useActivityHandlers({
     p, editingIdx, projects, activities, allActivities,
     engineerCatalog, externalContacts, onCreateEngineer,
@@ -165,6 +165,19 @@ export default function EditView({
   const handleCreateSubtaskFromModal = () => {
     const newId = handleHierarchyAddChild(modalActId, modalSubtasks.length);
     setModalActId(newId);
+  };
+
+  // handleActivityModalSave devuelve el id de una subtarea de despliegue
+  // recién creada (o null) cuando el cambio de estado disparó la cadena
+  // automática de ambientes (ver transitionActivityStatus) — el hook no
+  // conoce modalActId (estado local de EditView), así que EditView navega
+  // aquí. Devuelve el id al propio ActivityDetailModal: si viene no-nulo, el
+  // modal omite su onClose() posterior (ver comentario en
+  // handleSaveAndClose) para no pisar el setModalActId de abajo.
+  const handleActivityModalSaveAndOpen = (updatedAct) => {
+    const openId = handleActivityModalSave(updatedAct);
+    if (openId) setModalActId(openId);
+    return openId;
   };
 
   return (
@@ -508,7 +521,7 @@ export default function EditView({
           engineerCatalog={engineerCatalog}
           externalContacts={externalContacts}
           allActivities={activities}
-          onSave={handleActivityModalSave}
+          onSave={handleActivityModalSaveAndOpen}
           onDelete={handleActivityModalDelete}
           onClose={() => setModalActId(null)}
           subtasks={modalSubtasks}
@@ -516,6 +529,7 @@ export default function EditView({
           onCreateSubtask={handleCreateSubtaskFromModal}
           onOpenSubtask={setModalActId}
           onDeleteSubtask={handleHierarchyDelete}
+          onApplyDateChange={handleApplyDateChange}
         />
       )}
 

@@ -11,10 +11,15 @@
 // backend): si un enum cambia en un lado hay que actualizar el otro.
 
 // Actividades_Detalle.Estado / Estado_Actividades_Reporte — actividad.
+// ambiente_pruebas/ambiente_produccion: flujo de despliegue de actividades
+// de desarrollo (ver frontend/src/utils/filtroOpciones.js, misma pareja de
+// vocabularios duplicados a propósito).
 const ESTADO_ACTIVIDAD_LABEL = {
-  not_started: "No iniciada",
-  in_progress: "En proceso",
-  completed:   "Completada",
+  not_started:          "No iniciada",
+  in_progress:          "En proceso",
+  ambiente_pruebas:     "Ambiente Pruebas",
+  ambiente_produccion:  "Ambiente Producción",
+  completed:            "Completada",
 };
 
 // ReportesSemanales.EstadoProyecto — proyecto.

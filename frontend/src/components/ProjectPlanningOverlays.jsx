@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { createActivity, visibleActivities, buildActivityTree, aggregatedProgress, getToday } from "../utils/formulas";
-import { moveTaskStatus } from "./edit/shared";
+import { transitionActivityStatus } from "./edit/shared";
 import FullscreenOverlay from "./FullscreenOverlay";
 import GanttChart from "./GanttChart";
 import HierarchyTable from "./HierarchyTable";
@@ -74,25 +74,25 @@ export default function ProjectPlanningOverlays({
     commit(activities.map(a => byId.has(a.id) ? { ...a, ...byId.get(a.id) } : a));
   };
 
-  // El Kanban solo cambia task_status — el % de la actividad vive aparte, en
-  // activities_identified. Al entrar (no salir) de la columna "Completadas"
-  // se fuerza su progress a 100, misma regla que ActivityDetailModal cuando
-  // se pone la fecha de completada a mano: una actividad completada siempre
-  // muestra 100% sin importar por cuál de los dos caminos se marcó.
-  const handleStatusChange = (newTaskStatus) => {
-    const wasCompleted = new Set(safeArr(taskStatus.completed));
-    const nowCompleted = safeArr(newTaskStatus.completed).filter(id => !wasCompleted.has(id));
-    const newActs = nowCompleted.length
-      ? activities.map(a => nowCompleted.includes(a.id) ? { ...a, progress: 100 } : a)
-      : activities;
-    commit(newActs, newTaskStatus);
+  // El Kanban (TaskStatusSelector) ahora usa transitionActivityStatus
+  // internamente y notifica (nextTaskStatus, nextActivities) — nextActivities
+  // ya trae el progress:100 forzado en las recién completadas Y las
+  // subtareas de despliegue creadas por la cadena automática. Abrir la
+  // tarjeta de una subtarea nueva lo hace el propio TaskStatusSelector vía
+  // onOpenDetail (mismo callback que ya usa para abrir al hacer clic en una
+  // tarjeta), así que aquí solo queda persistir.
+  const handleStatusChange = (newTaskStatus, newActivities) => {
+    commit(newActivities || activities, newTaskStatus);
   };
 
   // Cambia el estado de una actividad desde la columna "Estado" de la tabla
   // jerárquica — mismo mecanismo que el selector del modal de detalle
-  // (moveTaskStatus, misma lógica que TaskStatusSelector.move() del Kanban).
+  // (transitionActivityStatus, misma lógica que TaskStatusSelector). Si la
+  // cadena automática de despliegue creó una subtarea, se abre su tarjeta.
   const handleChangeActivityStatus = (activityId, newStatus) => {
-    commit(activities, moveTaskStatus(taskStatus, activities, activityId, newStatus));
+    const result = transitionActivityStatus(taskStatus, activities, activityId, newStatus);
+    commit(result.newActivities, result.taskStatus);
+    if (result.openActivityId) setModalActId(result.openActivityId);
   };
 
   // Devuelve el id para poder abrir la tarjeta de la subtarea recién creada.
@@ -134,13 +134,17 @@ export default function ProjectPlanningOverlays({
   };
 
   // _history (fechas de transición) no vive en la actividad: se escribe en
-  // task_status.status_history. _newStatus (cambio de columna del Kanban
-  // desde el modal) tampoco: mueve el id entre buckets vía moveTaskStatus
-  // (misma lógica que TaskStatusSelector.move()).
+  // task_status.status_history. _newStatus (cambio de estado desde el
+  // selector del modal) tampoco: mueve el id entre buckets vía
+  // transitionActivityStatus (misma lógica que TaskStatusSelector), que
+  // puede crear una subtarea de despliegue — devuelve su id para que
+  // ActivityDetailModal sepa que no debe cerrarse (ver su comentario en
+  // handleSaveAndClose).
   const handleActivitySave = (updatedAct) => {
     const { _history, _newStatus, ...actClean } = updatedAct;
-    const newActs = activities.map(a => a.id === actClean.id ? actClean : a);
+    let newActs = activities.map(a => a.id === actClean.id ? actClean : a);
     let newTs = taskStatus;
+    let openActivityId = null;
     if (_history) {
       const cleanHist = {};
       if (_history.added)       cleanHist.added       = _history.added;
@@ -152,9 +156,14 @@ export default function ProjectPlanningOverlays({
       };
     }
     if (_newStatus) {
-      newTs = moveTaskStatus(newTs, newActs, actClean.id, _newStatus);
+      const result = transitionActivityStatus(newTs, newActs, actClean.id, _newStatus);
+      newTs = result.taskStatus;
+      newActs = result.newActivities;
+      openActivityId = result.openActivityId;
     }
     commit(newActs, newTs);
+    if (openActivityId) setModalActId(openActivityId);
+    return openActivityId;
   };
 
   const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
@@ -190,6 +199,7 @@ export default function ProjectPlanningOverlays({
             activities={activities}
             taskStatus={project.task_status}
             onOpenActivity={setModalActId}
+            projectName={project.project_name}
           />
         )}
         {view === "hierarchy" && (
@@ -201,6 +211,7 @@ export default function ProjectPlanningOverlays({
             onDeleteActivity={handleDeleteActivity}
             onOpenActivity={setModalActId}
             onChangeStatus={handleChangeActivityStatus}
+            projectName={project.project_name}
           />
         )}
       </FullscreenOverlay>
@@ -222,6 +233,7 @@ export default function ProjectPlanningOverlays({
           onCreateSubtask={handleCreateSubtaskFromModal}
           onOpenSubtask={setModalActId}
           onDeleteSubtask={handleDeleteActivity}
+          onApplyDateChange={handleApplyDateChange}
         />
       )}
     </>

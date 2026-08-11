@@ -7,7 +7,7 @@ import {
   createDefaultEngineer, createActivity, visibleActivities, leafActivities, getToday,
 } from "../../utils/formulas";
 import { mergePlannerImport, normalizeName } from "../../utils/plannerImport";
-import { safeArr, moveTaskStatus } from "./shared";
+import { safeArr, transitionActivityStatus } from "./shared";
 
 // Fechas que se registran automáticamente por columna — mismo mapa que usa
 // TaskStatusSelector internamente, duplicado aquí porque handleUpdateActivityMeta
@@ -300,15 +300,21 @@ export function useActivityHandlers({
     return actId;
   };
 
+  // Devuelve el id de una subtarea de despliegue recién creada (o null) para
+  // que el caller (EditView, que posee el estado del modal) la abra de
+  // inmediato — mismo patrón que ya usan handleHierarchyAddChild y
+  // handleAddActivity al devolver el id de lo que acaban de crear.
   const handleActivityModalSave = (updatedAct) => {
     // _history (fechas de transición Inscrita/En proceso/Completada) viene del modal
     // pero NO vive en la actividad: se escribe en task_status.status_history[actId].
     // _newStatus (cambio de columna del Kanban) tampoco: mueve el id entre los
-    // buckets de task_status vía moveTaskStatus (misma lógica que el Kanban).
+    // buckets de task_status vía transitionActivityStatus (misma lógica que el
+    // Kanban), que además puede crear las subtareas automáticas de despliegue.
     const { _history, _newStatus, ...actClean } = updatedAct;
-    const newActs = activities.map(a => a.id === actClean.id ? actClean : a);
+    let newActs = activities.map(a => a.id === actClean.id ? actClean : a);
     let updatedProject = { ...p, activities_identified: newActs };
     let ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
+    let openActivityId = null;
     if (_history) {
       const cleanHist = {};
       if (_history.added)       cleanHist.added       = _history.added;
@@ -317,14 +323,18 @@ export function useActivityHandlers({
       ts = { ...ts, status_history: { ...(ts.status_history || {}), [actClean.id]: cleanHist } };
     }
     if (_newStatus) {
-      ts = moveTaskStatus(ts, newActs, actClean.id, _newStatus);
+      const result = transitionActivityStatus(ts, newActs, actClean.id, _newStatus);
+      ts = result.taskStatus;
+      newActs = result.newActivities;
+      openActivityId = result.openActivityId;
     }
     if (_history || _newStatus) {
-      updatedProject = { ...updatedProject, task_status: ts, manual_metrics: buildAutoMetrics(newActs, ts) };
+      updatedProject = { ...updatedProject, activities_identified: newActs, task_status: ts, manual_metrics: buildAutoMetrics(newActs, ts) };
     }
     const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
     onUpdateProjectFull(editingIdx, updatedProject);
     if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
+    return openActivityId;
   };
 
   // Elimina una actividad desde el modal de detalle: la quita de la lista,
@@ -403,6 +413,18 @@ export function useActivityHandlers({
     });
   };
 
+  // Aplica un array de patches {id, ...campos} en una sola actualización —
+  // mismo contrato que ProjectPlanningOverlays.handleApplyDateChange
+  // (retraso en cascada jerárquico de HierarchyTable y, desde aquí, el
+  // retraso en cascada cronológico de DelayCascadePreview). Una sola
+  // escritura evita que dos setState sucesivos sobre el mismo snapshot se
+  // pisen entre sí.
+  const handleApplyDateChange = (patches) => {
+    const byId = new Map(patches.map(pt => [pt.id, pt]));
+    const newActs = activities.map(a => byId.has(a.id) ? { ...a, ...byId.get(a.id) } : a);
+    onUpdateProjectFull(editingIdx, { ...p, activities_identified: newActs });
+  };
+
   return {
     handleActivitiesChange,
     handleApplyPlannerImport,
@@ -413,5 +435,6 @@ export function useActivityHandlers({
     handleActivityModalDelete,
     handleHierarchyAddChild,
     handleHierarchyDelete,
+    handleApplyDateChange,
   };
 }

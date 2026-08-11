@@ -102,12 +102,18 @@ export function getEngineerActivitiesInProject(engineerId, project) {
     .filter(Boolean);
 }
 
-// Resuelve el estado (completed/in_progress/not_started) de una actividad según
-// las listas de project.task_status.
+// Resuelve el estado de una actividad según las listas de project.task_status.
+// Prioridad completed > ambiente_produccion > ambiente_pruebas > in_progress >
+// not_started — MISMA jerarquía duplicada (a propósito, ver comentario de
+// filtroOpciones.js) en activity-detail/shared.js (getActivityStatus),
+// formulas/reportText.js (getActivityStatus, devuelve label en español) y
+// backend/db/activity-detail.repo.cjs (statusOf) — mantener sincronizadas.
 function activityStatusIn(project, actId) {
   const ts = project.task_status || {};
-  if ((ts.completed   || []).includes(actId)) return "completed";
-  if ((ts.in_progress || []).includes(actId)) return "in_progress";
+  if ((ts.completed            || []).includes(actId)) return "completed";
+  if ((ts.ambiente_produccion  || []).includes(actId)) return "ambiente_produccion";
+  if ((ts.ambiente_pruebas     || []).includes(actId)) return "ambiente_pruebas";
+  if ((ts.in_progress          || []).includes(actId)) return "in_progress";
   return "not_started";
 }
 

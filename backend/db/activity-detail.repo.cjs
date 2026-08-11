@@ -42,10 +42,16 @@ async function syncActividadesDetalle(project) {
   const ts   = project.task_status || {};
   const hist = ts.status_history   || {};
 
+  // Prioridad: completed > ambiente_produccion > ambiente_pruebas >
+  // in_progress > not_started — el estado "más avanzado" del flujo de
+  // despliegue gana si un id apareciera en más de un bucket (defensivo,
+  // no debería pasar en uso normal).
   const statusOf = (actId) => {
-    if ((ts.completed   || []).includes(actId)) return "completed";
-    if ((ts.in_progress || []).includes(actId)) return "in_progress";
-    if ((ts.not_started || []).includes(actId)) return "not_started";
+    if ((ts.completed            || []).includes(actId)) return "completed";
+    if ((ts.ambiente_produccion  || []).includes(actId)) return "ambiente_produccion";
+    if ((ts.ambiente_pruebas     || []).includes(actId)) return "ambiente_pruebas";
+    if ((ts.in_progress          || []).includes(actId)) return "in_progress";
+    if ((ts.not_started          || []).includes(actId)) return "not_started";
     return "not_started";
   };
 

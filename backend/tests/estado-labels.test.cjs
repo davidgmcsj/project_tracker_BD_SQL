@@ -14,6 +14,11 @@ test("traduce el vocabulario de actividad (not_started/in_progress/completed)", 
   assert.equal(translateEstado("estado", "completed"), "Completada");
 });
 
+test("traduce el vocabulario de ambientes de despliegue (ambiente_pruebas/ambiente_produccion)", () => {
+  assert.equal(translateEstado("estado", "ambiente_pruebas"), "Ambiente Pruebas");
+  assert.equal(translateEstado("estado", "ambiente_produccion"), "Ambiente Producción");
+});
+
 test("traduce el vocabulario de proyecto (on-track/at-risk/blocked/mejora-continua)", () => {
   assert.equal(translateEstado("estado", "on-track"), "En curso");
   assert.equal(translateEstado("estado", "at-risk"), "En riesgo");

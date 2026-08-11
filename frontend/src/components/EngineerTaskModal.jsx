@@ -7,10 +7,19 @@ import { useState, useRef, useEffect } from "react";
 import { normalizeEngineerTask, applyEngineerTaskStatus, suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
 import { validateStartEnd, validateTransitionDates } from "../utils/dateValidation";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
-import { ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
 
-// Fuente única del vocabulario de estados (utils/filtroOpciones.js).
-const STATUS_OPTIONS = ESTADOS_ACTIVIDAD_OPERACIONAL;
+// Vocabulario propio, NO derivado de ESTADOS_ACTIVIDAD_OPERACIONAL
+// (utils/filtroOpciones.js) a propósito: ese enum incluye "Ambiente
+// Pruebas"/"Ambiente Producción" (flujo de despliegue de actividades del
+// proyecto, con jerarquía padre/subtarea y subtareas automáticas — ver
+// components/edit/shared.js transitionActivityStatus). Una tarea adicional
+// del ingeniero no tiene jerarquía ni ese flujo; heredar esas 2 opciones
+// aquí dejaría un <select> con estados sin ningún control detrás.
+const STATUS_OPTIONS = [
+  { value: "not_started", label: "No iniciada" },
+  { value: "in_progress", label: "En proceso" },
+  { value: "completed",   label: "Completada" },
+];
 
 const HOURS_OPTIONS = [0, 0.5, ...Array.from({ length: 40 }, (_, i) => i + 1)];
 

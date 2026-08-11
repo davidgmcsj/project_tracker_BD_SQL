@@ -8,11 +8,12 @@
 // árbol se reconstruye en memoria aquí, sin cambiar la forma de los datos.
 //
 // De solo lectura salvo fechas de inicio/fin, estado (columna "Estado", vía
-// onChangeStatus — mismo mecanismo que TaskStatusSelector.move()/el selector
+// onChangeStatus — mismo mecanismo que transitionActivityStatus/el selector
 // de ActivityDetailModal, para no tener tres implementaciones divergentes de
-// "mover una actividad entre buckets de task_status") y el orden de las filas
-// (drag & drop entre hermanas — ver reorderSiblings). Asignado y progreso
-// siguen editándose solo desde ActivityDetailModal (clic en el nombre).
+// "mover una actividad entre buckets de task_status", incluida la cadena
+// automática de despliegue — ver canTransitionTo/isDesarrollo) y el orden de
+// las filas (drag & drop entre hermanas — ver reorderSiblings). Asignado y
+// progreso siguen editándose solo desde ActivityDetailModal (clic en el nombre).
 //
 // El número "1.1, 1.2…" es puramente posicional (deriva de sequence_order,
 // no se guarda como tal) — antes solo reflejaba el orden de creación, sin
@@ -23,10 +24,12 @@
 import { useMemo, useState } from "react";
 import {
   buildActivityTree, flattenTree, formatHierarchyNumber,
-  aggregatedProgress, getActivityStatus, shortEngineerName, canMarkCompleted, reorderSiblings,
+  aggregatedProgress, getActivityStatus, shortEngineerName, canTransitionTo, isDesarrollo, reorderSiblings,
 } from "../utils/formulas";
 import { rescheduleAfterChange } from "../utils/scheduling";
 import { ESTADO_ACTIVIDAD_LABEL, estadoActividadKey } from "../utils/filtroOpciones";
+import { matchesSearch } from "../utils/search";
+import { exportPlanning } from "../utils/storage";
 
 // getActivityStatus (formulas.js) devuelve labels en ESPAÑOL ("Completada",
 // "En proceso", "No iniciada") porque así los consumen los reportes de texto.
@@ -44,17 +47,41 @@ const STATUS_FILTERS = [
 ];
 
 const STATUS_CLASS = {
-  not_started: "htable__status-pill--not-started",
-  in_progress: "htable__status-pill--in-progress",
-  completed:   "htable__status-pill--completed",
+  not_started:          "htable__status-pill--not-started",
+  in_progress:          "htable__status-pill--in-progress",
+  ambiente_pruebas:     "htable__status-pill--ambiente-pruebas",
+  ambiente_produccion:  "htable__status-pill--ambiente-produccion",
+  completed:            "htable__status-pill--completed",
 };
 
 // Mismo orden que las columnas del Kanban (TaskStatusSelector) — claves
 // internas en inglés, label vía ESTADO_ACTIVIDAD_LABEL (fuente única).
-const STATUS_SELECT_KEYS = ["not_started", "in_progress", "completed"];
+const STATUS_SELECT_KEYS = ["not_started", "in_progress", "ambiente_pruebas", "ambiente_produccion", "completed"];
 
 function statusKey(taskStatus, actId) {
   return estadoActividadKey(getActivityStatus(taskStatus, actId));
+}
+
+const EXPORT_COLUMNS = ["numero", "actividad", "asignado", "inicio", "fin", "progreso", "estado"];
+
+// Arma las filas exportables a partir de las mismas filas ya visibles en
+// pantalla (`rows`, tras el filtro de estado/texto activo) — lo que exporta
+// el usuario es exactamente lo que está viendo. childrenOf se necesita para
+// el % agregado de los padres (aggregatedProgress), igual que ya usa la tabla.
+function buildHierarchyExportRows(rows, taskStatus, childrenOf) {
+  return rows.map(({ activity: a, path }) => {
+    const hasChildren = (childrenOf.get(a.id) || []).length > 0;
+    const firstAssignee = (a.assigned_engineers || [])[0];
+    return {
+      numero:    formatHierarchyNumber(path),
+      actividad: a.text || "(sin nombre)",
+      asignado:  firstAssignee ? shortEngineerName(firstAssignee.name) : "Sin asignar",
+      inicio:    a.start_date || "",
+      fin:       a.due_date || "",
+      progreso:  `${hasChildren ? aggregatedProgress(a, childrenOf) : (a.progress || 0)}%`,
+      estado:    getActivityStatus(taskStatus, a.id),
+    };
+  });
 }
 
 // ── Helpers de presentación ───────────────────────────────────────────────────
@@ -79,9 +106,6 @@ function Row({
   const number = formatHierarchyNumber(path);
   const isReadOnlyDates = hasChildren; // fechas gobernadas por el motor de cascada cuando tiene hijos
   const firstAssignee = (a.assigned_engineers || [])[0];
-  // Igual que el Kanban: no se puede marcar completada una actividad con
-  // subtareas pendientes (ver canMarkCompleted, formulas.js).
-  const completedBlocked = !canMarkCompleted(a.id, activities, taskStatus);
 
   const [hover, setHover] = useState(false);
 
@@ -161,11 +185,15 @@ function Row({
           onChange={e => onChangeStatus(a.id, e.target.value)}
           title="Cambiar estado"
         >
-          {STATUS_SELECT_KEYS.map(key => (
-            <option key={key} value={key} disabled={key === "completed" && completedBlocked}>
-              {ESTADO_ACTIVIDAD_LABEL[key]}
-            </option>
-          ))}
+          {STATUS_SELECT_KEYS.map(key => {
+            const esAmbiente = key === "ambiente_pruebas" || key === "ambiente_produccion";
+            const disabled = (esAmbiente && !isDesarrollo(a)) || !canTransitionTo(a.id, activities, taskStatus, key);
+            return (
+              <option key={key} value={key} disabled={disabled}>
+                {ESTADO_ACTIVIDAD_LABEL[key]}
+              </option>
+            );
+          })}
         </select>
       </td>
       <td className="htable__cell htable__cell--actions">
@@ -184,10 +212,13 @@ export default function HierarchyTable({
   onDeleteActivity,  // (id) => void
   onOpenActivity,    // (id) => void — abre ActivityDetailModal desde una fila
   onChangeStatus,    // (activityId, newStatusKey) => void — mueve entre buckets de task_status
+  projectName,
 }) {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [cascadeNotice, setCascadeNotice] = useState(null); // { count } — aviso no bloqueante tras un recálculo
   const [statusFilter, setStatusFilter] = useState("all");
+  const [textFilter, setTextFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
   const [dropTargetId, setDropTargetId] = useState(null);
 
@@ -197,14 +228,19 @@ export default function HierarchyTable({
   const allRows = useMemo(() => flattenTree(acts, { collapsedIds }), [acts, collapsedIds]);
 
   // El filtro no recorta el árbol en crudo: una fila se muestra si ELLA MISMA
-  // matchea el filtro, o si alguno de sus descendientes lo hace (así una tarea
-  // principal sigue visible mientras tenga subtareas en el estado buscado, en
-  // vez de desaparecer y dejar huérfanas a sus hijas filtradas).
+  // matchea AMBOS filtros (estado + texto, combinados con AND), o si alguno
+  // de sus DESCENDIENTES matchea ambos (así una tarea principal sigue visible
+  // mientras tenga subtareas que coincidan, en vez de desaparecer y dejar
+  // huérfanas a sus hijas filtradas). El texto vacío matchea siempre
+  // (matchesSearch), así que sin escribir nada el comportamiento es idéntico
+  // al filtro de estado solo.
   const rows = useMemo(() => {
-    if (statusFilter === "all") return allRows;
+    if (statusFilter === "all" && !textFilter.trim()) return allRows;
     const matches = new Set();
     allRows.forEach(({ activity }) => {
-      if (statusKey(taskStatus, activity.id) === statusFilter) matches.add(activity.id);
+      const matchesStatus = statusFilter === "all" || statusKey(taskStatus, activity.id) === statusFilter;
+      const matchesText = matchesSearch(activity.text || "", textFilter);
+      if (matchesStatus && matchesText) matches.add(activity.id);
     });
     const descendantMatches = new Set(matches);
     let changed = true;
@@ -218,7 +254,7 @@ export default function HierarchyTable({
       });
     }
     return allRows.filter(({ activity }) => descendantMatches.has(activity.id));
-  }, [allRows, statusFilter, taskStatus, acts]);
+  }, [allRows, statusFilter, textFilter, taskStatus, acts]);
 
   const toggleCollapse = (id) => {
     setCollapsedIds(prev => {
@@ -270,6 +306,20 @@ export default function HierarchyTable({
     setDropTargetId(null);
   };
 
+  // Exporta exactamente las filas visibles en pantalla (mismo filtro de
+  // estado/texto ya aplicado) — nunca datos ocultos por el propio filtro.
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const filas = buildHierarchyExportRows(rows, taskStatus, childrenOf);
+      await exportPlanning({ titulo: `Planificacion - ${projectName || "Proyecto"}`, columnas: EXPORT_COLUMNS, filas }, "xlsx");
+    } catch (e) {
+      alert(`No se pudo exportar el Excel: ${e.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (!acts.length) {
     return <div className="htable-empty">No hay actividades registradas en este proyecto todavía.</div>;
   }
@@ -287,10 +337,24 @@ export default function HierarchyTable({
             {f.label}
           </button>
         ))}
-        <span className="htable-toolbar__count">{rows.length} de {allRows.length}</span>
-        {statusFilter !== "all" && (
-          <span className="htable-toolbar__hint">Con un filtro activo no se puede reordenar — elige "Todas" primero.</span>
+        <span className="htable-toolbar__sep" />
+        <input
+          type="text"
+          className="htable-toolbar__search"
+          placeholder="🔍 Buscar actividad…"
+          value={textFilter}
+          onChange={e => setTextFilter(e.target.value)}
+        />
+        {textFilter.trim() && (
+          <button type="button" className="htable-toolbar__chip" onClick={() => setTextFilter("")}>✕ Limpiar</button>
         )}
+        <span className="htable-toolbar__count">{rows.length} de {allRows.length}</span>
+        {(statusFilter !== "all" || textFilter.trim()) && (
+          <span className="htable-toolbar__hint">Con un filtro activo no se puede reordenar — quita el estado y la búsqueda primero.</span>
+        )}
+        <button type="button" className="htable-toolbar__chip" onClick={handleExportExcel} disabled={exporting}>
+          {exporting ? "Generando…" : "📊 Exportar Excel"}
+        </button>
       </div>
 
       {cascadeNotice && (
@@ -345,7 +409,7 @@ export default function HierarchyTable({
                 onOpenActivity={onOpenActivity}
                 onChangeStatus={onChangeStatus}
                 aggProgress={aggregatedProgress(row.activity, childrenOf)}
-                canReorder={statusFilter === "all"}
+                canReorder={statusFilter === "all" && !textFilter.trim()}
                 isDragging={draggedId === row.activity.id}
                 isDropTarget={dropTargetId === row.activity.id && draggedId !== row.activity.id}
                 onRowDragStart={setDraggedId}

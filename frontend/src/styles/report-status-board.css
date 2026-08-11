@@ -6,6 +6,26 @@
   gap: 14px;
 }
 
+.task-status-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-status-search__input {
+  flex: 1;
+  max-width: 360px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 6px 10px;
+}
+
+.task-status-search__clear {
+  background: transparent; border: none; cursor: pointer; color: var(--text-3);
+  font-size: 13px; padding: 4px 6px; border-radius: var(--radius-sm);
+}
+
+.task-status-search__clear:hover { background: var(--surface-2); color: var(--text); }
+
 
 /* Panel de actividades sin clasificar */
 .task-status-unassigned {
@@ -72,12 +92,17 @@
 .task-status-unassigned__btn--gray  { background: var(--surface-2); border: 1px solid var(--border); }
 
 
-/* Las tres columnas de estado */
+/* Las columnas de estado — 2 filas: fila 1 (siempre, 3 columnas) y fila 2
+   (ambientes de despliegue, 2 columnas, solo relevante para actividades
+   "es_desarrollo" — ver TaskStatusSelector.jsx). */
 .task-status-cols {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
 }
+
+.task-status-cols--row1 { grid-template-columns: 1fr 1fr 1fr; }
+
+.task-status-cols--row2 { grid-template-columns: 1fr 1fr; margin-top: 12px; }
 
 
 .task-status-col {
@@ -95,6 +120,10 @@
 .task-status-col--amber { background: #fffbeb; border-color: #fde68a; }
 
 .task-status-col--gray  { background: var(--surface-2); border-color: var(--border); }
+
+.task-status-col--blue   { background: #eff6ff; border-color: #bfdbfe; }
+
+.task-status-col--purple { background: #faf5ff; border-color: #e9d5ff; }
 
 
 .task-status-col__header {
@@ -120,6 +149,10 @@
 .task-status-col--amber .task-status-col__label { color: #92400e; }
 
 .task-status-col--gray  .task-status-col__label { color: var(--text-2); }
+
+.task-status-col--blue   .task-status-col__label { color: #1d4ed8; }
+
+.task-status-col--purple .task-status-col__label { color: #7e22ce; }
 
 .task-status-col__count {
   background: rgba(0,0,0,0.07);

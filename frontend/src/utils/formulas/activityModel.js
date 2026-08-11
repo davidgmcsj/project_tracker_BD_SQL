@@ -25,7 +25,7 @@ export function createDefaultProject() {
     weekly_achievements:   [],
     next_week_plan:        [],
     show_closing_fields:   false,
-    task_status: { completed: [], in_progress: [], not_started: [] },
+    task_status: { completed: [], in_progress: [], not_started: [], ambiente_pruebas: [], ambiente_produccion: [] },
     milestones:  [],
     comments:    [],
     engineers:   [],
@@ -65,6 +65,11 @@ export function createActivity(text = "", parentId = null, sequenceOrder = 0) {
     planner_task_number: null, // "Número de tarea" de Planner (clave estable de sync). null = creada a mano.
     archived: false,      // true si desapareció de Planner en una importación (oculta, recuperable)
     archived_reason: "",  // motivo del archivado (p. ej. fecha de la importación que la retiró)
+    es_desarrollo: false,   // true = habilita los estados "Ambiente Pruebas"/"Ambiente Producción" en el Kanban
+    deployment_role: null,  // "test_deploy" | "prod_deploy" | null — vínculo estable de una subtarea
+                             // AUTO-CREADA con su rol en la cadena de despliegue (ver transitionActivityStatus,
+                             // edit/shared.js). Nunca se detecta por el texto de la actividad (editable por el
+                             // usuario, poco confiable) — es metadata opaca que el sistema setea al crearla.
   };
 }
 
@@ -75,6 +80,10 @@ export function createActivity(text = "", parentId = null, sequenceOrder = 0) {
 // antiguas que aún no tienen el campo (undefined → false).
 
 export const isArchived = (a) => !!a && a.archived === true;
+
+// Tolerante a actividades antiguas sin el campo (undefined → false), mismo
+// criterio que isArchived.
+export const isDesarrollo = (a) => !!a && a.es_desarrollo === true;
 
 export function visibleActivities(acts) {
   return (Array.isArray(acts) ? acts : []).filter(a => !isArchived(a));

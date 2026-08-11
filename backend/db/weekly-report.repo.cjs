@@ -121,7 +121,19 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const completedDates  = ts.completed_dates  || {};
   const statusHistory   = ts.status_history   || {};
   const completedBy     = ts.completed_by     || {};
-  const statusMap = { completed: "Completada", in_progress: "En_Proceso", not_started: "No_Iniciada" };
+  // El valor guardado es el slug interno (no un label a medias) para que
+  // estado-labels.cjs (translateEstado) lo traduzca correctamente en
+  // pantalla y en Excel/PDF — antes se guardaba un label parcial con
+  // guión bajo ("En_Proceso") que no coincidía con ninguna clave de
+  // ESTADO_ACTIVIDAD_LABEL, así que el reporte de ingenieros mostraba el
+  // valor crudo sin traducir.
+  const statusMap = {
+    completed:            "completed",
+    ambiente_produccion:  "ambiente_produccion",
+    ambiente_pruebas:     "ambiente_pruebas",
+    in_progress:          "in_progress",
+    not_started:          "not_started",
+  };
 
   // Índice actId → array de [{localEngId, engName}] (múltiples ingenieros por actividad)
   const actAssignMap = new Map();
@@ -134,7 +146,7 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
   const taskRows = [];
   const taskReq  = pool.request().input("rid", sql.Int, reporteID);
   let ti = 0;
-  for (const [key, label] of Object.entries(statusMap)) {
+  for (const [key, estadoSlug] of Object.entries(statusMap)) {
     for (const actId of toArray(ts[key])) {
       const hist        = statusHistory[actId] || {};
       const fechaComp   = key === "completed" ? (completedDates[actId] || hist.completed || null) : null;
@@ -150,7 +162,7 @@ async function saveProject(pool, project, weekLabel, savedAt, engCache, proyCach
       const engSqlId     = catalogEntr?.sqlId || null;
 
       taskReq.input(`ttexto${ti}`,   sql.NVarChar,      resolveActText(actIndex, actId));
-      taskReq.input(`testado${ti}`,  sql.NVarChar(50),  label);
+      taskReq.input(`testado${ti}`,  sql.NVarChar(50),  estadoSlug);
       taskReq.input(`tfecha${ti}`,   sql.Date,          fechaComp);
       taskReq.input(`tfinsc${ti}`,   sql.Date,          fechaInsc);
       taskReq.input(`tfenproc${ti}`, sql.Date,          fechaEnProc);

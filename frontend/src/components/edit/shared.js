@@ -4,12 +4,20 @@
 // Solo vive aquí lo que cruza más de un componente destino. Lo que un solo
 // componente usa se queda en su propio archivo.
 
-import { getToday, canMarkCompleted } from "../../utils/formulas";
-import { weekRange, nextWeekRange, SITUATION_LABEL } from "../../utils/weekPlanning";
+import { getToday, canTransitionTo, createActivity } from "../../utils/formulas.js";
+import { weekRange, nextWeekRange, SITUATION_LABEL } from "../../utils/weekPlanning.js";
 
 // Fechas que se registran automáticamente por columna — mismo mapa que usa
 // TaskStatusSelector (Kanban) internamente.
-const STATUS_DATE_FIELD = { not_started: null, in_progress: "in_progress", completed: "completed" };
+const STATUS_DATE_FIELD = {
+  not_started: null,
+  in_progress: "in_progress",
+  ambiente_pruebas: "ambiente_pruebas",
+  ambiente_produccion: "ambiente_produccion",
+  completed: "completed",
+};
+
+const ALL_STATUS_KEYS = ["completed", "in_progress", "not_started", "ambiente_pruebas", "ambiente_produccion"];
 
 // Semana en curso, calculada una vez al cargar el módulo — suficiente para
 // una sesión de trabajo normal (el caso extremo de dejar la pestaña abierta
@@ -51,24 +59,27 @@ export function buildAssignables(engineerCatalog, externalContacts) {
   return [...engineers, ...externals];
 }
 
-// Mueve una actividad entre los 3 buckets de task_status (completed/in_progress/
-// not_started), igual que TaskStatusSelector.move() al arrastrar una tarjeta
-// en el Kanban — misma lógica, reutilizada aquí para el selector de estado del
-// modal de detalle (ActivityDetailModal._newStatus). Devuelve el task_status
-// actualizado, o el original sin cambios si el destino es "completed" y la
-// actividad tiene subtareas pendientes (canMarkCompleted).
-export function moveTaskStatus(taskStatus, activities, activityId, toKey) {
+// Siguiente sequence_order entre hermanas del mismo padre — mismo cálculo
+// que HierarchyTable.nextSequenceOrder, duplicado aquí (función de una línea,
+// sin dependencias) para crear la subtarea de despliegue al final del grupo.
+function nextSequenceOrder(activities, parentId) {
+  const siblings = activities.filter(a => (a.parent_id ?? null) === (parentId ?? null));
+  if (!siblings.length) return 0;
+  return Math.max(...siblings.map(a => Number(a.sequence_order) || 0)) + 1;
+}
+
+// Mueve una actividad entre los 5 buckets de task_status, SIN validar nada —
+// motor de bajo nivel reutilizado tanto por la transición pública
+// (transitionActivityStatus, que sí valida vía canTransitionTo) como por las
+// transiciones automáticas internas del padre en la cadena de despliegue
+// (que deliberadamente NO pasan por esa validación — ver su comentario).
+function moveBucket(taskStatus, activities, activityId, toKey) {
   const ts = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
   const acts = safeActs(activities);
-  if (toKey === "completed" && !canMarkCompleted(activityId, acts, ts)) return ts;
 
-  const fromKey = ["completed", "in_progress", "not_started"].find(k => safeArr(ts[k]).includes(activityId));
-  const next = {
-    ...ts,
-    completed:   safeArr(ts.completed).filter(id => id !== activityId),
-    in_progress: safeArr(ts.in_progress).filter(id => id !== activityId),
-    not_started: safeArr(ts.not_started).filter(id => id !== activityId),
-  };
+  const fromKey = ALL_STATUS_KEYS.find(k => safeArr(ts[k]).includes(activityId));
+  const next = { ...ts };
+  ALL_STATUS_KEYS.forEach(k => { next[k] = safeArr(ts[k]).filter(id => id !== activityId); });
   next[toKey] = [...next[toKey], activityId];
 
   const cDates = { ...(ts.completed_dates || {}) };
@@ -94,6 +105,82 @@ export function moveTaskStatus(taskStatus, activities, activityId, toKey) {
   next.completed_by = completedBy;
 
   return next;
+}
+
+// Crea la subtarea automática de un paso de despliegue (rol "test_deploy" o
+// "prod_deploy") colgando del padre indicado, y la agrega a not_started —
+// mismo patrón que handleHierarchyAddChild (useActivityHandlers.js).
+function createDeploymentSubtask(activities, taskStatus, parentId, text, role) {
+  const newAct = { ...createActivity(text, parentId, nextSequenceOrder(activities, parentId)), deployment_role: role };
+  const newActivities = [...activities, newAct];
+  const ts = {
+    ...taskStatus,
+    not_started: [...safeArr(taskStatus.not_started), newAct.id],
+    status_history: { ...(taskStatus.status_history || {}), [newAct.id]: { added: getToday() } },
+  };
+  return { newActivities, taskStatus: ts, newActivityId: newAct.id };
+}
+
+// Punto de entrada ÚNICO para cambiar el estado de una actividad — usado por
+// los 3 caminos de la UI (Kanban/TaskStatusSelector, selector del modal de
+// detalle vía _newStatus, y el <select> de HierarchyTable), para que el flujo
+// de ambientes de despliegue (desarrollo → pruebas → producción) se comporte
+// igual sin importar por dónde se dispare.
+//
+// A diferencia del antiguo moveTaskStatus (solo devolvía task_status), esta
+// función puede CREAR actividades (las subtareas automáticas de despliegue),
+// así que su contrato de retorno es distinto a propósito:
+//   { taskStatus, newActivities, openActivityId }
+// openActivityId: id de una subtarea recién creada que el caller debe abrir
+// de inmediato (mismo patrón que ya usa "+ Subtarea" hoy), o null si no
+// aplica.
+//
+// Si el destino no es alcanzable (canTransitionTo lo bloquea: subtareas
+// normales pendientes, intento de completar a mano desde un ambiente, o
+// intento de entrar a un ambiente sin es_desarrollo), es un no-op: devuelve
+// taskStatus/activities intactos y openActivityId null.
+export function transitionActivityStatus(taskStatus, activities, activityId, toKey) {
+  const ts = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
+  const acts = safeActs(activities);
+
+  if (!canTransitionTo(activityId, acts, ts, toKey)) {
+    return { taskStatus: ts, newActivities: acts, openActivityId: null };
+  }
+
+  let nextTs = moveBucket(ts, acts, activityId, toKey);
+  let nextActs = acts;
+  let openActivityId = null;
+
+  if (toKey === "ambiente_pruebas") {
+    const created = createDeploymentSubtask(nextActs, nextTs, activityId, "Paso a servidor de pruebas", "test_deploy");
+    nextActs = created.newActivities;
+    nextTs = created.taskStatus;
+    openActivityId = created.newActivityId;
+  }
+
+  if (toKey === "completed") {
+    const completedAct = nextActs.find(a => a.id === activityId);
+    const parentId = completedAct?.parent_id ?? null;
+    const parent = parentId ? nextActs.find(a => a.id === parentId) : null;
+
+    // Transiciones automáticas del padre — DELIBERADAMENTE sin pasar por
+    // canTransitionTo (ver su comentario): el padre solo llega aquí como
+    // efecto secundario de completar SU PROPIA subtarea de despliegue, nunca
+    // por acción directa del usuario sobre el padre.
+    if (parent && completedAct.deployment_role === "test_deploy") {
+      nextTs = moveBucket(nextTs, nextActs, parentId, "ambiente_produccion");
+      const created = createDeploymentSubtask(nextActs, nextTs, parentId, "Paso a servidor de producción", "prod_deploy");
+      nextActs = created.newActivities;
+      nextTs = created.taskStatus;
+      openActivityId = created.newActivityId;
+    } else if (parent && completedAct.deployment_role === "prod_deploy") {
+      nextTs = moveBucket(nextTs, nextActs, parentId, "completed");
+      nextActs = nextActs.map(a => a.id === parentId ? { ...a, progress: 100 } : a);
+      openActivityId = null;
+    }
+  }
+
+  return { taskStatus: nextTs, newActivities: nextActs, openActivityId };
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────

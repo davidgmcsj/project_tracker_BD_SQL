@@ -17,6 +17,8 @@ import {
 test("ESTADO_ACTIVIDAD_LABEL traduce cada clave a su etiqueta", () => {
   assert.equal(ESTADO_ACTIVIDAD_LABEL.not_started, "No iniciada");
   assert.equal(ESTADO_ACTIVIDAD_LABEL.in_progress, "En proceso");
+  assert.equal(ESTADO_ACTIVIDAD_LABEL.ambiente_pruebas, "Ambiente Pruebas");
+  assert.equal(ESTADO_ACTIVIDAD_LABEL.ambiente_produccion, "Ambiente Producción");
   assert.equal(ESTADO_ACTIVIDAD_LABEL.completed, "Completada");
 });
 
@@ -29,9 +31,9 @@ test("ESTADO_ACTIVIDAD_KEY es el inverso exacto de ESTADO_ACTIVIDAD_LABEL", () =
   }
 });
 
-test("los derivados cubren exactamente los 3 estados, sin extras", () => {
-  assert.equal(Object.keys(ESTADO_ACTIVIDAD_LABEL).length, 3);
-  assert.equal(Object.keys(ESTADO_ACTIVIDAD_KEY).length, 3);
+test("los derivados cubren exactamente los 5 estados (incluye el flujo de ambientes de despliegue), sin extras", () => {
+  assert.equal(Object.keys(ESTADO_ACTIVIDAD_LABEL).length, 5);
+  assert.equal(Object.keys(ESTADO_ACTIVIDAD_KEY).length, 5);
 });
 
 test("estadoActividadLabel acepta la clave interna", () => {
@@ -62,6 +64,13 @@ test("estadoActividadKey normaliza desde etiqueta en español", () => {
 test("estadoActividadKey deja intacta una clave que ya es interna", () => {
   assert.equal(estadoActividadKey("in_progress"), "in_progress");
   assert.equal(estadoActividadKey("completed"), "completed");
+});
+
+test("estadoActividadLabel/estadoActividadKey cubren el flujo de ambientes de despliegue", () => {
+  assert.equal(estadoActividadLabel("ambiente_pruebas"), "Ambiente Pruebas");
+  assert.equal(estadoActividadLabel("ambiente_produccion"), "Ambiente Producción");
+  assert.equal(estadoActividadKey("Ambiente Pruebas"), "ambiente_pruebas");
+  assert.equal(estadoActividadKey("Ambiente Producción"), "ambiente_produccion");
 });
 
 test("estadoActividadKey cae en 'not_started' ante valor nulo o desconocido", () => {

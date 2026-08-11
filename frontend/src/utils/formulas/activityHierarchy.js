@@ -202,6 +202,53 @@ export function canMarkCompleted(activityId, activities, taskStatus) {
   return !descendientesPendientes(activityId);
 }
 
+// Claves de task_status en las que puede caer una actividad — ver
+// transitionActivityStatus (components/edit/shared.js) para la lógica de
+// movimiento en sí; esto solo valida si el destino es alcanzable.
+const AMBIENTE_KEYS = ["ambiente_pruebas", "ambiente_produccion"];
+
+// Puerta de validación para el flujo de ambientes de despliegue (desarrollo
+// → pruebas → producción). Generaliza canMarkCompleted a los 2 estados
+// intermedios nuevos, y agrega 2 reglas propias del flujo:
+//
+//  1. Subtareas normales pendientes bloquean completed/ambiente_pruebas/
+//     ambiente_produccion igual que ya bloqueaban completed (canMarkCompleted
+//     sin cambios, solo aplicada a 3 destinos en vez de 1).
+//  2. No se puede forzar "completed" a mano mientras la actividad YA está en
+//     ambiente_pruebas/ambiente_produccion — solo se llega ahí por la cadena
+//     automática (ver transitionActivityStatus, paso de automatismos).
+//  3. ambiente_pruebas/ambiente_produccion solo son alcanzables si la
+//     actividad tiene es_desarrollo === true.
+//
+// IMPORTANTE: esta función NO se usa (ni debe usarse) para la transición
+// automática interna que mueve al padre de ambiente_pruebas a
+// ambiente_produccion, ni de ambiente_produccion a completed — esas
+// transiciones las dispara el propio sistema al completar la subtarea de
+// despliegue correspondiente, y pasar por este guard causaría un deadlock:
+// el padre nunca podría avanzar porque su propio estado de ambiente lo
+// bloquearía a sí mismo. Ver el comentario en transitionActivityStatus.
+export function canTransitionTo(activityId, activities, taskStatus, toKey) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const ts = taskStatus && typeof taskStatus === "object" ? taskStatus : {};
+
+  if (["completed", "ambiente_pruebas", "ambiente_produccion"].includes(toKey) && !canMarkCompleted(activityId, acts, ts)) {
+    return false;
+  }
+
+  if (toKey === "completed") {
+    const current = ["completed", "in_progress", "not_started", ...AMBIENTE_KEYS]
+      .find(k => (ts[k] || []).includes(activityId));
+    if (AMBIENTE_KEYS.includes(current)) return false;
+  }
+
+  if (AMBIENTE_KEYS.includes(toKey)) {
+    const act = acts.find(a => a.id === activityId);
+    if (!act || act.es_desarrollo !== true) return false;
+  }
+
+  return true;
+}
+
 // Progreso agregado de un nodo con hijos: promedio simple de los hijos DIRECTOS,
 // recursivo (si un hijo también tiene hijos, su valor ya viene agregado). Nodos
 // sin hijos devuelven su propio act.progress manual tal cual. Puramente derivado

@@ -16,11 +16,18 @@ export function closestHoursOption(hours) {
   , HOURS_OPTIONS[0]);
 }
 
+// Prioridad completed > ambiente_produccion > ambiente_pruebas > in_progress
+// > not_started — MISMA jerarquía duplicada (a propósito, ver comentario de
+// filtroOpciones.js) en utils/engineers.js (activityStatusIn),
+// formulas/reportText.js (getActivityStatus, devuelve label en español) y
+// backend/db/activity-detail.repo.cjs (statusOf) — mantener sincronizadas.
 export function getActivityStatus(taskStatus, actId) {
   if (!taskStatus) return "not_started";
-  if ((taskStatus.completed   || []).includes(actId)) return "completed";
-  if ((taskStatus.in_progress || []).includes(actId)) return "in_progress";
-  if ((taskStatus.not_started || []).includes(actId)) return "not_started";
+  if ((taskStatus.completed            || []).includes(actId)) return "completed";
+  if ((taskStatus.ambiente_produccion  || []).includes(actId)) return "ambiente_produccion";
+  if ((taskStatus.ambiente_pruebas     || []).includes(actId)) return "ambiente_pruebas";
+  if ((taskStatus.in_progress          || []).includes(actId)) return "in_progress";
+  if ((taskStatus.not_started          || []).includes(actId)) return "not_started";
   return "not_started";
 }
 
@@ -52,6 +59,7 @@ export function hasChanges(activity, local, originalHistory, progressOverride, o
   if ((activity.text        || "")      !== local.text)        return true;
   if ((activity.parent_id   ?? null)    !== (local.parent_id ?? null)) return true;
   if (originalStatus !== undefined && originalStatus !== local.status) return true;
+  if ((activity.es_desarrollo === true) !== local.es_desarrollo) return true;
   if ((activity.start_date  || "")      !== local.start_date)  return true;
   if ((activity.due_date    || "")      !== local.due_date)    return true;
   if ((activity.description || "")      !== local.description) return true;

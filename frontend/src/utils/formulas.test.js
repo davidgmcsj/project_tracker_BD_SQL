@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday,
-  leafActivities, canMarkCompleted, buildActivityIndex, activityLabel, activityText, sortByName,
+  leafActivities, canMarkCompleted, canTransitionTo, buildActivityIndex, activityLabel, activityText, sortByName,
   reorderSiblings,
 } from "./formulas.js";
 
@@ -235,6 +235,59 @@ test("canMarkCompleted permite el abuelo cuando toda la cadena de descendientes 
     { id: "nieto",  parent_id: "padre" },
   ];
   assert.equal(canMarkCompleted("abuelo", acts, { completed: ["padre", "nieto"] }), true);
+});
+
+// ── canTransitionTo — flujo de ambientes de despliegue ────────────────────────
+
+test("canTransitionTo bloquea ambiente_pruebas con subtareas normales pendientes", () => {
+  const acts = [
+    { id: "padre", parent_id: null, es_desarrollo: true },
+    { id: "hijo",  parent_id: "padre" },
+  ];
+  assert.equal(canTransitionTo("padre", acts, { completed: [] }, "ambiente_pruebas"), false);
+});
+
+test("canTransitionTo permite ambiente_pruebas cuando no hay subtareas normales pendientes", () => {
+  const acts = [{ id: "padre", parent_id: null, es_desarrollo: true }];
+  assert.equal(canTransitionTo("padre", acts, {}, "ambiente_pruebas"), true);
+});
+
+test("canTransitionTo bloquea completed a mano cuando el estado actual es ambiente_pruebas", () => {
+  const acts = [{ id: "a", parent_id: null, es_desarrollo: true }];
+  const ts = { ambiente_pruebas: ["a"] };
+  assert.equal(canTransitionTo("a", acts, ts, "completed"), false);
+});
+
+test("canTransitionTo bloquea completed a mano cuando el estado actual es ambiente_produccion", () => {
+  const acts = [{ id: "a", parent_id: null, es_desarrollo: true }];
+  const ts = { ambiente_produccion: ["a"] };
+  assert.equal(canTransitionTo("a", acts, ts, "completed"), false);
+});
+
+test("canTransitionTo permite completed a mano cuando el estado actual es in_progress", () => {
+  const acts = [{ id: "a", parent_id: null }];
+  const ts = { in_progress: ["a"] };
+  assert.equal(canTransitionTo("a", acts, ts, "completed"), true);
+});
+
+test("canTransitionTo bloquea ambiente_pruebas/ambiente_produccion sin es_desarrollo", () => {
+  const acts = [{ id: "a", parent_id: null, es_desarrollo: false }];
+  assert.equal(canTransitionTo("a", acts, {}, "ambiente_pruebas"), false);
+  assert.equal(canTransitionTo("a", acts, {}, "ambiente_produccion"), false);
+});
+
+test("canTransitionTo bloquea ambiente_pruebas/ambiente_produccion cuando es_desarrollo no está definido (actividad antigua)", () => {
+  const acts = [{ id: "a", parent_id: null }];
+  assert.equal(canTransitionTo("a", acts, {}, "ambiente_pruebas"), false);
+});
+
+test("canTransitionTo nunca bloquea in_progress/not_started", () => {
+  const acts = [
+    { id: "padre", parent_id: null },
+    { id: "hijo",  parent_id: "padre" },
+  ];
+  assert.equal(canTransitionTo("padre", acts, { completed: [] }, "in_progress"), true);
+  assert.equal(canTransitionTo("padre", acts, { completed: [] }, "not_started"), true);
 });
 
 // ── buildActivityIndex / activityLabel — numeración jerárquica ────────────────
