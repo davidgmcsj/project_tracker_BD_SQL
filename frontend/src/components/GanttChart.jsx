@@ -3,19 +3,24 @@ import {
   STATUS_COLOR, LABEL_COL_MIN, LABEL_COL_MAX, LABEL_COL_DEFAULT, DATE_COL_WIDTH,
   toDate, dayDiff, fmtDay, fmtDayFull, fmtMonth, fmtDueLabel, fmtWeek,
   mondayOf, unitForRange, unitDiff, statusOf, lastDayOfMonth, rangeForMonths, computeAutoRange,
+  computeDatedRows, buildGanttExportRows,
 } from "./gantt/ganttHelpers";
 import { useResizableColumn } from "./gantt/useResizableColumn";
 import { useElementWidth } from "./gantt/useElementWidth";
+import { exportPlanning } from "../utils/storage";
 import FilterBar from "./gantt/FilterBar";
+
+const EXPORT_COLUMNS = ["numero", "actividad", "inicio", "fin", "estado", "avance"];
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
+export default function GanttChart({ activities, taskStatus, onOpenActivity, projectName }) {
   const [statusFilter, setStatusFilter] = useState("all");
   // "all" | "roots" sin parentFilter — "all" | "childrenOnly" con parentFilter
   // (SCOPE_FILTERS vs SCOPE_FILTERS_WITH_PARENT, ver FilterBar).
   const [scopeFilter, setScopeFilter] = useState("all");
   const [parentFilter, setParentFilter] = useState(null); // id de tarea principal, o null = todas
+  const [textFilter, setTextFilter] = useState(""); // búsqueda libre por nombre de actividad
   const [hoverRow, setHoverRow] = useState(null);
   const [hoverCol, setHoverCol] = useState(null);
   const [weekAnchor, setWeekAnchor] = useState(null); // no-null = modo "semana navegable" activo
@@ -24,6 +29,7 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
   const { width: labelWidth, onCellMouseDown: onLabelCellMouseDown, onCellMouseMoveHint: onLabelCellMouseMove, onCellMouseLeaveHint: onLabelCellMouseLeave } =
     useResizableColumn(LABEL_COL_DEFAULT, LABEL_COL_MIN, LABEL_COL_MAX);
   const [scrollRef, containerWidth] = useElementWidth();
+  const [exporting, setExporting] = useState(false);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d; }, []);
 
@@ -72,73 +78,27 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
     return c;
   }, [activities, taskStatus]);
 
-  // Descendientes (todos los niveles, no solo hijos directos) de una tarea
-  // padre — necesario para "Padre y subtareas"/"Solo subtareas": una
-  // subtarea de 2do nivel también debe entrar cuando se filtra por su abuela.
-  const descendantIds = useMemo(() => {
-    if (!parentFilter) return null;
-    const acts = activities || [];
-    const childrenOf = new Map();
-    acts.forEach(a => {
-      if (!a.parent_id) return;
-      if (!childrenOf.has(a.parent_id)) childrenOf.set(a.parent_id, []);
-      childrenOf.get(a.parent_id).push(a.id);
-    });
-    const ids = new Set();
-    const walk = (id) => (childrenOf.get(id) || []).forEach(childId => { ids.add(childId); walk(childId); });
-    walk(parentFilter);
-    return ids;
-  }, [activities, parentFilter]);
-
   // Filas del calendario, en orden jerárquico (cada subtarea debajo de su
-  // tarea principal) en vez del orden crudo del array. Solo se listan las que
-  // tienen alguna fecha — una fila sin fechas no tiene celda que pintar.
-  //
-  // parentFilter + scopeFilter se combinan (junto con statusFilter y el rango
-  // de fechas, aplicado más abajo vía `range`) para los 3 casos pedidos:
-  // "solo principales" (sin parentFilter, scope=roots), "un padre con sus
-  // subtareas" (parentFilter + scope=all) y "solo las subtareas de tal padre"
-  // (parentFilter + scope=childrenOnly).
-  const dated = useMemo(() => {
-    const acts = activities || [];
-    const visible = acts.filter(a => {
-      if (!(a.start_date || a.due_date)) return false;
-      if (statusFilter !== "all" && statusOf(taskStatus, a.id) !== statusFilter) return false;
-      if (parentFilter) {
-        const isTheParent = a.id === parentFilter;
-        const isDescendant = descendantIds.has(a.id);
-        if (!isTheParent && !isDescendant) return false;
-        if (scopeFilter === "childrenOnly" && isTheParent) return false;
-        return true;
-      }
-      return scopeFilter === "all" || !a.parent_id;
-    });
-    if (scopeFilter === "roots" && !parentFilter) return visible;
+  // tarea principal), combinando statusFilter + scopeFilter + parentFilter —
+  // ver computeDatedRows (ganttHelpers.js) para la lógica completa y sus tests.
+  const dated = useMemo(
+    () => computeDatedRows(activities, taskStatus, { statusFilter, scopeFilter, parentFilter, textFilter }),
+    [activities, taskStatus, statusFilter, scopeFilter, parentFilter, textFilter]
+  );
 
-    // Ordena por jerarquía: raíces (o la tarea padre elegida) en su orden
-    // original y, tras cada una, sus descendientes. Las huérfanas (padre
-    // inexistente o filtrado por estado) se listan al final para que nunca
-    // desaparezcan del calendario.
-    const byId = new Map(visible.map(a => [a.id, a]));
-    const childrenOf = new Map();
-    visible.forEach(a => {
-      const parentId = a.parent_id && byId.has(a.parent_id) ? a.parent_id : null;
-      if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
-      childrenOf.get(parentId).push(a);
-    });
-    const ordered = [];
-    const walk = (parentId) => {
-      (childrenOf.get(parentId) || []).forEach(a => {
-        ordered.push(a);
-        walk(a.id);
-      });
-    };
-    // Con parentFilter + childrenOnly, la propia tarea padre no está en
-    // `visible` (se excluyó arriba) — walk debe arrancar en sus hijos
-    // directos, no en null (ahí no colgaría nada).
-    walk(parentFilter && scopeFilter === "childrenOnly" ? parentFilter : null);
-    return ordered;
-  }, [activities, taskStatus, statusFilter, scopeFilter, parentFilter, descendantIds]);
+  // Exporta exactamente las filas visibles en pantalla (mismos filtros ya
+  // aplicados) — nunca datos ocultos por el propio filtro del usuario.
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      const filas = buildGanttExportRows(dated, numberById, depthById, taskStatus);
+      await exportPlanning({ titulo: `Cronograma - ${projectName || "Proyecto"}`, columnas: EXPORT_COLUMNS, filas }, "pdf");
+    } catch (e) {
+      alert(`No se pudo exportar el PDF: ${e.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Rango efectivo, en orden de prioridad:
   // 1. weekAnchor — modo semana navegable, 7 días fijos, ◀/▶ para moverse.
@@ -188,6 +148,26 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
     setWeekAnchor(d => { const n = new Date(d); n.setDate(n.getDate() + deltaDays); return n; });
   };
 
+  // Cualquier filtro que cambie QUÉ actividades se listan (Estado, Tarea
+  // padre, Mostrar) debe soltar un rango fijado a mano/atajo — si no, el
+  // calendario sigue mostrando el rango de ANTES del filtro y las filas
+  // nuevas (ej. las "En proceso") pueden caer fuera de esas columnas,
+  // pareciendo vacío aunque `dated` sí tenga filas. Al soltar customRange (y
+  // weekAnchor/forceAll), `range` vuelve a computeAutoRange(dated) — que ya
+  // se recalcula solo porque depende de `dated` en su propio useMemo.
+  const releaseCustomRange = () => { setCustomRange(null); setWeekAnchor(null); setForceAll(false); };
+
+  const handleSetStatusFilter = (value) => { setStatusFilter(value); releaseCustomRange(); };
+
+  const handleSetScopeFilter = (value) => { setScopeFilter(value); releaseCustomRange(); };
+
+  // A diferencia de los demás filtros, el de texto NO suelta el rango fijado
+  // a cada tecla — el usuario suele estar buscando dentro de un período que
+  // ya eligió a propósito (ej. "esta semana, cuál era..."), y resetear el
+  // rango en cada pulsación sería molesto. Si el resultado queda fuera del
+  // rango visible, el usuario puede soltarlo a mano con "Volver al automático".
+  const handleSetTextFilter = (value) => setTextFilter(value);
+
   // Cambiar de padre elegido a "todas" (o viceversa) invalida el valor de
   // scopeFilter del otro contexto ("roots" no existe con padre elegido,
   // "childrenOnly" no existe sin padre) — se resetea a "all" para no quedar
@@ -195,6 +175,7 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
   const handleSetParentFilter = (id) => {
     setParentFilter(id);
     setScopeFilter("all");
+    releaseCustomRange();
   };
 
   const handleClearCustom = () => { setCustomRange(null); setWeekAnchor(null); setForceAll(false); };
@@ -207,14 +188,14 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
 
   if (!dated.length) {
     const totalDated = (activities || []).filter(a => a.start_date || a.due_date).length;
-    if ((statusFilter !== "all" || parentFilter) && totalDated > 0) {
+    if ((statusFilter !== "all" || parentFilter || textFilter.trim()) && totalDated > 0) {
       return (
         <div className="gantt-empty">
           Ninguna actividad con fechas coincide con el filtro seleccionado.{" "}
           <button
             type="button"
             className="gantt-empty__link"
-            onClick={() => { setStatusFilter("all"); handleSetParentFilter(null); }}
+            onClick={() => { setStatusFilter("all"); handleSetParentFilter(null); setTextFilter(""); }}
           >Mostrar todas</button>
         </div>
       );
@@ -281,12 +262,16 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity }) {
         scopeFilter={scopeFilter}
         parentOptions={parentOptions}
         parentFilter={parentFilter}
+        textFilter={textFilter}
         counts={counts}
         onPickCustomRange={handleCustomRangeInput}
         onPickPreset={handlePickPreset}
-        onSetStatusFilter={setStatusFilter}
-        onSetScopeFilter={setScopeFilter}
+        onSetStatusFilter={handleSetStatusFilter}
+        onSetScopeFilter={handleSetScopeFilter}
         onSetParentFilter={handleSetParentFilter}
+        onSetTextFilter={handleSetTextFilter}
+        onExportPdf={handleExportPdf}
+        exporting={exporting}
         onClearCustom={handleClearCustom}
         hasCustom={!!customRange || !!weekAnchor || forceAll}
         today={today}

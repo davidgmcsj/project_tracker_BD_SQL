@@ -309,6 +309,33 @@ export async function exportReport(body, formato) {
   URL.revokeObjectURL(url);
 }
 
+// Exporta filas YA ARMADAS por el cliente (Gantt/Planificación, desde
+// activities_identified/task_status en memoria) a Excel o PDF — a
+// diferencia de exportReport (arriba), no pasa por una consulta SQL del
+// módulo de Reportes, así que el body ya trae {titulo, columnas, filas}.
+// Mismo mecanismo de descarga (Blob + createObjectURL).
+export async function exportPlanning({ titulo, columnas, filas }, formato) {
+  const res = await fetch(`${API_BASE}/api/reports/export-planning`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "include",
+    body:    JSON.stringify({ titulo, columnas, filas, formato }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `${titulo || "planificacion"}.${formato}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ── Administración de usuarios (solo admins — ver requireAdmin en server.cjs) ─
 // A diferencia de syncEngineerToSQL (que traga errores porque el guardado
 // local ya ocurrió antes de llamarlo), aquí NO hay guardado local previo —

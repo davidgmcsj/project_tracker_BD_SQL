@@ -2,6 +2,8 @@
 // calendario Gantt. Sin hooks: todo lo que GanttChart y FilterBar necesitan
 // calcular sin depender del ciclo de vida de React.
 
+import { matchesSearch } from "../../utils/search.js";
+
 // Colores por estado — mismo semáforo que HierarchyTable (rojo/azul/verde).
 export const STATUS_COLOR = {
   not_started: "#d3323c",
@@ -117,6 +119,100 @@ export function statusOf(taskStatus, actId) {
   if ((taskStatus.completed   || []).includes(actId)) return "completed";
   if ((taskStatus.in_progress || []).includes(actId)) return "in_progress";
   return "not_started";
+}
+
+// Todos los descendientes (todos los niveles, no solo hijos directos) de
+// parentId — necesario para "Padre y subtareas"/"Solo subtareas": una
+// subtarea de 2do nivel también debe entrar cuando se filtra por su abuela.
+export function descendantIdsOf(activities, parentId) {
+  if (!parentId) return new Set();
+  const childrenOf = new Map();
+  (activities || []).forEach(a => {
+    if (!a.parent_id) return;
+    if (!childrenOf.has(a.parent_id)) childrenOf.set(a.parent_id, []);
+    childrenOf.get(a.parent_id).push(a.id);
+  });
+  const ids = new Set();
+  const walk = (id) => (childrenOf.get(id) || []).forEach(childId => { ids.add(childId); walk(childId); });
+  walk(parentId);
+  return ids;
+}
+
+// Filas del calendario, en orden jerárquico (cada subtarea debajo de su
+// tarea principal) en vez del orden crudo del array. Solo incluye
+// actividades con alguna fecha — una fila sin fechas no tiene celda que
+// pintar. statusFilter + parentFilter + scopeFilter + textFilter se combinan
+// para los 3 casos de filtro compuesto ya existentes ("solo principales" sin
+// parentFilter+scope=roots, "un padre con sus subtareas" parentFilter+
+// scope=all, "solo las subtareas de tal padre" parentFilter+
+// scope=childrenOnly) MÁS el filtro de texto libre por nombre — mismo
+// criterio simple que statusFilter: filtra la fila propia, sin rescatar
+// ancestros que no matcheen (una subtarea que matchea puede quedar "colgada"
+// sin su padre visible, igual que ya pasa hoy con statusFilter).
+export function computeDatedRows(activities, taskStatus, { statusFilter = "all", scopeFilter = "all", parentFilter = null, textFilter = "" } = {}) {
+  const acts = activities || [];
+  const descendantIds = descendantIdsOf(acts, parentFilter);
+  const visible = acts.filter(a => {
+    if (!(a.start_date || a.due_date)) return false;
+    if (statusFilter !== "all" && statusOf(taskStatus, a.id) !== statusFilter) return false;
+    if (!matchesSearch(a.text || "", textFilter)) return false;
+    if (parentFilter) {
+      const isTheParent = a.id === parentFilter;
+      const isDescendant = descendantIds.has(a.id);
+      if (!isTheParent && !isDescendant) return false;
+      if (scopeFilter === "childrenOnly" && isTheParent) return false;
+      return true;
+    }
+    return scopeFilter === "all" || !a.parent_id;
+  });
+  if (scopeFilter === "roots" && !parentFilter) return visible;
+
+  // Ordena por jerarquía: raíces (o la tarea padre elegida) en su orden
+  // original y, tras cada una, sus descendientes. Las huérfanas (padre
+  // inexistente o filtrado por estado) se listan al final para que nunca
+  // desaparezcan del calendario.
+  const byId = new Map(visible.map(a => [a.id, a]));
+  const childrenOf = new Map();
+  visible.forEach(a => {
+    const parentId = a.parent_id && byId.has(a.parent_id) ? a.parent_id : null;
+    if (!childrenOf.has(parentId)) childrenOf.set(parentId, []);
+    childrenOf.get(parentId).push(a);
+  });
+  const ordered = [];
+  const walk = (parentId) => {
+    (childrenOf.get(parentId) || []).forEach(a => {
+      ordered.push(a);
+      walk(a.id);
+    });
+  };
+  // Con parentFilter + childrenOnly, la propia tarea padre NO está en
+  // `visible` (se excluyó arriba) — byId.has(a.parent_id) da false para sus
+  // hijos directos, así que childrenOf ya los cuelga de null (parentId
+  // "huérfano" cae ahí, línea de arriba), nunca de childrenOf.get(parentFilter)
+  // (que quedaría vacío porque el padre no está indexado). walk arranca en
+  // null en AMBOS casos — arrancar en parentFilter cuando childrenOnly es un
+  // id sin hijos indexados y produce una tabla vacía (bug corregido).
+  walk(null);
+  return ordered;
+}
+
+// Arma las filas exportables del Gantt a partir de las mismas filas ya
+// visibles en pantalla (`dated`, después de los filtros de estado/tarea
+// padre/texto activos) — lo que exporta el usuario es exactamente lo que
+// está viendo, nunca datos ocultos por sus propios filtros. numberById y
+// depthById ya los calcula GanttChart (numeración jerárquica sobre TODAS
+// las actividades, no solo las visibles, para que el número no cambie al
+// filtrar). La sangría se simula con espacios porque el PDF es tabla plana
+// (sin indentación real de celda).
+export function buildGanttExportRows(dated, numberById, depthById, taskStatus) {
+  return dated.map(a => ({
+    numero:    numberById.get(a.id) || "",
+    actividad: "  ".repeat(depthById.get(a.id) || 0) + (a.text || "(sin nombre)"),
+    inicio:    a.start_date || "",
+    fin:       a.due_date || "",
+    estado:    statusOf(taskStatus, a.id),
+    avance:    `${Math.max(0, Math.min(100, Number(a.progress) || 0))}%`,
+  }));
 }
 
 export function lastDayOfMonth(year, monthIndex) {

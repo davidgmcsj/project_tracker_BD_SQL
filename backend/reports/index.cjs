@@ -122,6 +122,46 @@ router.post("/export", async (req, res) => {
   }
 });
 
+// ── Exportación de Gantt/Planificación (filas ya armadas en el cliente) ────
+// A diferencia de /export, NO pasa por buildQuery/SQL: activities_identified
+// y task_status ya viven en memoria del navegador (EditView/
+// ProjectPlanningOverlays), así que el cliente arma columnas/filas
+// directamente desde ahí y las manda tal cual. Reutiliza los mismos
+// exportadores puros que /export (toXlsxBuffer/toPdfBuffer) — nunca duplica
+// la lógica de generación de archivo, solo el origen de los datos difiere.
+router.post("/export-planning", async (req, res) => {
+  const { formato, titulo, columnas, filas } = req.body || {};
+  if (formato !== "xlsx" && formato !== "pdf") {
+    return res.status(400).json({ error: 'formato debe ser "xlsx" o "pdf"' });
+  }
+  if (!Array.isArray(columnas) || !columnas.length) {
+    return res.status(400).json({ error: "columnas debe ser un array no vacío" });
+  }
+  if (!Array.isArray(filas)) {
+    return res.status(400).json({ error: "filas debe ser un array" });
+  }
+
+  const nombreArchivo = (titulo || "planificacion").replace(/[^a-zA-Z0-9-_ ]/g, "").trim() || "planificacion";
+  const payload = { titulo, consulta: titulo, columnas, filas, filtrosAplicados: [], total: filas.length };
+
+  try {
+    if (formato === "xlsx") {
+      const buffer = await toXlsxBuffer(payload);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${nombreArchivo}.xlsx"`);
+      return res.send(buffer);
+    }
+
+    const buffer = await toPdfBuffer(payload);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${nombreArchivo}.pdf"`);
+    return res.send(buffer);
+  } catch (e) {
+    console.error("[REPORTS] ✗ /export-planning:", e.message);
+    res.status(500).json({ error: "Error generando la exportación" });
+  }
+});
+
 // ── Notas de proyecto (Fase 3) ────────────────────────────────────────────
 
 router.get("/notes/:proyectoAppID", async (req, res) => {

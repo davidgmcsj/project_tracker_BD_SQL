@@ -6,9 +6,10 @@ import { toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS, STATUS_FILTERS, SCOPE_F
 import ParentTaskFilter from "./ParentTaskFilter";
 
 export default function FilterBar({
-  range, statusFilter, scopeFilter, parentOptions, parentFilter, counts,
-  onPickCustomRange, onPickPreset, onSetStatusFilter, onSetScopeFilter, onSetParentFilter, onClearCustom,
+  range, statusFilter, scopeFilter, parentOptions, parentFilter, textFilter, counts,
+  onPickCustomRange, onPickPreset, onSetStatusFilter, onSetScopeFilter, onSetParentFilter, onSetTextFilter, onClearCustom,
   hasCustom, today, weekAnchor, onWeekNav, isWeekPreset,
+  onExportPdf, exporting,
 }) {
   const year = today.getFullYear();
   const scopeOptions = parentFilter ? SCOPE_FILTERS_WITH_PARENT : SCOPE_FILTERS;
@@ -56,6 +57,24 @@ export default function FilterBar({
         ))}
         <button type="button" className="gantt-date-filter__chip" onClick={() => onPickPreset("year")}>Año {year}</button>
         <button type="button" className="gantt-date-filter__chip" onClick={() => onPickPreset("all")}>Todo</button>
+        <span className="gantt__toolbar-sep" />
+        <button type="button" className="gantt-date-filter__chip" onClick={onExportPdf} disabled={exporting}>
+          {exporting ? "Generando…" : "📄 Exportar PDF"}
+        </button>
+      </div>
+
+      <div className="gantt-filterbar__row">
+        <span className="gantt-filterbar__label">Buscar:</span>
+        <input
+          type="text"
+          className="gantt-date-filter__input gantt-text-filter__input"
+          placeholder="Nombre de actividad…"
+          value={textFilter}
+          onChange={e => onSetTextFilter(e.target.value)}
+        />
+        {textFilter.trim() && (
+          <button type="button" className="gantt-date-filter__clear" onClick={() => onSetTextFilter("")}>✕ Limpiar</button>
+        )}
       </div>
 
       <div className="gantt-filterbar__row">
