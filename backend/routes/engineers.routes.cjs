@@ -1,0 +1,94 @@
+"use strict";
+
+// engineers.routes.cjs — Sincronización de ingenieros, colaboradores externos
+// y tareas sueltas con Azure SQL. La app trata SQL como caché derivada de
+// data.json: cada alta/edición local dispara una llamada aquí para que la
+// tabla SQL correspondiente quede al día de inmediato.
+
+const express = require("express");
+
+/**
+ * @param {object} deps
+ * @param {Function} [deps.syncExternalContactToSQL]
+ * @param {Function} [deps.syncEngineerToSQL]
+ * @param {Function} [deps.syncEngineerTaskToSQL]
+ * @param {Function} [deps.deleteEngineerTaskFromSQL]
+ * @param {Function} deps.errorBody
+ */
+function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody }) {
+  const router = express.Router();
+
+  router.post("/external-contacts/sync-one", async (req, res) => {
+    if (!syncExternalContactToSQL) {
+      return res.status(503).json({ error: "Módulo de BD no disponible" });
+    }
+    try {
+      const { contact } = req.body;
+      if (!contact?.name) return res.status(400).json({ error: "Falta el nombre del colaborador" });
+      const sqlId = await syncExternalContactToSQL(contact);
+      res.json({ ok: true, sql_id: sqlId });
+    } catch (e) {
+      console.error("[SQL] Error sincronizando colaborador externo:", e.message);
+      res.status(500).json(errorBody("Error sincronizando colaborador externo", e));
+    }
+  });
+
+  // Se llama cada vez que se crea/edita/desactiva un ingeniero en la app, para
+  // que la tabla Ingenieros de Azure SQL quede al día de inmediato (nombre,
+  // cargo, estado). Devuelve el IngenieroID real de SQL para guardarlo en el
+  // catálogo local (sql_id).
+  router.post("/engineers/sync-one", async (req, res) => {
+    if (!syncEngineerToSQL) {
+      return res.status(503).json({ error: "Módulo de BD no disponible" });
+    }
+    try {
+      const { engineer } = req.body;
+      if (!engineer?.name) return res.status(400).json({ error: "Falta el ingeniero" });
+      const sqlId = await syncEngineerToSQL(engineer);
+      res.json({ ok: true, sql_id: sqlId });
+    } catch (e) {
+      console.error("[SQL] Error sincronizando ingeniero:", e.message);
+      res.status(500).json(errorBody("Error sincronizando ingeniero", e));
+    }
+  });
+
+  // Las tareas sueltas no están asociadas a ningún proyecto/reporte, así que
+  // viven en su propia tabla (Tareas_Sueltas_Ingeniero), upsert por AppTaskID
+  // (el id local "etask_xxx"). Si el ingeniero aún no tiene sql_id (nunca se
+  // le había guardado nada en SQL), se crea/resuelve primero.
+  router.post("/engineers/tasks/sync-one", async (req, res) => {
+    if (!syncEngineerTaskToSQL) {
+      return res.status(503).json({ error: "Módulo de BD no disponible" });
+    }
+    try {
+      const { engineer, task } = req.body;
+      if (!engineer?.name || !task?.id) return res.status(400).json({ error: "Falta el ingeniero o la tarea" });
+
+      const engineerSqlId = engineer.sql_id || await syncEngineerToSQL(engineer);
+      await syncEngineerTaskToSQL(engineerSqlId, task);
+      res.json({ ok: true, sql_id: engineerSqlId });
+    } catch (e) {
+      console.error("[SQL] Error sincronizando tarea suelta:", e.message);
+      res.status(500).json(errorBody("Error sincronizando tarea suelta", e));
+    }
+  });
+
+  router.post("/engineers/tasks/delete-one", async (req, res) => {
+    if (!deleteEngineerTaskFromSQL) {
+      return res.status(503).json({ error: "Módulo de BD no disponible" });
+    }
+    try {
+      const { taskId } = req.body;
+      if (!taskId) return res.status(400).json({ error: "Falta el id de la tarea" });
+      await deleteEngineerTaskFromSQL(taskId);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[SQL] Error borrando tarea suelta:", e.message);
+      res.status(500).json(errorBody("Error borrando tarea suelta", e));
+    }
+  });
+
+  return router;
+}
+
+module.exports = { crearEngineersRouter };

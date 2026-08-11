@@ -1,0 +1,352 @@
+
+/* ═══ ACTIVITIES LIST (EditView) ═══ */
+.act-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-bdr) transparent;
+}
+
+.act-list::-webkit-scrollbar { width: 5px; }
+
+.act-list::-webkit-scrollbar-thumb { background: var(--accent-bdr); border-radius: 4px; }
+
+.act-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  transition: border-color 0.15s;
+}
+
+.act-list__item:hover {
+  border-color: var(--accent-bdr);
+}
+
+.act-list__item--selected {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, var(--surface-2));
+}
+
+.act-list__select-box {
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  cursor: pointer;
+  accent-color: var(--red);
+}
+
+
+/* Barra de acciones por lotes de actividades */
+.act-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 6px 0 10px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.act-bulk-bar__all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.act-bulk-bar__all input {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--azul-claro);
+}
+
+.act-bulk-bar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.act-bulk-bar__btn {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+.act-list__num {
+  min-width: 22px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--azul-claro);
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.act-list__text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.act-list__edit,
+.act-list__remove {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.act-list__edit:hover  { opacity: 1; color: var(--azul-claro); }
+
+.act-list__remove:hover { opacity: 1; color: var(--red); }
+
+.act-list__empty {
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  padding: 6px 4px;
+}
+
+.act-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-left: auto;
+}
+
+
+/* ═══ ACTIVITY SELECTOR (EditView checkboxes) ═══ */
+.act-selector {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* ── Actividad asignada fijamente a este ingeniero (verde claro) ── */
+/* ═══ ASIGNACIÓN DE RESPONSABLES ═══ */
+
+/* Barra de filtros (contiene buscador + dropdown ingeniero) */
+/* Buscador de texto (dentro de la barra de filtros) */
+/* Dropdown filtro de ingeniero */
+/* Lista */
+/* Divisor "Completadas" */
+/* Filas */
+.act-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  transition: background 0.1s;
+  min-height: 44px;
+  height: auto;
+  flex-shrink: 0;
+}
+
+.act-assign-row:last-child { border-bottom: none; }
+
+.act-assign-row:hover { background: var(--surface-2); }
+
+
+.act-assign-row__select {
+  width: 140px;
+  min-width: 110px;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+
+/* Fila completada */
+/* Sin resultados / hint scroll */
+/* Hint junto al label del campo */
+.act-selector__search {
+  position: relative;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.act-selector__search-input {
+  width: 100%;
+  padding: 5px 28px 5px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+  outline: none;
+}
+
+.act-selector__search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
+.act-selector__search-clear {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.act-selector__search-clear:hover { color: var(--red); }
+
+
+.act-list__select {
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  height: 26px !important;
+  background: var(--surface-3) !important;
+  color: var(--azul-oscuro) !important;
+  font-weight: 700 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.act-list__select:hover {
+  border-color: var(--azul-claro) !important;
+}
+
+.act-list__select--status-pending {
+  border-color: var(--border) !important;
+  color: var(--text-2) !important;
+}
+
+.act-list__select--status-progress {
+  border-color: rgba(255, 176, 32, 0.8) !important;
+  color: #b45309 !important; /* Dark amber for visibility */
+  background: rgba(255, 176, 32, 0.05) !important;
+}
+
+.act-list__select--status-completed {
+  border-color: rgba(61, 220, 132, 0.8) !important;
+  color: #15803d !important; /* Dark green for visibility */
+  background: rgba(61, 220, 132, 0.05) !important;
+}
+
+
+/* ── Multi-responsable chips en la lista de actividades ── */
+.act-list__eng-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+}
+
+.act-list__eng-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0,51,153,0.08);
+  border: 1px solid rgba(0,51,153,0.22);
+  border-radius: 20px;
+  padding: 4px 8px 4px 10px;
+  font-size: 12px;
+  color: var(--azul-oscuro);
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.act-list__eng-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.act-list__eng-chip--external {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+.act-list__eng-chip--external .act-list__eng-chip-rm { color: #fdba74; }
+
+.act-list__eng-chip--external .act-list__eng-chip-rm:hover { color: var(--red); }
+
+.act-list__eng-chip-ext {
+  font-size: 10px;
+  font-weight: 700;
+  background: #fed7aa;
+  color: #9a3412;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-right: 2px;
+}
+
+.act-list__eng-chip-rm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-3);
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.12s;
+  display: flex;
+  align-items: center;
+}
+
+.act-list__eng-chip-rm:hover { color: var(--red); }
+
+
+/* Diálogo de confirmación de eliminación en la lista de actividades */
+.act-del-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1500;
+}
+
+.act-del-dialog {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 28px 24px 20px;
+  max-width: 400px; width: 90%;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  text-align: center;
+}
+
+.act-del-dialog__icon  { font-size: 32px; margin-bottom: 8px; }
+
+.act-del-dialog__title { font-size: 17px; font-weight: 700; margin: 0 0 10px; color: #1a2e4a; }
+
+.act-del-dialog__name  { font-size: 14px; color: #333; margin: 0 0 6px; font-style: italic; }
+
+.act-del-dialog__warn  { font-size: 12px; color: #999; margin: 0 0 20px; }
+
+.act-del-dialog__actions { display: flex; gap: 10px; justify-content: center; }

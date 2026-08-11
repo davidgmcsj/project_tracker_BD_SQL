@@ -1,0 +1,92 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SISTEMA DE DISEÑO — Tokens de color, tipografía y espaciado
+   ───────────────────────────────────────────────────────────────────
+   Fuente única de verdad del sistema visual. Los nombres de variables
+   existentes se conservan para que todo el CSS los herede; el tema
+   oscuro solo redefine los tokens (nunca los componentes).
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── Identidad institucional ── */
+  --inst-azul:      #003399;
+  --inst-amarillo:  #FFCC00;
+  --inst-rojo:      #CC0033;
+  --inst-gradient:  linear-gradient(135deg, #F5E800, #FF9E2B);
+
+  /* ── Marca ── */
+  --azul-oscuro:    #003399;
+  --azul-medio:     #002a7a;
+  --azul-claro:     #1a49a8;
+  --dorado:         #e0a800;   /* dorado legible sobre blanco (el #FFCC00 puro no contrasta) */
+  --dorado-claro:   #FFCC00;
+  --teal:           #0e7490;
+
+  /* ── Superficies y neutrales (sesgo azulado, elegidos no gris puro) ── */
+  --bg:             #eef2f7;
+  --bg-header:      var(--inst-azul);
+  --surface:        #ffffff;
+  --surface-2:      #f5f8fc;
+  --border:         #dbe3ee;
+  --border-strong:  #c4d0e0;
+  --border-hl:      var(--inst-amarillo);
+  --text:           #16203a;
+  --text-2:         #465470;
+  --text-3:         #7d8aa3;
+
+  /* ── Acento (dorado como filo, con moderación) ── */
+  --accent:         var(--inst-amarillo);
+  --accent-bg:      rgba(255, 204, 0, 0.12);
+  --accent-bdr:     rgba(255, 204, 0, 0.4);
+
+  /* ── Semáforos (estado, separados del acento de marca) ── */
+  --green:          #0f9d58;
+  --green-bg:       #e7f6ee;
+  --amber:          #e08a00;
+  --amber-bg:       #fdf3e2;
+  --red:            #d3323c;
+  --red-bg:         #fdecee;
+  --info:           #1a49a8;
+  --info-bg:        #e8effb;
+
+  /* ── Escala tipográfica modular (reemplaza tamaños ad-hoc) ── */
+  --t-cap:   0.75rem;   /* 12px  etiquetas */
+  --t-sm:    0.8125rem; /* 13px  secundario */
+  --t-body:  0.9375rem; /* 15px  cuerpo */
+  --t-lg:    1.125rem;  /* 18px  subtítulo */
+  --t-xl:    1.5rem;    /* 24px  título */
+  --t-2xl:   2rem;      /* 32px  KPI */
+  --t-kpi:   2.75rem;   /* 44px  número protagonista */
+
+  /* ── Espaciado (escala de 4) ── */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* ── Formas y sombras ── */
+  --radius:         14px;
+  --radius-sm:      9px;
+  --radius-pill:    999px;
+  --shadow:         0 1px 2px rgba(16,32,58,.06), 0 4px 16px -6px rgba(16,32,58,.12);
+  --shadow-lg:      0 12px 32px -10px rgba(16,32,58,.22);
+  --ring:           0 0 0 3px rgba(0,51,153,.18);
+}
+
+
+/* ── Tema oscuro (solo redefine tokens) ── */
+:root[data-theme="dark"] {
+  --azul-oscuro:  #4d82e8;
+  --azul-medio:   #5a8cf0;
+  --azul-claro:   #3f6fd0;
+  --bg:           #0e1420;
+  --surface:      #161e2e;
+  --surface-2:    #1c2536;
+  --border:       #2a3547;
+  --border-strong:#384660;
+  --text:         #e8edf6;
+  --text-2:       #a9b6cd;
+  --text-3:       #7a88a3;
+  --green-bg:     #12291f;
+  --amber-bg:     #2a2211;
+  --red-bg:       #2c1418;
+  --info-bg:      #141f38;
+  --accent-bg:    rgba(255,204,0,.14);
+  --shadow:       0 1px 2px rgba(0,0,0,.4), 0 4px 16px -6px rgba(0,0,0,.5);
+  --shadow-lg:    0 12px 32px -10px rgba(0,0,0,.6);
+}

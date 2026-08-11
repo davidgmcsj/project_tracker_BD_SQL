@@ -1,0 +1,330 @@
+
+.btn {
+  padding: 8px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.btn--reset {
+  background: var(--red);
+  color: white;
+}
+
+.btn--reset:hover {
+  background: #dc2626;
+}
+
+.btn--restore {
+  background: var(--azul-claro);
+  color: white;
+}
+
+.btn--restore:hover {
+  background: var(--azul-medio);
+}
+
+.btn--accent {
+  background: var(--azul-claro);
+  color: white;
+}
+
+.btn--accent:hover {
+  background: var(--azul-medio);
+}
+
+.btn--secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+
+.btn--secondary:hover {
+  border-color: var(--azul-claro);
+  color: var(--azul-claro);
+}
+
+.btn--danger {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.btn--danger:hover {
+  background: var(--red);
+  color: white;
+}
+
+.btn--danger-solid {
+  background: var(--red);
+  border-color: var(--red);
+  color: white;
+  font-weight: 600;
+}
+
+.btn--danger-solid:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn--card-report {
+  background: #dce8f7;
+  border: 1px solid #a8c4e8;
+  color: #1e3a7b;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn--card-report:hover {
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
+}
+
+.btn--card-export {
+  background: #dce8f7;
+  border: 1px solid #a8c4e8;
+  color: #1e3a7b;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn--card-export:hover {
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
+}
+
+.btn--card-informe {
+  background: #eef4ff;
+  border: 1px solid #93b4e8;
+  color: #1e3a7b;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn--card-informe:hover:not(:disabled) {
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
+}
+
+.btn--card-informe:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn--card-cancel {
+  background: #fff0f3;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn--card-cancel:hover {
+  background: var(--red);
+  color: white;
+}
+
+.btn--export {
+  background: #dce8f7;
+  border: 1px solid #a8c4e8;
+  color: #1e3a7b;
+  font-size: 0.75rem;
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn--export:hover {
+  background: var(--azul-claro);
+  border-color: var(--azul-claro);
+  color: white;
+}
+
+.btn--informe {
+  background: #1d6c3a;
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.btn--informe:hover  { background: #145229; }
+
+.btn--informe:active { background: #0e3a1c; }
+
+.btn--save-report {
+  background: var(--dorado);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.btn--save-report:hover {
+  background: var(--dorado-claro);
+}
+
+.btn--global-status {
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn--global-status:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn--executive {
+  background: var(--azul-oscuro, #1e3a5f);
+  color: #fff;
+}
+
+.btn--full {
+  background: var(--accent, #2563eb);
+  color: #fff;
+}
+
+.btn--global-status-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.btn--card-plan {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.btn--card-plan:hover {
+  background: var(--accent-bg);
+  border-color: var(--inst-azul);
+  color: var(--inst-azul);
+}
+
+.btn--ai-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--inst-azul);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn--ai-status:hover:not(:disabled) { opacity: 0.85; }
+
+.btn--ai-status:disabled { opacity: 0.6; cursor: not-allowed; }
+
+
+/* ═══ PANEL ASIGNACIONES EN TARJETA DASHBOARD ═══ */
+.btn--card-assign {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.btn--card-assign:hover {
+  background: var(--azul-claro);
+  color: #fff;
+  border-color: var(--azul-claro);
+}
+
+
+.btn--new-quarter {
+  padding: 8px 16px;
+  background: var(--azul-oscuro, #1a2e4a);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.btn--new-quarter:hover { opacity: 0.85; }
+
+
+.btn--clean-stats {
+  padding: 8px 16px;
+  background: var(--surface);
+  color: #92400e;
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn--clean-stats:hover:not(:disabled) { background: #fef3c7; }
+
+.btn--clean-stats:disabled { opacity: 0.6; cursor: not-allowed; }
+
+
+.btn--brand-solid { background: var(--azul-oscuro); color: #fff; }
+
+.btn--brand-solid:hover { background: var(--azul-medio); }
+
+
+.btn--sm { padding: 6px 12px; font-size: var(--t-cap); }
