@@ -21,6 +21,18 @@ export function createExternalContact(name = "", company = "") {
   return { id: genExternalContactId(), name, company, active: true, created_at: getToday() };
 }
 
+// Orden alfabético por nombre (localeCompare en español: respeta tildes/ñ y
+// mayúsculas/minúsculas como el usuario espera). Devuelve un array NUEVO —
+// no muta el original. Se aplica una sola vez, en App.jsx al cargar/actualizar
+// el catálogo, así todas las listas/filtros que lo consumen (dropdowns,
+// tarjetas, exportaciones) heredan el orden sin que cada uno tenga que
+// ordenar por su cuenta.
+export function sortByName(list) {
+  return [...(Array.isArray(list) ? list : [])].sort((a, b) =>
+    (a?.name || "").localeCompare(b?.name || "", "es", { sensitivity: "base" })
+  );
+}
+
 // Construye un índice id → nombre a partir del catálogo de ingenieros.
 export function buildEngineerIndex(engineers) {
   const map = new Map();

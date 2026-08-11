@@ -42,17 +42,21 @@ export function fileIcon(mime = "", name = "") {
   return "📎";
 }
 
-export function hasChanges(activity, local, originalHistory) {
+// progressOverride: cuando la actividad tiene subtareas, el % real a
+// comparar/guardar es el calculado (computedProgress en ActivityDetailModal),
+// no local.progress — ver displayProgress ahí. Sin override, compara
+// local.progress como siempre.
+export function hasChanges(activity, local, originalHistory, progressOverride) {
   if ((activity.text        || "")      !== local.text)        return true;
   if ((activity.start_date  || "")      !== local.start_date)  return true;
   if ((activity.due_date    || "")      !== local.due_date)    return true;
   if ((activity.description || "")      !== local.description) return true;
   if ((activity.objectives  || "")      !== local.objectives)  return true;
   if ((activity.solution    || "")      !== local.solution)    return true;
-  if ((Number(activity.progress)      || 0) !== local.progress)      return true;
+  const effectiveProgress = progressOverride !== undefined ? progressOverride : local.progress;
+  if ((Number(activity.progress)      || 0) !== effectiveProgress)  return true;
   if ((Number(activity.planned_hours) || 0) !== local.planned_hours) return true;
   if (JSON.stringify(activity.assigned_engineers || []) !== JSON.stringify(local.assigned_engineers)) return true;
-  if (JSON.stringify(activity.checklist  || []) !== JSON.stringify(local.checklist))  return true;
   if (JSON.stringify(activity.notes      || []) !== JSON.stringify(local.notes))      return true;
   if (JSON.stringify(activity.key_dates  || []) !== JSON.stringify(local.key_dates))  return true;
   const oh = originalHistory || {};

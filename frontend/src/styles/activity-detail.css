@@ -293,6 +293,13 @@
   letter-spacing: 0.04em;
 }
 
+.adm-label__hint {
+  text-transform: none;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--text-3);
+}
+
 .adm-input,
 .adm-select {
   font-size: 13px;
@@ -305,9 +312,29 @@
   transition: border-color 0.15s;
 }
 
+.adm-input:disabled,
+.adm-range:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .adm-input:focus,
 .adm-select:focus {
   border-color: var(--azul-oscuro);
+}
+
+.adm-input--error {
+  border-color: var(--red);
+}
+
+.adm-input--error:focus {
+  border-color: var(--red);
+}
+
+.adm-date-error {
+  color: var(--red);
+  font-size: 12px;
+  margin: 4px 0 0;
 }
 
 .adm-textarea {
@@ -862,6 +889,12 @@
 }
 
 .adm-save-btn:hover { background: var(--azul-medio); }
+
+.adm-save-btn:disabled {
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
 
 
 /* ── Badge "Sin guardar" ── */

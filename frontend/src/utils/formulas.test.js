@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   projectProgress, globalProgress, businessDaysBetween, suggestedWorkHours, toISODate, getToday,
-  leafActivities, canMarkCompleted, buildActivityIndex, activityLabel, activityText,
+  leafActivities, canMarkCompleted, buildActivityIndex, activityLabel, activityText, sortByName,
 } from "./formulas.js";
 
 // ── toISODate ─────────────────────────────────────────────────────────────────
@@ -299,4 +299,29 @@ test("buildActivityIndex con array vacío o no-array no lanza", () => {
   assert.equal(buildActivityIndex([]).size, 0);
   assert.equal(buildActivityIndex(null).size, 0);
   assert.equal(buildActivityIndex(undefined).size, 0);
+});
+
+// ── sortByName ──────────────────────────────────────────────────────────────
+
+test("sortByName ordena alfabéticamente por nombre", () => {
+  const list = [{ name: "Cristian" }, { name: "Andres" }, { name: "Brayan" }];
+  assert.deepEqual(sortByName(list).map(e => e.name), ["Andres", "Brayan", "Cristian"]);
+});
+
+test("sortByName respeta tildes/ñ y no distingue mayúsculas de minúsculas", () => {
+  const list = [{ name: "Óscar" }, { name: "Ana" }, { name: "Ñusta" }, { name: "andrea" }];
+  assert.deepEqual(sortByName(list).map(e => e.name), ["Ana", "andrea", "Ñusta", "Óscar"]);
+});
+
+test("sortByName no muta el array original", () => {
+  const list = [{ name: "Zoe" }, { name: "Ana" }];
+  const sorted = sortByName(list);
+  assert.notEqual(sorted, list);
+  assert.equal(list[0].name, "Zoe"); // el original queda intacto
+});
+
+test("sortByName con array vacío o no-array no lanza", () => {
+  assert.deepEqual(sortByName([]), []);
+  assert.deepEqual(sortByName(null), []);
+  assert.deepEqual(sortByName(undefined), []);
 });

@@ -5,6 +5,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { normalizeEngineerTask, applyEngineerTaskStatus, suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
+import { validateStartEnd, validateTransitionDates } from "../utils/dateValidation";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
 import { ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
 
@@ -58,7 +59,31 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
   const set = (field, val) => setLocal(prev => ({ ...prev, [field]: val }));
 
   // Cambiar el estado auto-registra las fechas de transición (added/in_progress/completed).
-  const changeStatus = (val) => setLocal(prev => applyEngineerTaskStatus(prev, val));
+  // Pasar a "completed" fuerza el % a 100 — misma regla que en
+  // ActivityDetailModal/TaskStatusSelector, para que una tarea completada
+  // siempre muestre 100% sin importar por cuál camino se marcó.
+  const changeStatus = (val) => setLocal(prev => {
+    const next = applyEngineerTaskStatus(prev, val);
+    return val === "completed" ? { ...next, progress: 100 } : next;
+  });
+
+  // Editar la fecha de "completada" a mano (DateBadgesSection) tiene el
+  // mismo efecto que cambiarla por el selector de Estado.
+  const setHistory = (val) => {
+    setLocal(prev => {
+      const justCompleted = val.completed && !prev.history.completed;
+      return { ...prev, history: val, progress: justCompleted ? 100 : prev.progress };
+    });
+  };
+
+  const dateErrors = {
+    startEnd: validateStartEnd(local.start_date, local.due_date),
+    transitions: validateTransitionDates({
+      startDate: local.start_date, dueDate: local.due_date,
+      added: local.history.added, inProgress: local.history.in_progress, completed: local.history.completed,
+    }),
+  };
+  const hasDateErrors = !!(dateErrors.startEnd || dateErrors.transitions);
 
   const dirty = hasChanges(original, local);
 
@@ -67,7 +92,11 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
     onClose();
   };
 
-  const handleSaveAndClose = () => { onSave(local); onClose(); };
+  const handleSaveAndClose = () => {
+    if (hasDateErrors) return;
+    onSave(local);
+    onClose();
+  };
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") requestClose(); };
@@ -128,7 +157,12 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
             placeholder="Nombre de la tarea…"
           />
 
-          <DateBadgesSection status={local.status} history={local.history} onChange={val => set("history", val)} />
+          <DateBadgesSection status={local.status} history={local.history} onChange={setHistory} />
+          {dateErrors.transitions && (
+            <p className="adm-date-error">
+              {dateErrors.transitions.in_progress || dateErrors.transitions.completed}
+            </p>
+          )}
         </div>
 
         <div className="adm-body">
@@ -152,13 +186,24 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
           <div className="adm-row-2">
             <div className="adm-field">
               <label className="adm-label">Fecha inicio</label>
-              <input type="date" className="adm-input" value={local.start_date} onChange={e => set("start_date", e.target.value)} />
+              <input
+                type="date"
+                className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
+                value={local.start_date}
+                onChange={e => set("start_date", e.target.value)}
+              />
             </div>
             <div className="adm-field">
               <label className="adm-label">Fecha fin</label>
-              <input type="date" className="adm-input" value={local.due_date} onChange={e => set("due_date", e.target.value)} />
+              <input
+                type="date"
+                className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
+                value={local.due_date}
+                onChange={e => set("due_date", e.target.value)}
+              />
             </div>
           </div>
+          {dateErrors.startEnd && <p className="adm-date-error">{dateErrors.startEnd}</p>}
 
           {/* ── % Cumplimiento / Horas planeadas ── */}
           <div className="adm-row-2">
@@ -279,7 +324,15 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" className="btn btn--secondary" onClick={requestClose}>Cancelar</button>
-            <button type="button" className="btn btn--accent" onClick={handleSaveAndClose}>Guardar</button>
+            <button
+              type="button"
+              className="btn btn--accent"
+              onClick={handleSaveAndClose}
+              disabled={hasDateErrors}
+              title={hasDateErrors ? "Corrige las fechas antes de guardar" : undefined}
+            >
+              Guardar
+            </button>
           </div>
         </div>
       </div>

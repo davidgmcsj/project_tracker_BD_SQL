@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Dashboard     from "./components/Dashboard";
+import ProjectOverviewTable from "./components/director/ProjectOverviewTable";
 import EditView, { TaskStatusSelector } from "./components/EditView";
 import ProjectPlanningOverlays from "./components/ProjectPlanningOverlays";
 import ReportView    from "./components/ReportView";
@@ -16,7 +17,7 @@ import UsersAdminView from "./components/UsersAdminView";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
-  createEngineer, createExternalContact,
+  createEngineer, createExternalContact, sortByName,
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
@@ -33,8 +34,16 @@ import "./App.css";
 
 export default function App() {
   const [projects,          setProjects]          = useState([]);
-  const [engineers,         setEngineers]         = useState([]);
-  const [externalContacts,  setExternalContacts]  = useState([]);
+  const [engineers,         setEngineersRaw]       = useState([]);
+  const [externalContacts,  setExternalContactsRaw] = useState([]);
+  // Envuelven al setter real para que el catálogo quede SIEMPRE ordenado
+  // alfabéticamente por nombre, sin importar por cuál de los ~8 puntos de la
+  // app se actualice (alta, edición, activar/desactivar, reset trimestral,
+  // restaurar backup) — todas las listas/dropdowns que consumen `engineers`/
+  // `externalContacts` heredan el orden sin tener que ordenar cada una.
+  // Soportan tanto un valor directo como la forma funcional (prev) => next.
+  const setEngineers        = (next) => setEngineersRaw(prev => sortByName(typeof next === "function" ? next(prev) : next));
+  const setExternalContacts = (next) => setExternalContactsRaw(prev => sortByName(typeof next === "function" ? next(prev) : next));
   // Sincronizado con la URL (Fase 13): un enlace compartido abre la pestaña
   // correcta directamente, no solo los filtros internos de Reportes.
   const [view,              setView]              = useUrlState("view", "dashboard");
@@ -147,6 +156,38 @@ export default function App() {
     // Reintenta sin expectedVersion: el backend salta el chequeo y guarda igual.
     await persist(projects, undefined, projectId);
   }, [saveConflict, projects, persist]);
+
+  // ── Autoguardado (cada 5 minutos) ──────────────────────────────────────────
+  // Cubre el hueco entre ediciones y el clic manual en "Guardar cambios": sin
+  // esto, todo lo editado en EditView/los modales de actividad solo vive en
+  // memoria de React (+ localStorage como respaldo) hasta que alguien aprieta
+  // ese botón — cerrar la pestaña antes pierde el cambio en la base de datos.
+  // Reutiliza exactamente handleSaveEditedProject (mismo camino que el botón
+  // manual), así que respeta el mismo chequeo de conflicto de versión.
+  //
+  // Un ref (no un estado) guarda la función más reciente para que el
+  // setInterval se cree UNA sola vez al montar — si dependiera de
+  // handleSaveEditedProject/hasUnsavedChanges directamente en el array de
+  // dependencias, el intervalo se destruiría y recrearía en cada tecla
+  // escrita, y nunca llegaría a completar los 5 minutos reales.
+  const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000;
+  const autosaveRef = useRef({ hasUnsavedChanges, handleSaveEditedProject, saveConflict });
+  useEffect(() => {
+    autosaveRef.current = { hasUnsavedChanges, handleSaveEditedProject, saveConflict };
+  }, [hasUnsavedChanges, handleSaveEditedProject, saveConflict]);
+
+  useEffect(() => {
+    const id = setInterval(async () => {
+      const { hasUnsavedChanges: dirty, handleSaveEditedProject: save, saveConflict: conflict } = autosaveRef.current;
+      // No autoguarda si ya hay un conflicto de versión pendiente de resolver
+      // en pantalla — forzar otro guardado ahí solo confundiría el modal.
+      if (!dirty || conflict) return;
+      await save();
+      setSaveToast("✓ Guardado automáticamente");
+      setTimeout(() => setSaveToast(""), 2500);
+    }, AUTOSAVE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   // ── Paleta de comandos (Fase 14 — Ctrl+K) ──────────────────────────────────
   // Mismo guard de cambios sin guardar que navigateTo, pero en el orden
@@ -622,7 +663,7 @@ export default function App() {
         {/* Avance/KPIs del PORTAFOLIO completo — un no-admin ya queda forzado
             a view==="engineers" (ver useEffect de arriba), pero esta franja
             mostraría el avance de TODOS los proyectos, no solo los suyos. */}
-        {currentUser?.esAdmin && view !== "edit" && view !== "reportes" && view !== "admin-users" && (
+        {currentUser?.esAdmin && view !== "edit" && view !== "reportes" && view !== "admin-users" && view !== "director" && (
           <section className="summary">
             <div className="summary__progress">
               <ProgressRing percent={stats.percent} color="var(--accent)" />
@@ -694,6 +735,16 @@ export default function App() {
               if (idx === -1) return;
               setPlanning({ idx, view: "hierarchy", activityId });
             }}
+          />
+        )}
+        {view === "director" && (
+          <ProjectOverviewTable
+            projects={projects}
+            engineers={engineers}
+            onUpdateProject={updateProjectFull}
+            onEdit={idx => { setEditingIdx(idx); setView("edit"); }}
+            showEditButton={!!currentUser?.esAdmin}
+            StatusBoard={TaskStatusSelector}
           />
         )}
         {view === "dashboard" && (

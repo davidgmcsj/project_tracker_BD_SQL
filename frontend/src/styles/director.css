@@ -1,0 +1,148 @@
+/* ═══ TABLERO DE DIRECCIÓN (ProjectOverviewTable) ═══ */
+
+.director-table-view__search {
+  position: relative;
+  max-width: 360px;
+  margin-bottom: 16px;
+}
+
+.director-table__wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.director-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.director-table th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border);
+}
+
+.director-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.director-table tr:last-child td {
+  border-bottom: none;
+}
+
+.director-table__name {
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.director-table__assignee {
+  color: var(--text-2);
+}
+
+.director-table__progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 160px;
+}
+
+.director-table__progress .minibar {
+  flex: 1;
+}
+
+.director-table__progress-pct {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 34px;
+}
+
+.director-table__empty {
+  text-align: center;
+  color: var(--text-2);
+  padding: 32px 16px;
+}
+
+/* ── Panel de Actividades (ProjectActivitiesPanel) ── */
+
+.director-activities {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.director-activities__section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+
+.director-activities__title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.director-activities__empty {
+  color: var(--text-2);
+  font-size: 13px;
+  margin: 0;
+}
+
+.director-activities__keydates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.director-activities__keydate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.director-activities__keydate-link {
+  background: none;
+  border: none;
+  color: var(--azul-medio);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.director-activities__keydate-link:hover {
+  text-decoration: underline;
+}
+
+.director-activities__keydate-date {
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.director-activities__keydate-date--pending {
+  color: var(--text-3);
+  font-style: italic;
+}

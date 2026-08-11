@@ -10,10 +10,10 @@
 // está fuera del alcance de esta refactorización — el contrato público del
 // módulo no cambia.
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import {
   createDefaultEngineer, createDefaultIndicator, createDefaultImpediment,
-  leafActivities, visibleActivities,
+  leafActivities, visibleActivities, buildActivityTree, aggregatedProgress,
 } from "../utils/formulas";
 import ActivityDetailModal from "./ActivityDetailModal";
 import PlannerImportModal from "./PlannerImportModal";
@@ -22,6 +22,8 @@ import ProjectPlanningOverlays from "./ProjectPlanningOverlays";
 
 import { safeArr, safeActs, IMPEDIMENT_TYPES } from "./edit/shared";
 import { useActivityHandlers } from "./edit/useActivityHandlers";
+import ProjectSearchSelect from "./edit/ProjectSearchSelect";
+import AssigneeDropdown from "./edit/AssigneeDropdown";
 import ActivitiesList from "./edit/ActivitiesList";
 import BulkAssignPanel from "./edit/BulkAssignPanel";
 import IndicatorRow from "./edit/IndicatorRow";
@@ -49,21 +51,14 @@ const STATUS_OPTIONS = [
 export default function EditView({
   projects, editingIdx, hasUnsavedChanges,
   onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges, onSaveProjectsDirect,
-  onReorderProjects, onAddProject, onRemoveProject, onViewReport, onExportReport,
+  onAddProject, onRemoveProject, onViewReport, onExportReport,
   engineerCatalog, onCreateEngineer,
   externalContacts, onAddExternalContact, onToggleExternalActive,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [dragOverIdx,     setDragOverIdx]     = useState(null);
   const [modalActId,      setModalActId]      = useState(null);
   const [showPlannerModal, setShowPlannerModal] = useState(false);
   const [planningView,    setPlanningView]    = useState(null); // "status" | "gantt" | "hierarchy" | null
-  const dragSrcIdx = useRef(null);
-
-  const handleDragStart = (e, i) => { dragSrcIdx.current = i; e.dataTransfer.effectAllowed = "move"; };
-  const handleDragOver  = (e, i) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverIdx(i); };
-  const handleDrop      = (e, i) => { e.preventDefault(); const src = dragSrcIdx.current; if (src !== null && src !== i) onReorderProjects(src, i); setDragOverIdx(null); };
-  const handleDragEnd   = ()     => { dragSrcIdx.current = null; setDragOverIdx(null); };
 
   const p          = editingIdx !== null ? projects[editingIdx] : null;
   const m          = p?.manual_metrics || {};
@@ -141,12 +136,22 @@ export default function EditView({
 
   const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
 
-  // Subtareas reales de la actividad abierta en el modal — sección "Subtareas"
-  // (distinta del checklist "Subactividades"). Crear/abrir una reemplaza el
-  // modal por la tarjeta de la subtarea (mismo modal, otro id).
+  // Subtareas reales de la actividad abierta en el modal — sección "Subtareas".
+  // Crear/abrir una reemplaza el modal por la tarjeta de la subtarea (mismo
+  // modal, otro id).
   const modalSubtasks = modalActId
     ? activities.filter(a => a.parent_id === modalActId)
     : [];
+
+  // Si la actividad abierta tiene subtareas, su % de avance deja de ser
+  // editable a mano: se calcula como el promedio de sus hijas (recursivo,
+  // ver aggregatedProgress). Mismo cálculo que ya usa HierarchyTable para
+  // MOSTRAR el número — acá además se persiste como el progress real de la
+  // actividad al guardar, para que coincida en toda la app (Gantt, Dashboard,
+  // el propio modal), no solo en esa tabla.
+  const modalComputedProgress = modalActivity && modalSubtasks.length > 0
+    ? aggregatedProgress(modalActivity, buildActivityTree(activities).childrenOf)
+    : null;
 
   // El hook no conoce modalActId (estado local de EditView) — cierra el modal
   // aquí después de que el hook persiste el borrado.
@@ -164,23 +169,13 @@ export default function EditView({
 
   return (
     <div className="edit-view">
-      {/* ── Pestañas ── */}
-      <div className="project-tabs">
-        {projects.map((proj, i) => (
-          <button
-            key={proj.id} draggable
-            className={`project-tab ${editingIdx === i ? "project-tab--active" : ""} ${dragOverIdx === i ? "project-tab--drag-over" : ""}`}
-            onClick={() => onSelectProject(i)}
-            onDragStart={e => handleDragStart(e, i)} onDragOver={e => handleDragOver(e, i)}
-            onDrop={e => handleDrop(e, i)} onDragEnd={handleDragEnd}
-            title="Arrastra para reordenar"
-          >
-            <span className="project-tab__grip">⠿</span>
-            {proj.project_name || `Proyecto ${i + 1}`}
-          </button>
-        ))}
-        <button className="project-tab project-tab--add" onClick={onAddProject}>+ Nuevo</button>
-      </div>
+      {/* ── Selector de proyecto (buscador) ── */}
+      <ProjectSearchSelect
+        projects={projects}
+        editingIdx={editingIdx}
+        onSelectProject={onSelectProject}
+        onAddProject={onAddProject}
+      />
 
       {p ? (
         <div className="edit-panel">
@@ -236,20 +231,16 @@ export default function EditView({
             </div>
           </div>
 
-          {/* ══ 1b. Equipo del proyecto (selector rápido) ══ */}
+          {/* ══ 1b. Equipo del proyecto (selector rápido, con buscador) ══ */}
           <div className="field project-team-selector">
             <div className="project-team-selector__header">
               <label className="field__label">Equipo del Proyecto</label>
-              <select
-                className="field__input project-team-selector__select"
-                value=""
-                onChange={e => addEngineerFromCatalog(e.target.value)}
-              >
-                <option value="">+ Agregar ingeniero al equipo…</option>
-                {(engineerCatalog || [])
-                  .filter(e => e.active && !engineers.some(r => r.engineer_id === e.id))
-                  .map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
+              <AssigneeDropdown
+                assignables={(engineerCatalog || []).filter(e => e.active).map(e => ({ id: e.id, name: e.name, type: "engineer" }))}
+                assignedIds={new Set(engineers.map(r => r.engineer_id))}
+                placeholder="+ Agregar ingeniero al equipo…"
+                onSelect={addEngineerFromCatalog}
+              />
             </div>
             <div className="project-team-selector__chips">
               {engineers.length === 0 && (
@@ -520,6 +511,7 @@ export default function EditView({
           onDelete={handleActivityModalDelete}
           onClose={() => setModalActId(null)}
           subtasks={modalSubtasks}
+          computedProgress={modalComputedProgress}
           onCreateSubtask={handleCreateSubtaskFromModal}
           onOpenSubtask={setModalActId}
           onDeleteSubtask={handleHierarchyDelete}

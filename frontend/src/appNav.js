@@ -8,9 +8,15 @@
 // Las claves internas de `view` NO cambian — solo se agrupa cómo se navegan —
 // así que enlaces existentes con ?view="engineer-report" siguen abriendo lo
 // mismo que antes sin necesitar alias.
+// "Editar" no tiene botón propio en la nav: no hay forma de elegir QUÉ
+// proyecto editar desde ahí (llega en blanco, con "Selecciona un proyecto"),
+// mientras que cada tarjeta del Dashboard ya abre EditView directo sobre ESE
+// proyecto en un solo clic. El botón redundaba en dos caminos al mismo
+// lugar — la vista view==="edit" sigue existiendo, solo se llega a ella
+// desde las tarjetas (Dashboard.onEdit / ProjectOverviewTable.onEdit).
 export const BASE_TABS = [
+  { key: "director",  label: "Dashboard Dirección" },
   { key: "dashboard", label: "Dashboard" },
-  { key: "edit",       label: "Editar" },
   {
     label: "Ingenieros",
     options: [

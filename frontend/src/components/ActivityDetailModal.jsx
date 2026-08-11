@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
-import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection, SubtasksSection } from "./ActivityFormSections";
+import { validateStartEnd, validateTransitionDates } from "../utils/dateValidation";
+import { KeyDatesSection, NotesSection, DateBadgesSection, SubtasksSection } from "./ActivityFormSections";
 import { STATUS_OPTIONS, HOURS_OPTIONS, closestHoursOption, getActivityStatus, hasChanges } from "./activity-detail/shared";
+import { buildAssignables } from "./edit/shared";
+import AssigneeDropdown from "./edit/AssigneeDropdown";
 import AttachmentsSection from "./activity-detail/AttachmentsSection";
 import DiscardConfirmDialog from "./activity-detail/DiscardConfirmDialog";
 
@@ -22,7 +25,13 @@ export default function ActivityDetailModal({
   onCreateSubtask,   // () => void — crea una subtarea y abre su tarjeta de inmediato
   onOpenSubtask,     // (id) => void — abre la tarjeta de una subtarea existente
   onDeleteSubtask,   // (id) => void
+  // Progreso agregado, calculado por el padre (tiene el árbol completo de
+  // actividades, ver EditView/ProjectPlanningOverlays) — no null cuando esta
+  // actividad tiene subtareas. En ese caso el % deja de ser editable a mano:
+  // es siempre el promedio de las subtareas.
+  computedProgress,
 }) {
+  const hasSubtasks = Array.isArray(subtasks) && subtasks.length > 0;
   const overlayRef = useRef(null);
 
   const status  = getActivityStatus(taskStatus, activity.id);
@@ -35,10 +44,9 @@ export default function ActivityDetailModal({
     description:        activity.description        || "",
     objectives:         activity.objectives         || "",
     solution:           activity.solution           || "",
-    progress:           Number(activity.progress)      || 0,
+    progress:           Number(activity.progress) || 0,
     planned_hours:      closestHoursOption(Number(activity.planned_hours) || 0),
     assigned_engineers: Array.isArray(activity.assigned_engineers) ? activity.assigned_engineers : [],
-    checklist:          Array.isArray(activity.checklist) ? activity.checklist : [],
     notes:              Array.isArray(activity.notes)     ? activity.notes     : [],
     key_dates:          Array.isArray(activity.key_dates) ? activity.key_dates : [],
     attachments:        Array.isArray(activity.attachments) ? activity.attachments : [],
@@ -52,6 +60,34 @@ export default function ActivityDetailModal({
 
   const set = (field, val) => setLocal(prev => ({ ...prev, [field]: val }));
 
+  // Con subtareas, el % mostrado y guardado es SIEMPRE computedProgress —
+  // nunca local.progress. Es un valor derivado, no estado propio: calcularlo
+  // en cada render (en vez de copiarlo a local con un efecto) evita que quede
+  // congelado si computedProgress cambia mientras el modal sigue abierto
+  // (agregar o quitar una subtarea no cierra este modal, solo recalcula el
+  // árbol en el padre — ver SubtasksSection.onRemove).
+  const displayProgress = hasSubtasks && computedProgress !== null ? computedProgress : local.progress;
+
+  // Poner (no quitar) la fecha de "completada" a mano fuerza el % a 100 —
+  // misma regla que aplica el Kanban al mover una tarjeta a esa columna
+  // (ver ProjectPlanningOverlays.commit), para que una actividad completada
+  // muestre 100% sin importar por cuál de los dos caminos se marcó.
+  const setHistory = (val) => {
+    setLocal(prev => {
+      const justCompleted = val.completed && !prev.history.completed;
+      return { ...prev, history: val, progress: justCompleted ? 100 : prev.progress };
+    });
+  };
+
+  const dateErrors = {
+    startEnd: validateStartEnd(local.start_date, local.due_date),
+    transitions: validateTransitionDates({
+      startDate: local.start_date, dueDate: local.due_date,
+      added: local.history.added, inProgress: local.history.in_progress, completed: local.history.completed,
+    }),
+  };
+  const hasDateErrors = !!(dateErrors.startEnd || dateErrors.transitions);
+
   // Los adjuntos se guardan/eliminan en SQL al instante. Para que su metadata
   // no se pierda si el usuario descarta otros cambios, la persistimos de inmediato
   // combinando la actividad ORIGINAL con la nueva lista de adjuntos (sin arrastrar
@@ -61,13 +97,20 @@ export default function ActivityDetailModal({
     onSave({ ...activity, attachments: nextAttachments });
   };
 
-  const dirty = hasChanges(activity, local, history);
+  // Si el % guardado quedó desactualizado respecto al promedio real de las
+  // subtareas (ej. alguien completó una subtarea desde otra pantalla y esta
+  // actividad nunca se reabrió), dirty da true apenas se abre el modal, sin
+  // que el usuario haya tocado nada — es intencional: fuerza a persistir el
+  // valor correcto en el próximo guardado en vez de dejarlo desincronizado.
+
+  const dirty = hasChanges(activity, local, history, displayProgress);
 
   // Separa el history (va a task_status) del resto de campos de la actividad.
   // EditView lee _history y lo escribe en task_status.status_history.
+  // progress usa displayProgress, no local.progress — ver su comentario.
   const buildSaved = () => {
     const { history: hist, ...actFields } = local;
-    return { ...activity, ...actFields, _history: hist };
+    return { ...activity, ...actFields, progress: displayProgress, _history: hist };
   };
 
   const requestClose = () => {
@@ -76,6 +119,7 @@ export default function ActivityDetailModal({
   };
 
   const handleSaveAndClose = () => {
+    if (hasDateErrors) return;
     onSave(buildSaved());
     onClose();
   };
@@ -86,19 +130,32 @@ export default function ActivityDetailModal({
 
   // Crear/abrir una subtarea reemplaza esta tarjeta por la de la subtarea
   // (mismo modal, otro id) — si hay cambios sin guardar aquí, se guardan
-  // primero para no perderlos al navegar, igual que "Guardar y cerrar".
+  // primero para no perderlos al navegar, igual que "Guardar y cerrar". Con
+  // fechas inválidas no se guarda, pero tampoco se bloquea la navegación —
+  // el usuario puede seguir sin perder lo escrito, solo no se persiste hasta
+  // que corrija.
   const handleCreateSubtask = () => {
-    if (dirty) onSave(buildSaved());
+    if (dirty && !hasDateErrors) onSave(buildSaved());
     onCreateSubtask();
   };
   const handleOpenSubtask = (id) => {
-    if (dirty) onSave(buildSaved());
+    if (dirty && !hasDateErrors) onSave(buildSaved());
     onOpenSubtask(id);
   };
 
-  // Escape respeta la misma lógica
+  // Escape respeta la misma lógica. stopImmediatePropagation es necesario
+  // porque este modal suele abrirse ENCIMA de otro overlay de pantalla
+  // completa (ProjectPlanningOverlays), que también escucha Escape en
+  // window — ambos listeners viven en el MISMO target, así que un
+  // stopPropagation normal no los separa. Sin esto, un solo Escape disparaba
+  // los dos: este mostraba el diálogo de "cambios sin guardar" y, en el
+  // mismo evento, el overlay padre igual cerraba todo por encima, perdiendo
+  // el diálogo (y los cambios) sin que el usuario llegara a confirmar nada.
+  // Depende de que este listener se registre DESPUÉS que el del padre (se
+  // monta más tarde, ver orden de mount en ProjectPlanningOverlays) — los
+  // listeners de un mismo target corren en orden de registro.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") requestClose(); };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); requestClose(); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,9 +167,6 @@ export default function ActivityDetailModal({
   };
 
   // Sugerencias automáticas
-  const checklistTotal = local.checklist.length;
-  const checklistDone  = local.checklist.filter(it => it.done).length;
-  const suggestedProgress = checklistTotal > 0 ? Math.round((checklistDone / checklistTotal) * 100) : null;
   const bizDays  = businessDaysBetween(local.start_date, local.due_date);
   const suggHours = suggestedWorkHours(local.start_date, local.due_date);
   const statusLabel  = STATUS_OPTIONS.find(o => o.value === status)?.label || "—";
@@ -167,7 +221,12 @@ export default function ActivityDetailModal({
           />
 
           {/* Fechas de transición (editables — útil al importar de Planner) */}
-          <DateBadgesSection status={status} history={local.history} onChange={val => set("history", val)} />
+          <DateBadgesSection status={status} history={local.history} onChange={setHistory} />
+          {dateErrors.transitions && (
+            <p className="adm-date-error">
+              {dateErrors.transitions.in_progress || dateErrors.transitions.completed}
+            </p>
+          )}
         </div>
 
         <div className="adm-body">
@@ -178,7 +237,7 @@ export default function ActivityDetailModal({
               <label className="adm-label">Fecha inicio</label>
               <input
                 type="date"
-                className="adm-input"
+                className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
                 value={local.start_date}
                 onChange={e => set("start_date", e.target.value)}
               />
@@ -187,27 +246,21 @@ export default function ActivityDetailModal({
               <label className="adm-label">Fecha fin</label>
               <input
                 type="date"
-                className="adm-input"
+                className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
                 value={local.due_date}
                 onChange={e => set("due_date", e.target.value)}
               />
             </div>
           </div>
+          {dateErrors.startEnd && <p className="adm-date-error">{dateErrors.startEnd}</p>}
 
           {/* ── Fila: % Cumplimiento / Horas planeadas ── */}
           <div className="adm-row-2">
             <div className="adm-field">
               <label className="adm-label">
                 % Cumplimiento
-                {suggestedProgress !== null && suggestedProgress !== local.progress && (
-                  <button
-                    type="button"
-                    className="adm-suggest-link"
-                    onClick={() => set("progress", suggestedProgress)}
-                    title="Usar el % según subactividades marcadas"
-                  >
-                    usar {suggestedProgress}% (checklist)
-                  </button>
+                {hasSubtasks && (
+                  <span className="adm-label__hint"> — calculado automáticamente según las subtareas</span>
                 )}
               </label>
               <div className="adm-progress-field">
@@ -217,7 +270,8 @@ export default function ActivityDetailModal({
                   min={0}
                   max={100}
                   step={5}
-                  value={local.progress}
+                  value={displayProgress}
+                  disabled={hasSubtasks}
                   onChange={e => set("progress", Number(e.target.value))}
                 />
                 <input
@@ -225,7 +279,8 @@ export default function ActivityDetailModal({
                   className="adm-input adm-input--pct"
                   min={0}
                   max={100}
-                  value={local.progress}
+                  value={displayProgress}
+                  disabled={hasSubtasks}
                   onChange={e => {
                     const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
                     set("progress", v);
@@ -291,29 +346,26 @@ export default function ActivityDetailModal({
                 <p className="adm-empty-hint">Sin responsables asignados.</p>
               )}
             </div>
-            {/* Selector para agregar */}
+            {/* Selector para agregar, con buscador. buildAssignables (mismo
+                criterio que EditView/ActivitiesList) exige active===true en
+                ambos catálogos — el <select> anterior era más laxo con
+                ingenieros (active !== false) y no filtraba externos por
+                activo en absoluto; se unifica al criterio del resto de la
+                app en vez de mantener un tercer criterio ad-hoc. */}
             {(() => {
-              const allOptions = [
-                ...(engineerCatalog || []).filter(e => e.active !== false).map(e => ({ id: e.id, name: e.name })),
-                ...(externalContacts || []).map(e => ({ id: e.id, name: e.name })),
-              ];
-              const assignedIds = new Set(local.assigned_engineers.map(e => e.id));
-              const available   = allOptions.filter(e => !assignedIds.has(e.id));
-              if (available.length === 0) return null;
+              const allAssignables = buildAssignables(engineerCatalog, externalContacts);
+              const assignedIds    = new Set(local.assigned_engineers.map(e => e.id));
+              if (allAssignables.every(a => assignedIds.has(a.id))) return null;
               return (
-                <select
-                  className="adm-select adm-select--assignee"
-                  value=""
-                  onChange={ev => {
-                    const opt = available.find(e => e.id === ev.target.value);
-                    if (opt) set("assigned_engineers", [...local.assigned_engineers, opt]);
+                <AssigneeDropdown
+                  assignables={allAssignables}
+                  assignedIds={assignedIds}
+                  placeholder="+ Agregar responsable…"
+                  onSelect={id => {
+                    const opt = allAssignables.find(a => a.id === id);
+                    if (opt) set("assigned_engineers", [...local.assigned_engineers, { id: opt.id, name: opt.name }]);
                   }}
-                >
-                  <option value="">+ Agregar responsable…</option>
-                  {available.map(e => (
-                    <option key={e.id} value={e.id}>{e.name}</option>
-                  ))}
-                </select>
+                />
               );
             })()}
           </div>
@@ -359,12 +411,6 @@ export default function ActivityDetailModal({
               onChange={e => set("solution", e.target.value)}
             />
           </div>
-
-          {/* ── Lista de comprobación ── */}
-          <ChecklistSection
-            items={local.checklist}
-            onChange={val => set("checklist", val)}
-          />
 
           {/* ── Subtareas reales (jerarquía) ── */}
           {subtasks !== undefined && (
@@ -416,6 +462,8 @@ export default function ActivityDetailModal({
             type="button"
             className="adm-save-btn"
             onClick={handleSaveAndClose}
+            disabled={dirty && hasDateErrors}
+            title={dirty && hasDateErrors ? "Corrige las fechas antes de guardar" : undefined}
           >
             {dirty ? "💾 Guardar y cerrar" : "Cerrar"}
           </button>

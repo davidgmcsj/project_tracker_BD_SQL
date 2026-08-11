@@ -8,7 +8,7 @@
 // comportamiento sin duplicar lógica.
 
 import { useEffect, useState } from "react";
-import { createActivity, visibleActivities } from "../utils/formulas";
+import { createActivity, visibleActivities, buildActivityTree, aggregatedProgress } from "../utils/formulas";
 import FullscreenOverlay from "./FullscreenOverlay";
 import GanttChart from "./GanttChart";
 import HierarchyTable from "./HierarchyTable";
@@ -73,6 +73,20 @@ export default function ProjectPlanningOverlays({
     commit(activities.map(a => byId.has(a.id) ? { ...a, ...byId.get(a.id) } : a));
   };
 
+  // El Kanban solo cambia task_status — el % de la actividad vive aparte, en
+  // activities_identified. Al entrar (no salir) de la columna "Completadas"
+  // se fuerza su progress a 100, misma regla que ActivityDetailModal cuando
+  // se pone la fecha de completada a mano: una actividad completada siempre
+  // muestra 100% sin importar por cuál de los dos caminos se marcó.
+  const handleStatusChange = (newTaskStatus) => {
+    const wasCompleted = new Set(safeArr(taskStatus.completed));
+    const nowCompleted = safeArr(newTaskStatus.completed).filter(id => !wasCompleted.has(id));
+    const newActs = nowCompleted.length
+      ? activities.map(a => nowCompleted.includes(a.id) ? { ...a, progress: 100 } : a)
+      : activities;
+    commit(newActs, newTaskStatus);
+  };
+
   // Devuelve el id para poder abrir la tarjeta de la subtarea recién creada.
   const handleAddChild = (parentId, sequenceOrder) => {
     const newAct = createActivity("Nueva subtarea", parentId, sequenceOrder);
@@ -123,6 +137,12 @@ export default function ProjectPlanningOverlays({
   const modalActivity = modalActId ? activities.find(a => a.id === modalActId) : null;
   const modalSubtasks = modalActId ? activities.filter(a => a.parent_id === modalActId) : [];
 
+  // Si tiene subtareas, el % deja de ser editable a mano — se calcula como
+  // el promedio de sus hijas (ver mismo comentario en EditView.jsx).
+  const modalComputedProgress = modalActivity && modalSubtasks.length > 0
+    ? aggregatedProgress(modalActivity, buildActivityTree(activities).childrenOf)
+    : null;
+
   const handleCreateSubtaskFromModal = () => {
     setModalActId(handleAddChild(modalActId, modalSubtasks.length));
   };
@@ -139,7 +159,7 @@ export default function ProjectPlanningOverlays({
             taskStatus={project.task_status}
             activities={activities}
             onOpenDetail={setModalActId}
-            onChange={val => commit(activities, val)}
+            onChange={handleStatusChange}
           />
         )}
         {view === "gantt" && (
@@ -173,6 +193,7 @@ export default function ProjectPlanningOverlays({
           onDelete={handleDeleteActivity}
           onClose={() => setModalActId(null)}
           subtasks={modalSubtasks}
+          computedProgress={modalComputedProgress}
           onCreateSubtask={handleCreateSubtaskFromModal}
           onOpenSubtask={setModalActId}
           onDeleteSubtask={handleDeleteActivity}
