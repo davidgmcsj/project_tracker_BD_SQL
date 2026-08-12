@@ -1,5 +1,11 @@
 // useResizableColumn.js — Columna de nombre redimensionable (arrastre con el
-// mouse).
+// mouse), con ancho AUTOMÁTICO opcional: mientras el usuario no haya
+// arrastrado el borde a mano, el ancho sigue a `idealWidth` (ver
+// computeIdealLabelWidth en ganttHelpers.js — se adapta a la actividad con
+// más caracteres, acotado a `max`). En cuanto el usuario arrastra una vez,
+// su elección manda y el ancho deja de seguir el ideal — mismo criterio que
+// cualquier columna redimensionable de una tabla (el ajuste automático es
+// una comodidad inicial, no algo que le gane la mano al usuario después).
 //
 // El primer intento usaba un divisor flotante (position:absolute) separado
 // de la tabla, anclado con `left: labelWidth` — en teoría cubría toda la
@@ -18,13 +24,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const RESIZE_EDGE_PX = 10;
 
-export function useResizableColumn(initial, min, max) {
+export function useResizableColumn(initial, min, max, idealWidth = null) {
   const [width, setWidth] = useState(initial);
+  const [userResized, setUserResized] = useState(false);
   const dragRef = useRef(null); // { startX, startWidth }
+
+  // Sigue al ancho ideal (recalculado en cada render por el caller a partir
+  // del contenido actual) hasta el primer arrastre manual — ajuste durante
+  // el render, no un efecto, para no perder un frame mostrando el ancho
+  // viejo mientras el contenido ya cambió (ej. al aplicar un filtro).
+  if (idealWidth != null && !userResized && width !== idealWidth) {
+    setWidth(idealWidth);
+  }
 
   const onCellMouseDown = useCallback((e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.right - e.clientX > RESIZE_EDGE_PX) return; // clic lejos del borde: no es un intento de resize
+    setUserResized(true);
     dragRef.current = { startX: e.clientX, startWidth: width };
     e.preventDefault();
   }, [width]);

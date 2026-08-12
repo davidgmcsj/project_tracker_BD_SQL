@@ -3,20 +3,41 @@
 // calcular sin depender del ciclo de vida de React.
 
 import { matchesSearch } from "../../utils/search.js";
+import { formatDateDMY } from "../../utils/formulas/dateHelpers.js";
 
-// Colores por estado — mismo semáforo que HierarchyTable (rojo/azul/verde).
+// Colores por estado. "not_started" usa el amarillo institucional (#FFCC00,
+// mismo --inst-amarillo de base.css) en vez del rojo del semáforo del resto
+// de la app — el usuario pidió el cambio explícitamente para el Gantt: el
+// rojo se leía como "peligro/alarma" para actividades que simplemente aún no
+// han arrancado, generando ruido visual innecesario. in_progress/completed
+// se mantienen igual (mismo semáforo que HierarchyTable).
 export const STATUS_COLOR = {
-  not_started: "#d3323c",
+  not_started: "#FFCC00",
   in_progress: "#1a49a8",
   completed:   "#0f9d58",
 };
+
+// "#rrggbb" + alpha (0..1) → "rgba(r, g, b, alpha)" — usado para pintar la
+// barra de la actividad con intensidad creciente (ver barIntensity) sin
+// depender de `opacity` en CSS, que además atenuaría el texto/borde de la
+// celda, no solo el relleno.
+export function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 export const MONTHS_SHORT = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 
 // Ventana del rango automático: días a mostrar HACIA ATRÁS desde la ÚLTIMA
 // fecha de entrega — el calendario termina justo en esa fecha (columna más a
-// la derecha), sin días posteriores.
-export const AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE = 35;
+// la derecha), sin días posteriores. 50 días (antes 35) para reducir el caso
+// de actividades con start_date/due_date más atrás que quedaban fuera de la
+// ventana visible al aplicar un filtro (Estado/Tarea padre) — con la barra de
+// scroll horizontal ya existente, el usuario puede desplazarse dentro de la
+// ventana ampliada en vez de perder filas por completo.
+export const AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE = 50;
 
 // Hasta este número de días, cada columna es un día suelto; por encima se
 // agrupa en semanas (y más arriba, en meses). El rango automático abarca
@@ -24,9 +45,61 @@ export const AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE = 35;
 // caber aquí para seguir viéndose día a día, que es el caso por defecto.
 export const DAY_UNIT_MAX_DAYS = AUTO_RANGE_DAYS_BACK_FROM_LAST_DUE + 1;
 
+// Altura de fila: mínimo legible (igual al valor fijo de siempre), y un
+// techo para que con pocas filas (ej. filtro "Nivel 1") no queden gigantes y
+// vacías de contenido — más allá de ~64px una fila de una sola línea de
+// texto se ve desproporcionada, no "mejor".
+export const ROW_HEIGHT_MIN = 30;
+export const ROW_HEIGHT_MAX = 64;
+export const HEADER_HEIGHT = 30; // altura real de gantt-cal__col-head (thead)
+
+// Altura de fila dinámica: reparte el alto disponible del contenedor entre
+// las filas visibles para que el calendario llene el espacio en vez de
+// dejar un hueco vacío debajo cuando hay pocas actividades (ver captura del
+// usuario con "Nivel 2" — filas apretadas a 30px con medio panel en blanco).
+// Nunca baja del mínimo legible ni sube del techo. Sin filas o sin alto
+// medido todavía (containerHeight 0, primer render), usa el mínimo.
+export function computeRowHeight(containerHeight, rowCount) {
+  if (!containerHeight || rowCount <= 0) return ROW_HEIGHT_MIN;
+  const available = containerHeight - HEADER_HEIGHT;
+  const perRow = Math.floor(available / rowCount);
+  return Math.max(ROW_HEIGHT_MIN, Math.min(ROW_HEIGHT_MAX, perRow));
+}
+
 export const LABEL_COL_MIN = 160;
 export const LABEL_COL_MAX = 640;
 export const LABEL_COL_DEFAULT = 320;
+
+// Ancho aproximado por carácter a font-size 13px (.gantt-cal__row-text, ver
+// gantt.css) — heurística de medición (no canvas real, para que sea puro y
+// testeable) suficiente porque el CSS ya trunca con ellipsis: si la
+// estimación se queda corta en algún caso raro (fuente muy ancha, etc.), el
+// texto simplemente se ve truncado en vez de desbordar, nunca rompe el layout.
+const CHAR_WIDTH_PX = 6.5;
+const LABEL_COL_PADDING_PX = 44; // padding horizontal + número "1.2.3." + sangría base
+
+// Ancho ideal de la columna "Actividad": el necesario para mostrar SIN
+// truncar la fila más larga entre las visibles (número + sangría por nivel +
+// texto), acotado entre LABEL_COL_MIN y LABEL_COL_MAX — pasado el máximo, el
+// texto se trunca con ellipsis (ya lo hace .gantt-cal__row-text) en vez de
+// seguir creciendo la columna sin límite. Devuelve LABEL_COL_DEFAULT si no
+// hay filas (nada que medir).
+export function computeIdealLabelWidth(dated, numberById, depthById) {
+  if (!dated || !dated.length) return LABEL_COL_DEFAULT;
+  let maxChars = 0;
+  dated.forEach(a => {
+    const number = numberById.get(a.id) || "";
+    const depth = depthById.get(a.id) || 0;
+    const text = a.text || "(sin nombre)";
+    // La sangría (depth * 14px, ver paddingLeft inline en GanttChart.jsx) se
+    // traduce a "caracteres equivalentes" para sumarla a la misma heurística.
+    const indentChars = (depth * 14) / CHAR_WIDTH_PX;
+    const chars = indentChars + number.length + 2 + text.length; // +2 por ". " tras el número
+    if (chars > maxChars) maxChars = chars;
+  });
+  const ideal = Math.ceil(maxChars * CHAR_WIDTH_PX) + LABEL_COL_PADDING_PX;
+  return Math.max(LABEL_COL_MIN, Math.min(LABEL_COL_MAX, ideal));
+}
 
 // Ancho mínimo de cada columna de fecha según la unidad (crecen si sobra
 // espacio). El mínimo de "day" contempla la fecha rotulada sobre el bloque de
@@ -52,6 +125,18 @@ export const SCOPE_FILTERS = [
 export const SCOPE_FILTERS_WITH_PARENT = [
   { value: "all",       label: "Padre y subtareas" },
   { value: "childrenOnly", label: "Solo subtareas" },
+];
+
+// Selector de profundidad máxima — "" (sin límite) o 1..4. Nivel 1 = solo
+// tareas principales; nivel 2 = +1er nivel de subtareas; etc. Mismo tope de 4
+// que Planificación (HierarchyTable), en la práctica ningún proyecto real
+// pasa de ahí.
+export const LEVEL_FILTERS = [
+  { value: "",  label: "Todos los niveles" },
+  { value: "1", label: "Nivel 1 (solo principales)" },
+  { value: "2", label: "Nivel 2" },
+  { value: "3", label: "Nivel 3" },
+  { value: "4", label: "Nivel 4" },
 ];
 
 // Un único panel de rango de fechas reemplaza al "Zoom" — cada atajo YA
@@ -121,6 +206,46 @@ export function statusOf(taskStatus, actId) {
   return "not_started";
 }
 
+// Rango de columnas [inicio, fin] que ocupa la barra de una actividad, en la
+// unidad activa (día/semana/mes) y recortado a las columnas realmente
+// visibles (0..totalUnits-1) — una barra que arranca antes del rango elegido
+// se corta en la columna 0 en vez de desbordar hacia índices negativos, y
+// una que sigue después del rango visible se corta en la última columna.
+// Sin start_date, la barra colapsa a un solo punto en dueColIndex (mismo
+// comportamiento que antes de esta mejora). Devuelve null si no hay ninguna
+// fecha usable.
+export function computeBarSpan(activity, unit, rangeStart, totalUnits) {
+  const due = toDate(activity.due_date) || toDate(activity.start_date);
+  if (!due) return null;
+  const dueColIndex = unitDiff(unit, rangeStart, due);
+
+  const start = toDate(activity.start_date);
+  const startColIndexRaw = start ? unitDiff(unit, rangeStart, start) : dueColIndex;
+  // Una fecha de inicio posterior a la de entrega (dato inconsistente) no
+  // debe invertir la barra — colapsa al punto de entrega, igual que sin inicio.
+  const startColIndex = Math.min(startColIndexRaw, dueColIndex);
+
+  const clampedStart = Math.max(0, startColIndex);
+  const clampedDue = Math.min(totalUnits - 1, dueColIndex);
+  if (clampedDue < 0 || clampedStart > totalUnits - 1) return null; // fuera del rango visible
+
+  return { startColIndex: clampedStart, dueColIndex: clampedDue };
+}
+
+// Intensidad (0..1) de la celda en `colIndex` dentro de la barra
+// [startColIndex, dueColIndex] — 0.35 en el primer día (visible pero suave,
+// nunca invisible) creciendo LINEALMENTE hasta 1 en el día de entrega. Un
+// span de un solo día (startColIndex === dueColIndex, el caso sin
+// start_date) da intensidad 1 directamente, igual que el bloque sólido de
+// antes de esta mejora.
+export function barIntensity(colIndex, startColIndex, dueColIndex) {
+  const span = dueColIndex - startColIndex;
+  if (span <= 0) return 1;
+  const MIN_INTENSITY = 0.35;
+  const progress = (colIndex - startColIndex) / span;
+  return MIN_INTENSITY + (1 - MIN_INTENSITY) * progress;
+}
+
 // Todos los descendientes (todos los niveles, no solo hijos directos) de
 // parentId — necesario para "Padre y subtareas"/"Solo subtareas": una
 // subtarea de 2do nivel también debe entrar cuando se filtra por su abuela.
@@ -138,6 +263,26 @@ export function descendantIdsOf(activities, parentId) {
   return ids;
 }
 
+// Profundidad (0 = raíz, 1 = hijo directo…) de cada actividad, calculada
+// sobre TODAS las actividades del proyecto (no solo las visibles tras otros
+// filtros) — así el nivel de una fila no cambia según qué más esté filtrado.
+// Un parent_id huérfano (apunta a un id inexistente) se trata como raíz.
+function depthOf(activities) {
+  const byId = new Map((activities || []).map(a => [a.id, a]));
+  const depths = new Map();
+  const resolve = (id, seen) => {
+    if (depths.has(id)) return depths.get(id);
+    const a = byId.get(id);
+    const parentId = a?.parent_id;
+    if (!parentId || !byId.has(parentId) || seen.has(parentId)) { depths.set(id, 0); return 0; }
+    const d = resolve(parentId, new Set(seen).add(id)) + 1;
+    depths.set(id, d);
+    return d;
+  };
+  (activities || []).forEach(a => resolve(a.id, new Set()));
+  return depths;
+}
+
 // Filas del calendario, en orden jerárquico (cada subtarea debajo de su
 // tarea principal) en vez del orden crudo del array. Solo incluye
 // actividades con alguna fecha — una fila sin fechas no tiene celda que
@@ -149,13 +294,31 @@ export function descendantIdsOf(activities, parentId) {
 // criterio simple que statusFilter: filtra la fila propia, sin rescatar
 // ancestros que no matcheen (una subtarea que matchea puede quedar "colgada"
 // sin su padre visible, igual que ya pasa hoy con statusFilter).
-export function computeDatedRows(activities, taskStatus, { statusFilter = "all", scopeFilter = "all", parentFilter = null, textFilter = "" } = {}) {
+//
+// levelFilter: profundidad MÁXIMA a mostrar (1 = solo raíces, 2 = raíces +
+// hijas directas, 3 = +nietas, 4 = +bisnietas), o null = sin límite. Mismo
+// criterio de "techo de profundidad fijo" que el selector de Planificación
+// (HierarchyTable) — no es un colapso manual, se recalcula solo.
+//
+// statusFilter acepta: "all" (compat), string único ("not_started"), o array
+// de valores (["not_started","in_progress"]) — un array combina con OR entre
+// sí (la actividad matchea si su estado está en la lista), mismo patrón
+// "estilo GitLab" que el resto de tipos de filtro token-izables (ver
+// TokenFilterBar). Array vacío o "all" = sin filtrar por estado.
+export function computeDatedRows(activities, taskStatus, { statusFilter = "all", scopeFilter = "all", parentFilter = null, textFilter = "", levelFilter = null } = {}) {
   const acts = activities || [];
+  const statusValues = statusFilter === "all" ? [] : Array.isArray(statusFilter) ? statusFilter : [statusFilter];
   const descendantIds = descendantIdsOf(acts, parentFilter);
+  // Con una "Tarea padre" elegida, el nivel se cuenta RELATIVO a ese padre
+  // (su propia fila siempre es nivel 1) — así levelFilter no la excluye a
+  // ella misma solo por estar en profundidad 2 o 3 del proyecto completo.
+  const depths = levelFilter ? depthOf(acts) : null;
+  const baseDepth = parentFilter && depths ? (depths.get(parentFilter) || 0) : 0;
   const visible = acts.filter(a => {
     if (!(a.start_date || a.due_date)) return false;
-    if (statusFilter !== "all" && statusOf(taskStatus, a.id) !== statusFilter) return false;
+    if (statusValues.length && !statusValues.includes(statusOf(taskStatus, a.id))) return false;
     if (!matchesSearch(a.text || "", textFilter)) return false;
+    if (levelFilter && (depths.get(a.id) - baseDepth) >= levelFilter) return false;
     if (parentFilter) {
       const isTheParent = a.id === parentFilter;
       const isDescendant = descendantIds.has(a.id);
@@ -208,8 +371,8 @@ export function buildGanttExportRows(dated, numberById, depthById, taskStatus) {
   return dated.map(a => ({
     numero:    numberById.get(a.id) || "",
     actividad: "  ".repeat(depthById.get(a.id) || 0) + (a.text || "(sin nombre)"),
-    inicio:    a.start_date || "",
-    fin:       a.due_date || "",
+    inicio:    a.start_date ? formatDateDMY(a.start_date) : "",
+    fin:       a.due_date ? formatDateDMY(a.due_date) : "",
     estado:    statusOf(taskStatus, a.id),
     avance:    `${Math.max(0, Math.min(100, Number(a.progress) || 0))}%`,
   }));

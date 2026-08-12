@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
   STATUS_COLOR, LABEL_COL_MIN, LABEL_COL_MAX, LABEL_COL_DEFAULT, DATE_COL_WIDTH,
   toDate, dayDiff, fmtDay, fmtDayFull, fmtMonth, fmtDueLabel, fmtWeek,
   mondayOf, unitForRange, unitDiff, statusOf, lastDayOfMonth, rangeForMonths, computeAutoRange,
-  computeDatedRows, buildGanttExportRows,
+  computeDatedRows, buildGanttExportRows, computeBarSpan, barIntensity, hexToRgba, computeRowHeight,
+  computeIdealLabelWidth,
 } from "./gantt/ganttHelpers";
 import { useResizableColumn } from "./gantt/useResizableColumn";
 import { useElementWidth } from "./gantt/useElementWidth";
 import { exportPlanning } from "../utils/storage";
+import { formatDateDMY } from "../utils/formulas";
 import FilterBar from "./gantt/FilterBar";
 
 const EXPORT_COLUMNS = ["numero", "actividad", "inicio", "fin", "estado", "avance"];
@@ -15,21 +17,22 @@ const EXPORT_COLUMNS = ["numero", "actividad", "inicio", "fin", "estado", "avanc
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function GanttChart({ activities, taskStatus, onOpenActivity, projectName }) {
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState([]); // [] = "todas" — array = OR entre los valores elegidos (estilo GitLab, ver TokenFilterBar)
   // "all" | "roots" sin parentFilter — "all" | "childrenOnly" con parentFilter
   // (SCOPE_FILTERS vs SCOPE_FILTERS_WITH_PARENT, ver FilterBar).
   const [scopeFilter, setScopeFilter] = useState("all");
   const [parentFilter, setParentFilter] = useState(null); // id de tarea principal, o null = todas
   const [textFilter, setTextFilter] = useState(""); // búsqueda libre por nombre de actividad
+  const [levelFilter, setLevelFilter] = useState(null); // 1-4 = profundidad máxima, null = todos los niveles
   const [hoverRow, setHoverRow] = useState(null);
   const [hoverCol, setHoverCol] = useState(null);
   const [weekAnchor, setWeekAnchor] = useState(null); // no-null = modo "semana navegable" activo
   const [customRange, setCustomRange] = useState(null); // {start,end} fijado a mano o por atajo — tiene prioridad sobre el automático
   const [forceAll, setForceAll] = useState(false); // "Todo" — rango real de TODAS las actividades, sin recorte de +3 días
-  const { width: labelWidth, onCellMouseDown: onLabelCellMouseDown, onCellMouseMoveHint: onLabelCellMouseMove, onCellMouseLeaveHint: onLabelCellMouseLeave } =
-    useResizableColumn(LABEL_COL_DEFAULT, LABEL_COL_MIN, LABEL_COL_MAX);
-  const [scrollRef, containerWidth] = useElementWidth();
+  const [scrollRef, containerWidth, containerHeight] = useElementWidth();
   const [exporting, setExporting] = useState(false);
+  const [exportingImage, setExportingImage] = useState(false);
+  const tableRef = useRef(null); // captura de html2canvas — ver handleExportImage
 
   const today = useMemo(() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d; }, []);
 
@@ -82,9 +85,22 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
   // tarea principal), combinando statusFilter + scopeFilter + parentFilter —
   // ver computeDatedRows (ganttHelpers.js) para la lógica completa y sus tests.
   const dated = useMemo(
-    () => computeDatedRows(activities, taskStatus, { statusFilter, scopeFilter, parentFilter, textFilter }),
-    [activities, taskStatus, statusFilter, scopeFilter, parentFilter, textFilter]
+    () => computeDatedRows(activities, taskStatus, { statusFilter, scopeFilter, parentFilter, textFilter, levelFilter }),
+    [activities, taskStatus, statusFilter, scopeFilter, parentFilter, textFilter, levelFilter]
   );
+
+  // Ancho de la columna "Actividad": sigue automáticamente al texto más
+  // largo entre las filas visibles (ver computeIdealLabelWidth), acotado
+  // entre LABEL_COL_MIN/MAX — pasado el máximo el texto se trunca con
+  // ellipsis en vez de seguir ensanchando la columna. El usuario puede
+  // seguir arrastrando el borde a mano en cualquier momento; en cuanto lo
+  // hace, su elección manda y deja de recalcularse solo (ver useResizableColumn).
+  const idealLabelWidth = useMemo(
+    () => computeIdealLabelWidth(dated, numberById, depthById),
+    [dated, numberById, depthById]
+  );
+  const { width: labelWidth, onCellMouseDown: onLabelCellMouseDown, onCellMouseMoveHint: onLabelCellMouseMove, onCellMouseLeaveHint: onLabelCellMouseLeave } =
+    useResizableColumn(LABEL_COL_DEFAULT, LABEL_COL_MIN, LABEL_COL_MAX, idealLabelWidth);
 
   // Exporta exactamente las filas visibles en pantalla (mismos filtros ya
   // aplicados) — nunca datos ocultos por el propio filtro del usuario.
@@ -97,6 +113,39 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
       alert(`No se pudo exportar el PDF: ${e.message}`);
     } finally {
       setExporting(false);
+    }
+  };
+
+  // Captura visual exacta del calendario (barras con degradado, colores,
+  // sangría de subtareas) como PNG — a diferencia de "Exportar PDF" (tabla de
+  // texto plano), esto es para compartir/pegar la imagen tal cual se ve en
+  // pantalla. 100% en el cliente (html2canvas), no pasa por el backend.
+  // scale:2 para que el texto no se vea pixelado al pegar/imprimir la imagen.
+  // import() dinámico: html2canvas (~200KB) solo se descarga cuando alguien
+  // realmente exporta una imagen, no en el bundle inicial de toda la app.
+  const handleExportImage = async () => {
+    if (!tableRef.current) return;
+    setExportingImage(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(tableRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+      });
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("No se pudo generar la imagen");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Cronograma - ${projectName || "Proyecto"}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`No se pudo exportar la imagen: ${e.message}`);
+    } finally {
+      setExportingImage(false);
     }
   };
 
@@ -157,9 +206,31 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
   // se recalcula solo porque depende de `dated` en su propio useMemo.
   const releaseCustomRange = () => { setCustomRange(null); setWeekAnchor(null); setForceAll(false); };
 
-  const handleSetStatusFilter = (value) => { setStatusFilter(value); releaseCustomRange(); };
+  // Toggle: agregar el valor si no está, quitarlo si ya estaba — así el
+  // mismo tipo de filtro admite varios valores combinados con OR (ver
+  // computeDatedRows). Los botones/chips activos de FilterBar llaman esto
+  // con el valor que se acaba de tocar.
+  const handleSetStatusFilter = (value) => {
+    setStatusFilter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+    releaseCustomRange();
+  };
 
   const handleSetScopeFilter = (value) => { setScopeFilter(value); releaseCustomRange(); };
+
+  const handleSetLevelFilter = (value) => { setLevelFilter(value ? Number(value) : null); releaseCustomRange(); };
+
+  // "Limpiar todo" del TokenFilterBar — reset directo a los valores vacíos,
+  // NO un forEach de togglear cada chip uno por uno: con varios chips de
+  // Estado (multi-valor), togglear cada uno por separado parte del mismo
+  // array base en el mismo tick (batching de React) y deja el resultado
+  // incorrecto en vez de vacío.
+  const handleClearAllFilters = () => {
+    setStatusFilter([]);
+    setParentFilter(null);
+    setScopeFilter("all");
+    setLevelFilter(null);
+    releaseCustomRange();
+  };
 
   // A diferencia de los demás filtros, el de texto NO suelta el rango fijado
   // a cada tecla — el usuario suele estar buscando dentro de un período que
@@ -188,14 +259,14 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
 
   if (!dated.length) {
     const totalDated = (activities || []).filter(a => a.start_date || a.due_date).length;
-    if ((statusFilter !== "all" || parentFilter || textFilter.trim()) && totalDated > 0) {
+    if ((statusFilter.length > 0 || parentFilter || textFilter.trim() || levelFilter) && totalDated > 0) {
       return (
         <div className="gantt-empty">
           Ninguna actividad con fechas coincide con el filtro seleccionado.{" "}
           <button
             type="button"
             className="gantt-empty__link"
-            onClick={() => { setStatusFilter("all"); handleSetParentFilter(null); setTextFilter(""); }}
+            onClick={() => { handleClearAllFilters(); setTextFilter(""); }}
           >Mostrar todas</button>
         </div>
       );
@@ -254,6 +325,12 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
     ? Math.max(minDateCol, Math.floor(freeSpace / columns.length))
     : minDateCol;
 
+  // Altura de fila dinámica: con pocas filas visibles (ej. filtro de nivel en
+  // "Nivel 1/2"), reparte el alto sobrante del contenedor entre ellas en vez
+  // de dejarlas apretadas arriba con un hueco vacío debajo — ver
+  // computeRowHeight (ganttHelpers.js).
+  const rowHeight = computeRowHeight(containerHeight, dated.length);
+
   return (
     <div className="gantt">
       <FilterBar
@@ -263,6 +340,7 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
         parentOptions={parentOptions}
         parentFilter={parentFilter}
         textFilter={textFilter}
+        levelFilter={levelFilter}
         counts={counts}
         onPickCustomRange={handleCustomRangeInput}
         onPickPreset={handlePickPreset}
@@ -270,8 +348,12 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
         onSetScopeFilter={handleSetScopeFilter}
         onSetParentFilter={handleSetParentFilter}
         onSetTextFilter={handleSetTextFilter}
+        onSetLevelFilter={handleSetLevelFilter}
+        onClearAllFilters={handleClearAllFilters}
         onExportPdf={handleExportPdf}
         exporting={exporting}
+        onExportImage={handleExportImage}
+        exportingImage={exportingImage}
         onClearCustom={handleClearCustom}
         hasCustom={!!customRange || !!weekAnchor || forceAll}
         today={today}
@@ -286,7 +368,7 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
             al angostar "Actividad" el calendario se ensancha (en vez de dejar
             un hueco en blanco), y al ensancharla las fechas se encogen hasta
             el mínimo y recién entonces aparece scroll horizontal. */}
-        <table className="gantt-cal" style={{ width: Math.max(containerWidth, labelWidth + columns.length * dateColWidth) }}>
+        <table ref={tableRef} className="gantt-cal" style={{ width: Math.max(containerWidth, labelWidth + columns.length * dateColWidth) }}>
           {/* Los anchos se fijan aquí: con table-layout:fixed el <colgroup> es
               lo único que el navegador respeta (ignora min-width en celdas). */}
           <colgroup>
@@ -323,7 +405,12 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
           <tbody>
             {dated.map(a => {
               const due = toDate(a.due_date) || toDate(a.start_date);
-              const dueColIndex = due ? unitDiff(effectiveUnit, effectiveRange.start, due) : null;
+              // Rango de columnas [inicio, fin] que ocupa la barra — antes
+              // solo se pintaba la celda de entrega; ahora la actividad se ve
+              // como una barra continua desde su fecha de inicio, con
+              // intensidad de color creciente hacia el día de entrega (ver
+              // computeBarSpan/barIntensity en ganttHelpers.js).
+              const barSpan = computeBarSpan(a, effectiveUnit, effectiveRange.start, totalUnits);
               const st = statusOf(taskStatus, a.id);
               const prog = Math.max(0, Math.min(100, Number(a.progress) || 0));
               const isRowHover = hoverRow === a.id;
@@ -332,6 +419,7 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
                 <tr
                   key={a.id}
                   className={`gantt-cal__row${isRowHover ? " gantt-cal__row--hover" : ""}`}
+                  style={{ height: rowHeight }}
                   onClick={() => onOpenActivity?.(a.id)}
                   onMouseEnter={() => setHoverRow(a.id)}
                   onMouseLeave={() => setHoverRow(null)}
@@ -344,15 +432,33 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
                     onMouseLeave={onLabelCellMouseLeave}
                   >
                     {/* Sangría por nivel: las subtareas se ven colgando de su
-                        tarea principal, como en la planificación completa. */}
-                    <span style={{ paddingLeft: (depthById.get(a.id) || 0) * 14 }}>
-                      <span className="gantt-cal__row-num">{numberById.get(a.id)}.</span>
-                      <span className="gantt-cal__row-text">{a.text || "(sin nombre)"}</span>
-                    </span>
+                        tarea principal, como en la planificación completa.
+                        Nivel 0 (tarea global) y nivel 1 (tarea padre) se
+                        destacan en negrilla — nivel 0 además con letra un
+                        poco más grande — para que la jerarquía se distinga
+                        de un vistazo sin depender solo de la sangría. */}
+                    {(() => {
+                      const depth = depthById.get(a.id) || 0;
+                      const rowTextClass = [
+                        "gantt-cal__row-text",
+                        depth === 0 && "gantt-cal__row-text--global",
+                        depth === 1 && "gantt-cal__row-text--parent",
+                      ].filter(Boolean).join(" ");
+                      return (
+                        <span style={{ paddingLeft: depth * 14 }}>
+                          <span className="gantt-cal__row-num">{numberById.get(a.id)}.</span>
+                          <span className={rowTextClass}>{a.text || "(sin nombre)"}</span>
+                        </span>
+                      );
+                    })()}
                   </td>
                   {columns.map((c, i) => {
-                    const isDue = i === dueColIndex;
+                    const isInBar = barSpan && i >= barSpan.startColIndex && i <= barSpan.dueColIndex;
+                    const isDue = barSpan && i === barSpan.dueColIndex;
                     const isColHover = hoverCol === i;
+                    const cellStyle = isInBar
+                      ? { background: hexToRgba(STATUS_COLOR[st], barIntensity(i, barSpan.startColIndex, barSpan.dueColIndex)) }
+                      : undefined;
                     return (
                       <td
                         key={i}
@@ -360,10 +466,11 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
                           "gantt-cal__cell",
                           c.isWeekend && "gantt-cal__cell--weekend",
                           isColHover && "gantt-cal__cell--col-hover",
+                          isInBar && "gantt-cal__cell--bar",
                           isDue && `gantt-cal__cell--due gantt-cal__cell--due-${st}`,
                         ].filter(Boolean).join(" ")}
-                        style={isDue ? { background: STATUS_COLOR[st] } : undefined}
-                        title={isDue ? `${a.text}\nEntrega: ${a.due_date || a.start_date} · ${prog}% avance` : undefined}
+                        style={cellStyle}
+                        title={isInBar ? `${a.text}\nInicio: ${formatDateDMY(a.start_date)} · Entrega: ${formatDateDMY(a.due_date || a.start_date)} · ${prog}% avance` : undefined}
                       >
                         {isDue && <span className="gantt-cal__due-label">{fmtDueLabel(due)}</span>}
                       </td>
