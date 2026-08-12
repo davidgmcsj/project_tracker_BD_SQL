@@ -12,7 +12,7 @@
 import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { computeDelayCandidates, buildReferencePatch } from "../../utils/delayCascade";
-import { buildActivityIndex, activityLabel } from "../../utils/formulas";
+import { buildActivityIndex, activityLabel, formatDateDMY } from "../../utils/formulas";
 
 export default function DelayCascadePreview({
   activity,       // actividad de referencia (con due_date)
@@ -140,9 +140,9 @@ export default function DelayCascadePreview({
                       />
                     </td>
                     <td>{activityLabel(actIndex, c.id)}</td>
-                    <td>{c.currentDueDate}</td>
+                    <td>{formatDateDMY(c.currentDueDate)}</td>
                     <td className="delay-cascade-arrow">→</td>
-                    <td className="delay-cascade-new-date">{c.newDueDate}</td>
+                    <td className="delay-cascade-new-date">{formatDateDMY(c.newDueDate)}</td>
                   </tr>
                 ))}
               </tbody>

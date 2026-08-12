@@ -11,7 +11,7 @@
 // construir esto como una consulta del motor de reportes.
 
 import { useState, useMemo } from "react";
-import { visibleActivities, getActivityStatus, getToday } from "../utils/formulas";
+import { visibleActivities, getActivityStatus, getToday, formatDateDMY } from "../utils/formulas";
 import { estadoActividadKey, ESTADOS_ACTIVIDAD_OPERACIONAL } from "../utils/filtroOpciones";
 
 const AGRUPACIONES = [
@@ -104,7 +104,7 @@ function BoardColumns({ columnas, actividades, agrupar, hoy }) {
                 <div key={act.id} className="global-board__card">
                   <div className="global-board__card-project">{act.projectName}</div>
                   <div className="global-board__card-text">{act.text}</div>
-                  {act.dueDate && <div className="global-board__card-due">📅 {act.dueDate}</div>}
+                  {act.dueDate && <div className="global-board__card-due">📅 {formatDateDMY(act.dueDate)}</div>}
                 </div>
               ))}
             </div>

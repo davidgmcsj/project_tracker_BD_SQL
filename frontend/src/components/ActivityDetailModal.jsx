@@ -9,6 +9,7 @@ import AttachmentsSection from "./activity-detail/AttachmentsSection";
 import DiscardConfirmDialog from "./activity-detail/DiscardConfirmDialog";
 import ParentSelectDropdown from "./activity-detail/ParentSelectDropdown";
 import DelayCascadePreview from "./activity-detail/DelayCascadePreview";
+import DateInput from "./common/DateInput";
 
 // ── Modal principal ───────────────────────────────────────────────────────────
 
@@ -271,6 +272,11 @@ export default function ActivityDetailModal({
         <div className="adm-header">
           <div className="adm-header__top">
             <span className="adm-header__project">{projectName}</span>
+            {activity.deployment_role && (
+              <span className="adm-auto-badge" title="Subtarea creada automáticamente por la cadena de despliegue">
+                ⚙ Auto — {activity.deployment_role === "test_deploy" ? "paso a pruebas" : "paso a producción"}
+              </span>
+            )}
             <select
               className={`adm-status-pill adm-status-pill--select ${statusClass}`}
               value={local.status}
@@ -351,20 +357,18 @@ export default function ActivityDetailModal({
           <div className="adm-row-2">
             <div className="adm-field">
               <label className="adm-label">Fecha inicio</label>
-              <input
-                type="date"
+              <DateInput
                 className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
                 value={local.start_date}
-                onChange={e => set("start_date", e.target.value)}
+                onChange={iso => set("start_date", iso)}
               />
             </div>
             <div className="adm-field">
               <label className="adm-label">Fecha fin</label>
-              <input
-                type="date"
+              <DateInput
                 className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
                 value={local.due_date}
-                onChange={e => set("due_date", e.target.value)}
+                onChange={iso => set("due_date", iso)}
               />
             </div>
           </div>

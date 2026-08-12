@@ -23,13 +23,14 @@
 
 import { useMemo, useState } from "react";
 import {
-  buildActivityTree, flattenTree, formatHierarchyNumber,
+  buildActivityTree, flattenTree, formatHierarchyNumber, formatDateDMY,
   aggregatedProgress, getActivityStatus, shortEngineerName, canTransitionTo, isDesarrollo, reorderSiblings,
 } from "../utils/formulas";
 import { rescheduleAfterChange } from "../utils/scheduling";
 import { ESTADO_ACTIVIDAD_LABEL, estadoActividadKey } from "../utils/filtroOpciones";
 import { matchesSearch } from "../utils/search";
 import { exportPlanning } from "../utils/storage";
+import DateInput from "./common/DateInput";
 
 // getActivityStatus (formulas.js) devuelve labels en ESPAÑOL ("Completada",
 // "En proceso", "No iniciada") porque así los consumen los reportes de texto.
@@ -76,8 +77,8 @@ function buildHierarchyExportRows(rows, taskStatus, childrenOf) {
       numero:    formatHierarchyNumber(path),
       actividad: a.text || "(sin nombre)",
       asignado:  firstAssignee ? shortEngineerName(firstAssignee.name) : "Sin asignar",
-      inicio:    a.start_date || "",
-      fin:       a.due_date || "",
+      inicio:    a.start_date ? formatDateDMY(a.start_date) : "",
+      fin:       a.due_date ? formatDateDMY(a.due_date) : "",
       progreso:  `${hasChildren ? aggregatedProgress(a, childrenOf) : (a.progress || 0)}%`,
       estado:    getActivityStatus(taskStatus, a.id),
     };
@@ -95,7 +96,7 @@ function nextSequenceOrder(activities, parentId) {
 // ── Fila individual ───────────────────────────────────────────────────────────
 
 function Row({
-  row, hasChildren, isCollapsed, onToggleCollapse,
+  row, hasChildren, expandable, isCollapsed, onToggleCollapse,
   taskStatus, activities,
   onAddChild, onDeleteActivity, onDateChange, onOpenActivity, onChangeStatus,
   aggProgress,
@@ -136,12 +137,20 @@ function Row({
       </td>
       <td className="htable__cell htable__cell--name">
         <div className="htable__indent" style={{ paddingLeft: level * 20 }}>
-          {hasChildren ? (
+          {expandable ? (
             <button type="button" className="htable__toggle" onClick={() => onToggleCollapse(a.id)} title={isCollapsed ? "Expandir" : "Colapsar"}>
               {isCollapsed ? "▸" : "▾"}
             </button>
           ) : (
-            <span className="htable__toggle htable__toggle--spacer" />
+            <span
+              className="htable__toggle htable__toggle--spacer"
+              title={hasChildren && !expandable ? "Tiene subtareas ocultas — cambia a \"Ver todas\" para verlas" : undefined}
+            >
+              {hasChildren && !expandable ? "⋯" : ""}
+            </span>
+          )}
+          {a.deployment_role && (
+            <span className="htable__auto-badge" title="Subtarea creada automáticamente por la cadena de despliegue">⚙ Auto</span>
           )}
           <button type="button" className="htable__name-text htable__name-text--link" onClick={() => onOpenActivity?.(a.id)} title="Ver detalle completo">
             {a.text || "(sin nombre)"}
@@ -163,16 +172,16 @@ function Row({
       </td>
       <td className="htable__cell htable__cell--date">
         {isReadOnlyDates ? (
-          <span className="htable__readonly" title="Calculado de sus subtareas">🔒 {a.start_date || "—"}</span>
+          <span className="htable__readonly" title="Calculado de sus subtareas">🔒 {formatDateDMY(a.start_date)}</span>
         ) : (
-          <input type="date" className="htable__date" value={a.start_date || ""} onChange={e => handleDateChange("start_date", e.target.value)} />
+          <DateInput className="htable__date" value={a.start_date || ""} onChange={iso => handleDateChange("start_date", iso)} />
         )}
       </td>
       <td className="htable__cell htable__cell--date">
         {isReadOnlyDates ? (
-          <span className="htable__readonly" title="Gobernada por sus subtareas — se auto-ajusta si estas cambian">🔒 {a.due_date || "—"}</span>
+          <span className="htable__readonly" title="Gobernada por sus subtareas — se auto-ajusta si estas cambian">🔒 {formatDateDMY(a.due_date)}</span>
         ) : (
-          <input type="date" className="htable__date" value={a.due_date || ""} onChange={e => handleDateChange("due_date", e.target.value)} />
+          <DateInput className="htable__date" value={a.due_date || ""} onChange={iso => handleDateChange("due_date", iso)} />
         )}
       </td>
       <td className="htable__cell htable__cell--progress">
@@ -218,6 +227,7 @@ export default function HierarchyTable({
   const [cascadeNotice, setCascadeNotice] = useState(null); // { count } — aviso no bloqueante tras un recálculo
   const [statusFilter, setStatusFilter] = useState("all");
   const [textFilter, setTextFilter] = useState("");
+  const [levelFilter, setLevelFilter] = useState(2); // 1-4 = profundidad máxima (1=solo raíces), null = todos
   const [exporting, setExporting] = useState(false);
   const [draggedId, setDraggedId] = useState(null);
   const [dropTargetId, setDropTargetId] = useState(null);
@@ -225,7 +235,16 @@ export default function HierarchyTable({
   const acts = useMemo(() => (Array.isArray(activities) ? activities : []), [activities]);
   const { childrenOf } = useMemo(() => buildActivityTree(acts), [acts]);
 
-  const allRows = useMemo(() => flattenTree(acts, { collapsedIds }), [acts, collapsedIds]);
+  const allRowsFull = useMemo(() => flattenTree(acts, { collapsedIds }), [acts, collapsedIds]);
+
+  // Filtro de profundidad máxima: nivel 1 = solo raíces (r.level === 0),
+  // nivel 2 = +1er nivel de subtareas (r.level <= 1), etc. — techo fijo
+  // recalculado en cada render, distinto de collapsedIds (que el usuario
+  // controla fila por fila con el botón ▾/▸).
+  const allRows = useMemo(
+    () => (levelFilter ? allRowsFull.filter(r => r.level < levelFilter) : allRowsFull),
+    [allRowsFull, levelFilter]
+  );
 
   // El filtro no recorta el árbol en crudo: una fila se muestra si ELLA MISMA
   // matchea AMBOS filtros (estado + texto, combinados con AND), o si alguno
@@ -327,6 +346,20 @@ export default function HierarchyTable({
   return (
     <div className="htable-wrap">
       <div className="htable-toolbar">
+        <span className="htable-toolbar__label">Niveles:</span>
+        <select
+          className="htable-toolbar__level-select"
+          value={levelFilter || ""}
+          onChange={e => setLevelFilter(e.target.value ? Number(e.target.value) : null)}
+          title="Profundidad máxima de subtareas a mostrar"
+        >
+          <option value="">Todos los niveles</option>
+          <option value="1">Nivel 1 (solo principales)</option>
+          <option value="2">Nivel 2</option>
+          <option value="3">Nivel 3</option>
+          <option value="4">Nivel 4</option>
+        </select>
+        <span className="htable-toolbar__sep" />
         <span className="htable-toolbar__label">Mostrar:</span>
         {STATUS_FILTERS.map(f => (
           <button
@@ -348,7 +381,7 @@ export default function HierarchyTable({
         {textFilter.trim() && (
           <button type="button" className="htable-toolbar__chip" onClick={() => setTextFilter("")}>✕ Limpiar</button>
         )}
-        <span className="htable-toolbar__count">{rows.length} de {allRows.length}</span>
+        <span className="htable-toolbar__count">{rows.length} de {allRowsFull.length}</span>
         {(statusFilter !== "all" || textFilter.trim()) && (
           <span className="htable-toolbar__hint">Con un filtro activo no se puede reordenar — quita el estado y la búsqueda primero.</span>
         )}
@@ -399,6 +432,7 @@ export default function HierarchyTable({
                 key={row.activity.id}
                 row={row}
                 hasChildren={(childrenOf.get(row.activity.id) || []).length > 0}
+                expandable={(childrenOf.get(row.activity.id) || []).length > 0 && (!levelFilter || row.level < levelFilter - 1)}
                 isCollapsed={collapsedIds.has(row.activity.id)}
                 onToggleCollapse={toggleCollapse}
                 taskStatus={taskStatus}

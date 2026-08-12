@@ -9,10 +9,9 @@
 // archivo tal cual para no romper ese import (ver comentario ahí).
 
 import { useState } from "react";
-import { buildActivityIndex, activityLabel, canTransitionTo, isDesarrollo } from "../../utils/formulas";
+import { buildActivityIndex, activityLabel, canTransitionTo, isDesarrollo, flattenTree, formatDateDMY } from "../../utils/formulas";
 import { matchesSearch } from "../../utils/search";
 import { safeArr, safeActs, transitionActivityStatus } from "./shared";
-import { useDragSort } from "./useDragSort";
 
 const TASK_STATUS_COLS_ROW1 = [
   { key: "completed",   label: "Completadas",  icon: "✅", variant: "green"  },
@@ -39,12 +38,7 @@ function blockedReason(destKey, act, acts, ts) {
   return "No se puede completar: tiene subtareas pendientes";
 }
 
-// Una columna del tablero — componente propio (no una función inline dentro
-// de .map()) porque usa el hook useDragSort, y los hooks solo pueden vivir
-// en un componente/hook de verdad, no en una función auxiliar llamada
-// condicionalmente por columna (regla de hooks).
-function TaskStatusColumn({ col, items, acts, ts, actByIdMap, actIndex, onOpenDetail, onMove, onRemove, onReorder }) {
-  const { onDragStart: colDragStart, onDrop: colDrop } = useDragSort(items, onReorder);
+function TaskStatusColumn({ col, items, acts, ts, actByIdMap, actIndex, onOpenDetail, onMove, onRemove }) {
   const otherCols = TASK_STATUS_COLS.filter(c => c.key !== col.key);
 
   return (
@@ -58,22 +52,27 @@ function TaskStatusColumn({ col, items, acts, ts, actByIdMap, actIndex, onOpenDe
         <p className="task-status-col__empty">Sin actividades</p>
       ) : (
         <ul className="task-status-col__list">
-          {items.map((item, i) => {
+          {items.map((item) => {
             const act = actByIdMap.get(item);
-            const fmtKanbanDate = (d) => {
-              if (!d) return null;
-              const [y, m, day] = d.split("-");
-              return `${day}/${m}/${y}`;
-            };
-            // Calcular días restantes y estado de demora
+            // Calcular días restantes y estado de demora. Una actividad ya
+            // completada NO cuenta para demora — pero tampoco una que ya pasó
+            // a Ambiente Pruebas/Producción: ahí la fecha de fin original ya
+            // se cumplió en cuanto a DESARROLLO, lo que falta es el paso por
+            // pruebas/producción, no "más tiempo de desarrollo" — mostrar
+            // "en demora" ahí confunde (ver captura del usuario: una tarea ya
+            // en Ambiente Pruebas se veía en rojo como si estuviera atrasada).
             const isCompleted = col.key === "completed";
+            const isEnvironment = col.key === "ambiente_pruebas" || col.key === "ambiente_produccion";
             const today = new Date(); today.setHours(0,0,0,0);
             const dueDate = act?.due_date ? new Date(act.due_date) : null;
             const diffDays = dueDate ? Math.ceil((dueDate - today) / 86400000) : null;
-            const isOverdue = !isCompleted && dueDate && diffDays < 0;
+            const isOverdue = !isCompleted && !isEnvironment && dueDate && diffDays < 0;
             let daysLabel = null;
             let daysClass = "task-status-col__days-badge";
-            if (!isCompleted && diffDays !== null) {
+            if (isEnvironment) {
+              daysLabel = col.key === "ambiente_pruebas" ? "🧪 Pendiente pasar a pruebas" : "🚀 Pendiente pasar a producción";
+              daysClass += " task-status-col__days-badge--pending-env";
+            } else if (!isCompleted && diffDays !== null) {
               if (diffDays < 0) {
                 daysLabel = `⚠ En demora (${Math.abs(diffDays)} días)`;
                 daysClass += " task-status-col__days-badge--overdue";
@@ -89,16 +88,16 @@ function TaskStatusColumn({ col, items, acts, ts, actByIdMap, actIndex, onOpenDe
               <li
                 key={item}
                 className={`task-status-col__item${isOverdue ? " task-status-col__item--overdue" : ""}`}
-                draggable
-                onDragStart={() => colDragStart(i)}
-                onDragOver={e => e.preventDefault()}
-                onDrop={() => colDrop(i)}
-                title="Arrastra para reordenar"
                 onClick={onOpenDetail ? () => onOpenDetail(item) : undefined}
                 style={onOpenDetail ? { cursor: "pointer" } : undefined}
               >
                 <div className="task-status-col__item-main">
-                  <span className="task-status-col__item__grip">⠿</span>
+                  {act?.deployment_role && (
+                    <span
+                      className="task-status-col__auto-badge"
+                      title="Subtarea creada automáticamente por la cadena de despliegue"
+                    >⚙ Auto</span>
+                  )}
                   <span className="task-status-col__item-text">{activityLabel(actIndex, item)}</span>
                   <div className="task-status-col__item-actions">
                     {otherCols.map(other => {
@@ -124,10 +123,10 @@ function TaskStatusColumn({ col, items, acts, ts, actByIdMap, actIndex, onOpenDe
                 </div>
                 <div className="task-status-col__dates">
                   <span className={`task-status-col__date-chip${act?.start_date ? "" : " task-status-col__date-chip--nodate"}`}>
-                    Inicio: {fmtKanbanDate(act?.start_date) || "Sin fecha"}
+                    Inicio: {act?.start_date ? formatDateDMY(act.start_date) : "Sin fecha"}
                   </span>
                   <span className={`task-status-col__date-chip task-status-col__date-chip--end${act?.due_date ? "" : " task-status-col__date-chip--nodate"}`}>
-                    Fin: {fmtKanbanDate(act?.due_date) || "Sin fecha"}
+                    Fin: {act?.due_date ? formatDateDMY(act.due_date) : "Sin fecha"}
                   </span>
                   {daysLabel && (
                     <span className={daysClass}>{daysLabel}</span>
@@ -167,13 +166,22 @@ export default function TaskStatusSelector({ taskStatus, activities, onChange, o
   const validIds     = new Set(acts.map(act => act.id));
   const filterValid   = (arr) => safeArr(arr).filter(id => validIds.has(id));
 
+  // Orden jerárquico (1, 1.1, 1.3, 1.5.1, 2…) — mismo recorrido preorden que
+  // ya usan Planificación y el Gantt (flattenTree), para que un depósito
+  // nunca muestre las tarjetas en el orden crudo en que fueron movidas
+  // (arrastre histórico), que es lo que el usuario reportó como "salpicón".
+  const orderIndex = new Map(flattenTree(acts).map(({ activity }, i) => [activity.id, i]));
+  const byHierarchyOrder = (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0);
+
   // Igual que filterValid, pero además exige que matchee la búsqueda de
   // texto — usado SOLO para decidir qué se muestra en cada columna. assigned
   // (abajo) debe seguir usando filterValid a secas: si se calculara con el
   // filtro de texto, una actividad ya clasificada que no matchea el texto
   // "reaparecería" en el panel de sin clasificar, que es incorrecto (sigue
   // asignada, solo no se está mostrando en pantalla ahora mismo).
-  const filterVisible = (arr) => filterValid(arr).filter(id => matchesSearch(actByIdMap.get(id)?.text || "", textFilter));
+  const filterVisible = (arr) => filterValid(arr)
+    .filter(id => matchesSearch(actByIdMap.get(id)?.text || "", textFilter))
+    .sort(byHierarchyOrder);
 
   // Todas las actividades ya asignadas en cualquier columna (solo válidas)
   const assigned = new Set([
@@ -219,8 +227,9 @@ export default function TaskStatusSelector({ taskStatus, activities, onChange, o
     move(item, toKey);
   };
 
-  // Actividades sin asignar aún (ids), con su label numerado para mostrar
-  const unassigned = acts.map(act => act.id).filter(id => !assigned.has(id));
+  // Actividades sin asignar aún (ids), con su label numerado para mostrar —
+  // mismo orden jerárquico que las columnas, no el orden crudo del array.
+  const unassigned = acts.map(act => act.id).filter(id => !assigned.has(id)).sort(byHierarchyOrder);
 
   return (
     <div className="task-status-board">
@@ -287,7 +296,6 @@ export default function TaskStatusSelector({ taskStatus, activities, onChange, o
             onOpenDetail={onOpenDetail}
             onMove={move}
             onRemove={remove}
-            onReorder={reordered => onChange({ ...ts, [col.key]: reordered }, acts)}
           />
         ))}
       </div>
@@ -305,7 +313,6 @@ export default function TaskStatusSelector({ taskStatus, activities, onChange, o
             onOpenDetail={onOpenDetail}
             onMove={move}
             onRemove={remove}
-            onReorder={reordered => onChange({ ...ts, [col.key]: reordered }, acts)}
           />
         ))}
       </div>

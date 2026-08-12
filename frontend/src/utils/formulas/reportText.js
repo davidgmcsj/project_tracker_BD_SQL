@@ -8,6 +8,7 @@ import { visibleActivities } from "./activityModel.js";
 import { totalPlannedHours } from "./businessDays.js";
 import { buildActivityIndex, activityText, activityLabel } from "./activityHierarchy.js";
 import { buildEngineerIndex, engineerName } from "./engineerModel.js";
+import { formatDateDMY } from "./dateHelpers.js";
 
 const STATUS_LABELS = { "on-track": "En curso", "at-risk": "En riesgo", blocked: "Bloqueado", completed: "Completado" };
 const STATUS_ICONS  = { "on-track": "🟡", "at-risk": "🟠", blocked: "🔴", completed: "🟢" };
@@ -155,7 +156,7 @@ function projectBlock(p, i, engineerIndex) {
   if (milestones.length) {
     txt += `📅 Fechas clave:\n`;
     milestones.forEach(m => {
-      txt += `  • [${m.date || "Sin fecha"}] ${m.activity ? activityLabel(actIndex, m.activity) : "—"}`;
+      txt += `  • [${m.date ? formatDateDMY(m.date) : "Sin fecha"}] ${m.activity ? activityLabel(actIndex, m.activity) : "—"}`;
       if (m.note) txt += ` — ${m.note}`;
       txt += `\n`;
     });
@@ -166,7 +167,7 @@ function projectBlock(p, i, engineerIndex) {
   if (comments.length) {
     txt += `💬 Comentarios:\n`;
     comments.forEach(c => {
-      txt += `  • [${c.date || "Sin fecha"}] ${c.activity ? activityLabel(actIndex, c.activity) : "—"}`;
+      txt += `  • [${c.date ? formatDateDMY(c.date) : "Sin fecha"}] ${c.activity ? activityLabel(actIndex, c.activity) : "—"}`;
       if (c.text) txt += `: ${c.text}`;
       txt += `\n`;
     });

@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { createKeyDate } from "../../utils/formulas";
+import DateInput from "../common/DateInput";
 
 export default function KeyDatesSection({ items, onChange }) {
   const confirm = (date, label) => {
@@ -44,11 +45,10 @@ export default function KeyDatesSection({ items, onChange }) {
           {items.map(it => (
             <li key={it.id} className="adm-keydate-item">
               <span className="adm-keydate-item__icon">📅</span>
-              <input
-                type="date"
+              <DateInput
                 className="adm-keydate-item__date"
                 value={it.date || ""}
-                onChange={e => update(it.id, "date", e.target.value)}
+                onChange={iso => update(it.id, "date", iso)}
               />
               <input
                 type="text"
@@ -70,11 +70,10 @@ export default function KeyDatesSection({ items, onChange }) {
 
       {adding && (
         <div className="adm-inline-draft adm-inline-draft--keydate">
-          <input
-            type="date"
+          <DateInput
             className="adm-inline-draft__date"
             value={draftDate}
-            onChange={e => setDraftDate(e.target.value)}
+            onChange={iso => setDraftDate(iso)}
             autoFocus
           />
           <input

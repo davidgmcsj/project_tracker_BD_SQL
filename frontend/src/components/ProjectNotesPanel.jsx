@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { loadProjectNotes, saveProjectNote, deleteProjectNote, getCurrentUser } from "../utils/storage";
 import { getToday, formatDateDMY } from "../utils/formulas";
 import { TIPOS_NOTA as TIPOS } from "../utils/filtroOpciones";
+import DateInput from "./common/DateInput";
 
 const AUTHOR_KEY = "wt-author";
 
@@ -89,10 +90,10 @@ export function ProjectNotesPanel({ proyectoAppID }) {
             >
               {TIPOS.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
             </select>
-            <input
-              type="date" className="field__input notes-panel__date"
+            <DateInput
+              className="field__input notes-panel__date"
               value={draft.date}
-              onChange={e => setDraft({ ...draft, date: e.target.value })}
+              onChange={iso => setDraft({ ...draft, date: iso })}
             />
             {sessionUser ? (
               <span className="notes-panel__author-fixed" title="Con sesión activa, la nota se atribuye a tu usuario">

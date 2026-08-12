@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import { normalizeEngineerTask, applyEngineerTaskStatus, suggestedWorkHours, businessDaysBetween } from "../utils/formulas";
 import { validateStartEnd, validateTransitionDates } from "../utils/dateValidation";
 import { ChecklistSection, KeyDatesSection, NotesSection, DateBadgesSection } from "./ActivityFormSections";
+import DateInput from "./common/DateInput";
 
 // Vocabulario propio, NO derivado de ESTADOS_ACTIVIDAD_OPERACIONAL
 // (utils/filtroOpciones.js) a propósito: ese enum incluye "Ambiente
@@ -195,20 +196,18 @@ export default function EngineerTaskModal({ task, engineerName, onSave, onClose,
           <div className="adm-row-2">
             <div className="adm-field">
               <label className="adm-label">Fecha inicio</label>
-              <input
-                type="date"
+              <DateInput
                 className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
                 value={local.start_date}
-                onChange={e => set("start_date", e.target.value)}
+                onChange={iso => set("start_date", iso)}
               />
             </div>
             <div className="adm-field">
               <label className="adm-label">Fecha fin</label>
-              <input
-                type="date"
+              <DateInput
                 className={`adm-input${dateErrors.startEnd ? " adm-input--error" : ""}`}
                 value={local.due_date}
-                onChange={e => set("due_date", e.target.value)}
+                onChange={iso => set("due_date", iso)}
               />
             </div>
           </div>

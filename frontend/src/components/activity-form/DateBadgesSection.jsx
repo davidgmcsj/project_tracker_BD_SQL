@@ -7,6 +7,7 @@
 // Modo solo lectura (onChange ausente): muestra badges. Editable: date pickers.
 
 import { formatDateDMY } from "../../utils/formulas";
+import DateInput from "../common/DateInput";
 
 const DATE_FIELDS = [
   { key: "added",       label: "Inscrita",    icon: "📌", cls: "added"      },
@@ -48,11 +49,10 @@ export default function DateBadgesSection({ status, history, onChange }) {
             <span className="adm-date-edit__icon">{f.icon}</span>
             {f.label}
           </span>
-          <input
-            type="date"
+          <DateInput
             className="adm-date-edit__input"
             value={h[f.key] || ""}
-            onChange={e => onChange({ ...h, [f.key]: e.target.value })}
+            onChange={iso => onChange({ ...h, [f.key]: iso })}
           />
         </label>
       ))}

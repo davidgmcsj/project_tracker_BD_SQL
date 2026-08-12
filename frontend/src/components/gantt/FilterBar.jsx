@@ -2,17 +2,17 @@
 // Único punto de control del calendario: reemplaza a los antiguos "Zoom"
 // (arriba) y "panel de fechas" (abajo), que mostraban la misma idea dos veces.
 
-import { toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS, STATUS_FILTERS, SCOPE_FILTERS, SCOPE_FILTERS_WITH_PARENT } from "./ganttHelpers";
-import ParentTaskFilter from "./ParentTaskFilter";
+import { toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS } from "./ganttHelpers";
+import TokenFilterBar from "./TokenFilterBar";
+import DateInput from "../common/DateInput";
 
 export default function FilterBar({
-  range, statusFilter, scopeFilter, parentOptions, parentFilter, textFilter, counts,
-  onPickCustomRange, onPickPreset, onSetStatusFilter, onSetScopeFilter, onSetParentFilter, onSetTextFilter, onClearCustom,
+  range, statusFilter, scopeFilter, parentOptions, parentFilter, textFilter, levelFilter, counts,
+  onPickCustomRange, onPickPreset, onSetStatusFilter, onSetScopeFilter, onSetParentFilter, onSetTextFilter, onSetLevelFilter, onClearAllFilters, onClearCustom,
   hasCustom, today, weekAnchor, onWeekNav, isWeekPreset,
-  onExportPdf, exporting,
+  onExportPdf, exporting, onExportImage, exportingImage,
 }) {
   const year = today.getFullYear();
-  const scopeOptions = parentFilter ? SCOPE_FILTERS_WITH_PARENT : SCOPE_FILTERS;
 
   // Al editar un solo extremo a mano, el otro extremo del `range` puede venir
   // todavía del auto-range (si el usuario no había elegido nada explícito) —
@@ -61,6 +61,9 @@ export default function FilterBar({
         <button type="button" className="gantt-date-filter__chip" onClick={onExportPdf} disabled={exporting}>
           {exporting ? "Generando…" : "📄 Exportar PDF"}
         </button>
+        <button type="button" className="gantt-date-filter__chip" onClick={onExportImage} disabled={exportingImage}>
+          {exportingImage ? "Generando…" : "🖼️ Exportar imagen"}
+        </button>
       </div>
 
       <div className="gantt-filterbar__row">
@@ -80,42 +83,31 @@ export default function FilterBar({
       <div className="gantt-filterbar__row">
         <span className="gantt-filterbar__label">Rango:</span>
         <label className="gantt-date-filter__label">
-          Desde <input type="date" className="gantt-date-filter__input" value={toISO(range.start)} onChange={e => handleFromChange(e.target.value)} />
+          Desde <DateInput className="gantt-date-filter__input" value={toISO(range.start)} onChange={handleFromChange} />
         </label>
         <label className="gantt-date-filter__label">
-          Hasta <input type="date" className="gantt-date-filter__input" value={toISO(range.end)} onChange={e => handleToChange(e.target.value)} />
+          Hasta <DateInput className="gantt-date-filter__input" value={toISO(range.end)} onChange={handleToChange} />
         </label>
         {hasCustom && (
           <button type="button" className="gantt-date-filter__clear" onClick={onClearCustom}>✕ Volver al rango automático</button>
         )}
+      </div>
 
-        <span className="gantt__toolbar-sep" />
-        <span className="gantt-filterbar__label">Estado:</span>
-        {STATUS_FILTERS.map(f => (
-          <button
-            key={f.value} type="button"
-            className={`gantt__filter-chip${statusFilter === f.value ? " gantt__filter-chip--on" : ""}`}
-            onClick={() => onSetStatusFilter(f.value)}
-          >
-            {f.label}{f.value !== "all" ? ` (${counts[f.value]})` : ""}
-          </button>
-        ))}
-
-        <span className="gantt__toolbar-sep" />
-        <span className="gantt-filterbar__label">Tarea padre:</span>
-        <ParentTaskFilter options={parentOptions} selectedId={parentFilter} onSelect={onSetParentFilter} />
-
-        <span className="gantt__toolbar-sep" />
-        <span className="gantt-filterbar__label">Mostrar:</span>
-        {scopeOptions.map(f => (
-          <button
-            key={f.value} type="button"
-            className={`gantt__filter-chip${scopeFilter === f.value ? " gantt__filter-chip--on" : ""}`}
-            onClick={() => onSetScopeFilter(f.value)}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="gantt-filterbar__row">
+        <span className="gantt-filterbar__label">Filtros:</span>
+        <TokenFilterBar
+          statusFilter={statusFilter}
+          onSetStatusFilter={onSetStatusFilter}
+          parentOptions={parentOptions}
+          parentFilter={parentFilter}
+          onSetParentFilter={onSetParentFilter}
+          scopeFilter={scopeFilter}
+          onSetScopeFilter={onSetScopeFilter}
+          levelFilter={levelFilter}
+          onSetLevelFilter={onSetLevelFilter}
+          onClearAll={onClearAllFilters}
+          counts={counts}
+        />
       </div>
     </div>
   );

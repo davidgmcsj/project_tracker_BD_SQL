@@ -1,0 +1,142 @@
+/* ═══ DateInput (components/common/DateInput.jsx) ═══
+   El className recibido por prop (adm-input, htable__date,
+   gantt-date-filter__input…) se aplica al WRAPPER <span class="date-input">,
+   no al <input> interno — así el borde/fondo/padding que cada caller ya
+   tenía definidos siguen envolviendo texto + botón de calendario como una
+   sola pieza, en vez de que el botón quede fuera del "cajón" con borde. */
+
+.date-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* El foco real cae en el <input> interno (.date-input__field), nunca en este
+   <span> wrapper — así que un ":focus" normal en las clases que cada caller
+   pasa (.adm-input:focus, .htable__date:focus, etc.) nunca se dispararía.
+   :focus-within en el wrapper cubre los 10 sitios de uso sin tener que tocar
+   cada hoja de estilos por separado. */
+.date-input:focus-within {
+  border-color: var(--azul-oscuro, #0b3d91);
+}
+
+/* El <input> interno hereda el look del wrapper (que ya trae borde/fondo vía
+   el className del caller) — sin decoración propia para no duplicarlo. */
+.date-input__field {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.date-input__calendar-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 4px;
+  opacity: 0.75;
+}
+
+.date-input__calendar-btn:hover { opacity: 1; background: rgba(0, 51, 153, 0.08); }
+
+
+/* ── Calendario emergente (portal a document.body) ── */
+.date-input__picker {
+  position: fixed;
+  z-index: 2100;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  padding: 8px;
+  width: 240px;
+}
+
+.date-input__picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.date-input__picker-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.date-input__nav-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.date-input__nav-btn:hover { border-color: var(--azul-oscuro); color: var(--azul-oscuro); }
+
+.date-input__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 2px;
+}
+
+.date-input__weekday {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  padding: 2px 0;
+}
+
+.date-input__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.date-input__day {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.date-input__day:hover { background: var(--surface-2); }
+
+.date-input__day--outside { color: var(--text-3); opacity: 0.55; }
+
+.date-input__day--selected { background: var(--inst-azul); color: #fff; font-weight: 700; }
+
+.date-input__clear {
+  width: 100%;
+  margin-top: 6px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 6px 0 2px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.date-input__clear:hover { color: var(--red); }

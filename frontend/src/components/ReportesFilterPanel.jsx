@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { SearchableMultiSelect } from "./SearchableMultiSelect";
+import DateInput from "./common/DateInput";
 
 function FiltroControl({ campo, def, opciones, onAdd }) {
   const [valor, setValor]   = useState("");
@@ -41,9 +42,9 @@ function FiltroControl({ campo, def, opciones, onAdd }) {
     return (
       <div className="reportes-filter">
         <span className="reportes-filter__label">{campo.replace(/_/g, " ")}</span>
-        <input type="date" className="report-filters__select" value={desde} onChange={e => setDesde(e.target.value)} />
+        <DateInput className="report-filters__select" value={desde} onChange={iso => setDesde(iso)} />
         <span className="reportes-filter__sep">–</span>
-        <input type="date" className="report-filters__select" value={hasta} onChange={e => setHasta(e.target.value)} />
+        <DateInput className="report-filters__select" value={hasta} onChange={iso => setHasta(iso)} />
         <button type="button" className="btn btn--secondary btn--sm" onClick={submitRango} disabled={!desde || !hasta}>Agregar</button>
       </div>
     );

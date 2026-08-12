@@ -2,6 +2,7 @@
 // + texto), independiente de las notas del proyecto (ProjectPulseField).
 
 import { useState } from "react";
+import DateInput from "../common/DateInput";
 
 export default function NotesSection({ items, onChange }) {
   const [draftDate, setDraftDate]   = useState("");
@@ -40,11 +41,10 @@ export default function NotesSection({ items, onChange }) {
         <ul className="adm-notes-list">
           {items.map(it => (
             <li key={it.id} className="adm-note-item">
-              <input
-                type="date"
+              <DateInput
                 className="adm-note-item__date"
                 value={it.date || ""}
-                onChange={e => update(it.id, "date", e.target.value)}
+                onChange={iso => update(it.id, "date", iso)}
               />
               <input
                 type="text"
@@ -66,11 +66,10 @@ export default function NotesSection({ items, onChange }) {
 
       {adding && (
         <div className="adm-inline-draft adm-inline-draft--keydate">
-          <input
-            type="date"
+          <DateInput
             className="adm-inline-draft__date"
             value={draftDate}
-            onChange={e => setDraftDate(e.target.value)}
+            onChange={iso => setDraftDate(iso)}
             autoFocus
           />
           <input
