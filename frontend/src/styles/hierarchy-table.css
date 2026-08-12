@@ -29,6 +29,11 @@
   color: var(--text); font-size: var(--t-sm); padding: 4px 8px; min-width: 220px; max-width: 320px;
 }
 
+.htable-toolbar__level-select {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text); font-size: var(--t-sm); padding: 4px 8px; cursor: pointer;
+}
+
 
 .htable-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 
@@ -93,6 +98,14 @@
 }
 
 .htable__add-child:hover { background: var(--accent); }
+
+/* Distingue la subtarea AUTO-CREADA por la cadena de despliegue de una
+   actividad normal — ver mismo badge en report-status-board.css (Kanban). */
+.htable__auto-badge {
+  flex: 0 0 auto; font-size: 9px; font-weight: 800; color: #7e22ce; background: #f3e8ff;
+  border: 1px solid #e9d5ff; border-radius: 10px; padding: 1px 6px; text-transform: uppercase;
+  letter-spacing: 0.03em; white-space: nowrap;
+}
 
 
 .htable__date {

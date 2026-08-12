@@ -4,7 +4,8 @@
 // — mismo contrato que tenían dentro del componente.
 
 import {
-  createDefaultEngineer, createActivity, visibleActivities, leafActivities, getToday,
+  createDefaultEngineer, createActivity, getToday,
+  buildAutoMetrics as buildAutoMetricsFrom,
 } from "../../utils/formulas";
 import { mergePlannerImport, normalizeName } from "../../utils/plannerImport";
 import { safeArr, transitionActivityStatus } from "./shared";
@@ -26,19 +27,11 @@ export function useActivityHandlers({
 }) {
   const m = p?.manual_metrics || {};
 
-  // Recalcula total/completadas/en_proceso desde actividades y task_status.
-  // Cuenta solo actividades visibles (las archivadas por Planner no inflan el
-  // total) Y solo hojas (mismo criterio que autoTotal/autoCompletadas en EditView).
-  const buildAutoMetrics = (newActs, newTs) => {
-    const visibles    = visibleActivities(newActs);
-    const leafIdsNext = new Set(leafActivities(visibles).map(a => a.id));
-    return {
-      ...m,
-      total_tasks:       leafIdsNext.size,
-      completed_tasks:   safeArr(newTs.completed).filter(id => leafIdsNext.has(id)).length,
-      in_progress_tasks: safeArr(newTs.in_progress).filter(id => leafIdsNext.has(id)).length,
-    };
-  };
+  // Recalcula total/completadas/en_proceso desde actividades y task_status —
+  // delega en la versión pura extraída a utils/formulas/progress.js (también
+  // reutilizada por autoAdvanceOverdueActivities en App.jsx), preservando
+  // aquí la firma de 2 argumentos que ya usan los 9 call-sites de este archivo.
+  const buildAutoMetrics = (newActs, newTs) => buildAutoMetricsFrom(m, newActs, newTs);
 
   // Cada actividad tiene un id estable que nunca cambia. Borrar o reordenar
   // actividades NO afecta a las demás: el id deja de aparecer en newActs y

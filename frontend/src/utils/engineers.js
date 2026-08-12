@@ -33,12 +33,6 @@ export function countTotalAssignedTasks(engineerId, project) {
 }
 
 
-// True si el ingeniero tiene al menos una actividad asignada esta semana (weekly_detail)
-// en ese proyecto. Se usa para resaltar el proyecto como "activo esta semana".
-export function hasActiveWeeklyTasks(engineerId, project) {
-  return countActiveWeeklyTasks(engineerId, project) > 0;
-}
-
 // ── Variante EN VIVO de "esta semana" (vistas vivas, no reportes archivados) ──
 // countActiveWeeklyTasks/getEngineerActivitiesInProject (arriba) leen el campo
 // almacenado weekly_detail, que solo se refresca cuando alguien abre ese
@@ -57,8 +51,7 @@ export function countLiveWeeklyTasks(engineerId, project, today = new Date()) {
 }
 
 // True si el ingeniero tiene al menos una actividad esta semana en ese
-// proyecto, calculado en vivo. Variante de hasActiveWeeklyTasks para vistas
-// vivas — ver nota arriba.
+// proyecto, calculado en vivo (ver nota arriba sobre snapshot vs vivo).
 export function hasLiveWeeklyTasks(engineerId, project, today = new Date()) {
   return countLiveWeeklyTasks(engineerId, project, today) > 0;
 }
@@ -224,8 +217,15 @@ export function buildEngineerTotals(engineerId, projects, today = new Date()) {
       if (status === "in_progress") inProgress++;
       else notStarted++;
 
-      const due = a.due_date || a.start_date;
-      if (due && due < todayIso) overdue++;
+      // Una actividad ya en Ambiente Pruebas/Producción no cuenta como
+      // vencida aunque su due_date original haya pasado: lo pendiente ahí es
+      // el paso de despliegue, no "más tiempo de desarrollo" — mismo criterio
+      // que TaskStatusSelector (Kanban) aplica al badge de demora.
+      const isEnvironment = status === "ambiente_pruebas" || status === "ambiente_produccion";
+      if (!isEnvironment) {
+        const due = a.due_date || a.start_date;
+        if (due && due < todayIso) overdue++;
+      }
     });
   });
 

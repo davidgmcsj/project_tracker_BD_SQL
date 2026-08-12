@@ -60,12 +60,3 @@ export function totalPlannedHours(activities) {
     .reduce((s, a) => s + (Number(a.planned_hours) || 0), 0);
 }
 
-// Promedio de % de cumplimiento sobre las actividades que tienen fechas o progreso.
-// Devuelve null si no hay ninguna actividad con progreso definido.
-export function avgActivityProgress(activities) {
-  const acts = (Array.isArray(activities) ? activities : [])
-    .filter(a => a.start_date || a.due_date || Number(a.progress) > 0);
-  if (!acts.length) return null;
-  const sum = acts.reduce((s, a) => s + (Number(a.progress) || 0), 0);
-  return Math.round(sum / acts.length);
-}

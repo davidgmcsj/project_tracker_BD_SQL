@@ -89,9 +89,6 @@ export function visibleActivities(acts) {
   return (Array.isArray(acts) ? acts : []).filter(a => !isArchived(a));
 }
 
-export const createDefaultMilestone  = () => ({ activity: "", date: "", note: "" });
-export const createDefaultComment    = () => ({ activity: "", date: "", text: "" });
-
 export function genChecklistItemId() {
   return "chk_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }

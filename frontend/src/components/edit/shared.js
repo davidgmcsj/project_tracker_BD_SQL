@@ -4,7 +4,7 @@
 // Solo vive aquí lo que cruza más de un componente destino. Lo que un solo
 // componente usa se queda en su propio archivo.
 
-import { getToday, canTransitionTo, createActivity } from "../../utils/formulas.js";
+import { getToday, canTransitionTo, createActivity, buildAutoMetrics } from "../../utils/formulas.js";
 import { weekRange, nextWeekRange, SITUATION_LABEL } from "../../utils/weekPlanning.js";
 
 // Fechas que se registran automáticamente por columna — mismo mapa que usa
@@ -181,6 +181,51 @@ export function transitionActivityStatus(taskStatus, activities, activityId, toK
   }
 
   return { taskStatus: nextTs, newActivities: nextActs, openActivityId };
+}
+
+// Recorre TODAS las actividades "No iniciadas" de un proyecto y mueve a "En
+// proceso" las que ya deberían haber arrancado (start_date <= hoy) — el
+// usuario lo pidió explícitamente: "si una actividad arranca hoy el mismo
+// sistema debe cambiarla a en proceso para que no sea enredado para el
+// equipo y no lo tenga que hacer manualmente". Reutiliza
+// transitionActivityStatus (mismo motor que el Kanban/HierarchyTable/modal
+// de detalle) para que el efecto sea IDÉNTICO a que un humano hubiera hecho
+// el cambio a mano: registra status_history.in_progress con la fecha de hoy,
+// etc. — así se refleja igual en Kanban, Gantt y Planificación sin tocar
+// esas vistas.
+//
+// Actividades SIN start_date nunca se tocan (no hay "hoy llegó" que
+// detectar). Devuelve el proyecto sin cambios (misma referencia) si no había
+// nada que mover, para que el caller pueda saltarse el guardado con un
+// simple chequeo de identidad.
+export function autoAdvanceOverdueActivities(project) {
+  const acts = safeActs(project?.activities_identified);
+  const ts = project?.task_status && typeof project.task_status === "object" ? project.task_status : {};
+  const today = getToday();
+
+  const dueIds = safeArr(ts.not_started).filter(id => {
+    const act = acts.find(a => a.id === id);
+    return act?.start_date && act.start_date <= today;
+  });
+  if (!dueIds.length) return { project, movedCount: 0 };
+
+  let nextTs = ts;
+  let nextActs = acts;
+  dueIds.forEach(id => {
+    const result = transitionActivityStatus(nextTs, nextActs, id, "in_progress");
+    nextTs = result.taskStatus;
+    nextActs = result.newActivities;
+  });
+
+  return {
+    project: {
+      ...project,
+      activities_identified: nextActs,
+      task_status: nextTs,
+      manual_metrics: buildAutoMetrics(project.manual_metrics, nextActs, nextTs),
+    },
+    movedCount: dueIds.length,
+  };
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────

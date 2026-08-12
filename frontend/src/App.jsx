@@ -14,6 +14,8 @@ import ProgressRing  from "./components/ProgressRing";
 import NavGroup from "./components/NavGroup";
 import UserMenu from "./components/UserMenu";
 import UsersAdminView from "./components/UsersAdminView";
+import DateInput from "./components/common/DateInput";
+import { autoAdvanceOverdueActivities } from "./components/edit/shared";
 import {
   globalStats, getWeekLabel, getToday, getNextFriday, getWeekRangeLabel,
   isSameWeek, createDefaultProject, generateSingleProjectReportText,
@@ -103,10 +105,34 @@ export default function App() {
     async function init() {
       const { projects: saved, weekLabel: savedWeek, engineers: savedEngineers, externalContacts: savedExternals } = await loadProjects();
       if (saved?.length) {
-        setProjects(saved);
-        setIncludedInAvg(new Set(saved.map(p => p.id)));
-        const firstDate = saved[0]?.report_date;
+        // Auto-avance de actividades vencidas: cualquier "No iniciada" cuya
+        // start_date ya llegó o pasó se mueve a "En proceso" sola, sin que
+        // el equipo tenga que hacerlo a mano — pedido explícito del usuario
+        // ("si una actividad arranca hoy el mismo sistema debe cambiarla a
+        // en proceso"). Corre UNA vez, al cargar todos los proyectos por
+        // primera vez (no en cada render) — mismo motor que usa el Kanban
+        // (transitionActivityStatus), así que el resultado se ve idéntico
+        // en Kanban/Gantt/Planificación/dashboards sin tocar esas vistas.
+        let totalMoved = 0;
+        const advanced = saved.map(p => {
+          const { project: next, movedCount } = autoAdvanceOverdueActivities(p);
+          totalMoved += movedCount;
+          return next;
+        });
+        setProjects(advanced);
+        setIncludedInAvg(new Set(advanced.map(p => p.id)));
+        const firstDate = advanced[0]?.report_date;
         if (firstDate) setReportDate(firstDate);
+        if (totalMoved > 0) {
+          // Persiste en segundo plano (fire-and-forget, mismo patrón que el
+          // autoguardado periódico) — no bloquea el primer render con los
+          // proyectos ya cargados. Sin changedProjectId/expectedVersion: se
+          // guarda el array completo, igual que el resto de guardados
+          // automáticos que no vienen de "Guardar cambios" del editor.
+          saveProjects(advanced, savedWeek || getStoredWeekLabel(), savedEngineers?.length ? savedEngineers : engineers, savedExternals?.length ? savedExternals : externalContacts);
+          setSaveToast(`✓ ${totalMoved} actividad${totalMoved !== 1 ? "es" : ""} pasó${totalMoved !== 1 ? "aron" : ""} a En proceso automáticamente`);
+          setTimeout(() => setSaveToast(""), 4000);
+        }
       }
       if (savedEngineers?.length) setEngineers(savedEngineers);
       if (savedExternals?.length) setExternalContacts(savedExternals);
@@ -114,6 +140,13 @@ export default function App() {
       if (wl) setWeekLabel(wl);
     }
     init();
+    // engineers/externalContacts deliberadamente fuera del array de deps:
+    // este efecto solo debe correr una vez al confirmar sesión (carga
+    // inicial), no cada vez que cualquier otro flujo de la app actualiza
+    // esos catálogos — lo que causaría recargar projects del servidor de
+    // nuevo. Se leen dentro vía closure del render actual (fallback si
+    // savedEngineers/savedExternals vienen vacíos), no como dependencia reactiva.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
   // ── Persistencia ───────────────────────────────────────────────────────────
@@ -531,13 +564,6 @@ export default function App() {
     return contact.id;
   };
 
-  const toggleExternalContactActive = (id) => {
-    const next = externalContacts.map(c => c.id === id ? { ...c, active: !c.active } : c);
-    persistExternals(next);
-    const updated = next.find(c => c.id === id);
-    syncAndStoreSqlIdExternal(updated);
-  };
-
   // ── Restaurar desde BD ────────────────────────────────────────────────────
   const handleRestoreFromDB = async () => {
     const ok = window.confirm(
@@ -609,10 +635,10 @@ export default function App() {
               <div className="header__meta">
                 <div className="header__date-group">
                   <label className="header__date-label">Fecha del Reporte</label>
-                  <input
-                    type="date" className="header__date-input"
+                  <DateInput
+                    className="header__date-input"
                     value={reportDate}
-                    onChange={e => handleReportDateChange(e.target.value)}
+                    onChange={iso => handleReportDateChange(iso)}
                     title="Fecha del reporte — cambia dentro de la semana sin perder datos"
                   />
                   <button className="btn btn--save-report" onClick={handleSaveReport} title="Guardar snapshot en el historial">
@@ -773,7 +799,6 @@ export default function App() {
         )}
         {view === "quarters" && (
           <QuartersView
-            onBack={() => setView("dashboard")}
             projects={projects}
             quarterInfo={getCurrentQuarterInfo(reportDate, getToday)}
             onQuarterReset={applyQuarterReset}
@@ -802,7 +827,6 @@ export default function App() {
             onCreateEngineer={addEngineer}
             externalContacts={externalContacts}
             onAddExternalContact={addExternalContact}
-            onToggleExternalActive={toggleExternalContactActive}
           />
         )}
       </main>

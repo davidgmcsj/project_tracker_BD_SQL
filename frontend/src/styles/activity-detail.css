@@ -63,6 +63,14 @@
 
 .adm-header__spacer { flex: 1; }
 
+/* Distingue la subtarea AUTO-CREADA por la cadena de despliegue de una
+   actividad normal — mismo badge visual del Kanban/HierarchyTable. */
+.adm-auto-badge {
+  font-size: 10px; font-weight: 800; color: #7e22ce; background: #f3e8ff;
+  border: 1px solid #e9d5ff; border-radius: 10px; padding: 2px 8px;
+  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
+}
+
 .adm-header__title {
   font-size: 16px;
   font-weight: 700;

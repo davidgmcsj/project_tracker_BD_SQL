@@ -64,7 +64,6 @@ function buildReplacements(project, analysis, catalog) {
   const s1 = analysis.seccion1 || {};
   const s2 = analysis.seccion2 || {};
   const s3 = analysis.seccion3 || {};
-  const s4 = analysis.seccion4 || {};
   const s5 = analysis.seccion5 || {};
   const s6 = analysis.seccion6 || {};
 
@@ -73,9 +72,6 @@ function buildReplacements(project, analysis, catalog) {
   const dif  = s1.dificultades || [];
   const ag   = s2.analisis_general || [];
   const ar   = s3.analisis || [];
-  const a4   = s4.analisis || [];
-  const sit  = s4.situaciones || [];
-  const acc4 = s4.acciones || [];
   const enf  = s5.enfoque || [];
   const conc = s6.conclusiones || [];
   const prio = s6.prioritario || [];

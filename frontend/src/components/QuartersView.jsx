@@ -17,13 +17,12 @@ import QuarterResetModal from "./QuarterResetModal";
 //   "detail"  → proyectos y actividades de un trimestre específico
 //
 // Props:
-//   onBack        → () => void — vuelve al dashboard (botón en header)
 //   projects      → proyectos actuales (para el modal de reinicio)
 //   quarterInfo   → { label, nextLabel } del trimestre en curso
 //   onQuarterReset → (…) => Promise — ejecuta el reinicio de trimestre
 //   onCleanStats   → () => Promise — limpia estadísticas sin archivar
 
-export default function QuartersView({ onBack, projects: currentProjects, quarterInfo, onQuarterReset, onCleanStats }) {
+export default function QuartersView({ projects: currentProjects, quarterInfo, onQuarterReset, onCleanStats }) {
   const [innerView,       setInnerView]       = useState("list");
   const [quarters,        setQuarters]        = useState([]);
   const [loading,         setLoading]         = useState(true);

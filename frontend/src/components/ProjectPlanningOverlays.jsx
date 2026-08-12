@@ -8,8 +8,8 @@
 // comportamiento sin duplicar lógica.
 
 import { useEffect, useState } from "react";
-import { createActivity, visibleActivities, buildActivityTree, aggregatedProgress, getToday } from "../utils/formulas";
-import { transitionActivityStatus } from "./edit/shared";
+import { createActivity, buildActivityTree, aggregatedProgress, getToday, buildAutoMetrics } from "../utils/formulas";
+import { transitionActivityStatus, safeArr } from "./edit/shared";
 import FullscreenOverlay from "./FullscreenOverlay";
 import GanttChart from "./GanttChart";
 import HierarchyTable from "./HierarchyTable";
@@ -20,12 +20,6 @@ const TITLES = {
   gantt:     "Cronograma",
   hierarchy: "Planificación",
 };
-
-function safeArr(val) {
-  if (Array.isArray(val)) return val;
-  if (!val) return [];
-  return val.split("\n").map(s => s.trim()).filter(Boolean);
-}
 
 export default function ProjectPlanningOverlays({
   project,          // proyecto activo (null = nada abierto)
@@ -50,19 +44,12 @@ export default function ProjectPlanningOverlays({
   const activities = Array.isArray(project.activities_identified) ? project.activities_identified : [];
   const taskStatus = project.task_status && typeof project.task_status === "object" ? project.task_status : {};
 
-  const buildAutoMetrics = (newActs, newTs) => ({
-    ...(project.manual_metrics || {}),
-    total_tasks:       visibleActivities(newActs).length,
-    completed_tasks:   safeArr(newTs.completed).length,
-    in_progress_tasks: safeArr(newTs.in_progress).length,
-  });
-
   const commit = (newActs, newTs = taskStatus) => {
     onUpdateProject({
       ...project,
       activities_identified: newActs,
       task_status: newTs,
-      manual_metrics: buildAutoMetrics(newActs, newTs),
+      manual_metrics: buildAutoMetrics(project.manual_metrics, newActs, newTs),
     });
   };
 

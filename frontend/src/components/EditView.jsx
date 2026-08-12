@@ -53,7 +53,7 @@ export default function EditView({
   onSelectProject, onUpdateProject, onUpdateProjectFull, onSaveChanges, onSaveProjectsDirect,
   onAddProject, onRemoveProject, onViewReport, onExportReport,
   engineerCatalog, onCreateEngineer,
-  externalContacts, onAddExternalContact, onToggleExternalActive,
+  externalContacts, onAddExternalContact,
 }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [modalActId,      setModalActId]      = useState(null);

@@ -17,7 +17,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  getProjectsForEngineer,
   engineerWeekTasks,
   engineerNextWeekTasks,
   buildEngineerWeekKpis,
