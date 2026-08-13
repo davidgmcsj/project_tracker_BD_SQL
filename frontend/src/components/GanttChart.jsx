@@ -8,6 +8,7 @@ import {
 } from "./gantt/ganttHelpers";
 import { useResizableColumn } from "./gantt/useResizableColumn";
 import { useElementWidth } from "./gantt/useElementWidth";
+import { useSyncedHScroll } from "./gantt/useSyncedHScroll";
 import { exportPlanning } from "../utils/storage";
 import { formatDateDMY } from "../utils/formulas";
 import FilterBar from "./gantt/FilterBar";
@@ -30,6 +31,12 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
   const [customRange, setCustomRange] = useState(null); // {start,end} fijado a mano o por atajo — tiene prioridad sobre el automático
   const [forceAll, setForceAll] = useState(false); // "Todo" — rango real de TODAS las actividades, sin recorte de +3 días
   const [scrollRef, containerWidth, containerHeight] = useElementWidth();
+  // Barra de scroll horizontal "flotante" (sticky al fondo del viewport
+  // visible, ver .gantt__hscroll) — sin ella, el único scrollbar horizontal
+  // real vive al final de TODA la tabla (.gantt__scroll no tiene scroll
+  // vertical propio, crece con las filas), así que con muchas actividades
+  // había que bajar hasta el final del documento para desplazarse lateral.
+  const { barRef: hScrollBarRef, onScrollFromContent, onScrollFromBar } = useSyncedHScroll(scrollRef);
   const [exporting, setExporting] = useState(false);
   const [exportingImage, setExportingImage] = useState(false);
   const tableRef = useRef(null); // captura de html2canvas — ver handleExportImage
@@ -126,7 +133,16 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
   const handleExportImage = async () => {
     if (!tableRef.current) return;
     setExportingImage(true);
+    // html2canvas no resuelve bien position:sticky (columna "Actividad" y fila
+    // de fechas) — según el scroll horizontal/vertical que hubiera al exportar,
+    // pintaba esos elementos dos veces, desplazados, y el PNG salía partido.
+    // Se anula el sticky solo durante la captura (ver .gantt-cal--exporting en
+    // gantt.css) y se restaura enseguida, se vea o no error.
+    tableRef.current.classList.add("gantt-cal--exporting");
     try {
+      // Deja que el navegador recalcule estilos/layout con la clase ya
+      // aplicada antes de que html2canvas empiece a leer el DOM.
+      await new Promise(resolve => requestAnimationFrame(resolve));
       const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(tableRef.current, {
         scale: 2,
@@ -145,6 +161,7 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
     } catch (e) {
       alert(`No se pudo exportar la imagen: ${e.message}`);
     } finally {
+      tableRef.current?.classList.remove("gantt-cal--exporting");
       setExportingImage(false);
     }
   };
@@ -331,6 +348,11 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
   // computeRowHeight (ganttHelpers.js).
   const rowHeight = computeRowHeight(containerHeight, dated.length);
 
+  // Ancho real de la tabla — mismo valor para .gantt-cal (contenido real) y
+  // para el div interior de la barra flotante (.gantt__hscroll), así ambas
+  // barras representan el mismo rango de scroll y quedan sincronizadas 1:1.
+  const tableWidth = Math.max(containerWidth, labelWidth + columns.length * dateColWidth);
+
   return (
     <div className="gantt">
       <FilterBar
@@ -362,13 +384,22 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
         isWeekPreset={!!weekAnchor}
       />
 
-      <div className="gantt__scroll" ref={scrollRef}>
+      {/* Barra de scroll horizontal flotante — mismo ancho de contenido que la
+          tabla real, sincronizada por scrollLeft en ambas direcciones (ver
+          useSyncedHScroll). sticky al fondo de .fs-overlay__body (el único
+          contenedor con scroll vertical real), así que queda siempre visible
+          sin importar cuántas filas haya arriba. */}
+      <div className="gantt__hscroll" ref={hScrollBarRef} onScroll={onScrollFromBar}>
+        <div style={{ width: tableWidth, height: 1 }} />
+      </div>
+
+      <div className="gantt__scroll" ref={scrollRef} onScroll={onScrollFromContent}>
         {/* Las columnas de fecha se estiran para llenar el espacio que deja la
             columna "Actividad", y nunca bajan de su ancho mínimo legible. Así,
             al angostar "Actividad" el calendario se ensancha (en vez de dejar
             un hueco en blanco), y al ensancharla las fechas se encogen hasta
             el mínimo y recién entonces aparece scroll horizontal. */}
-        <table ref={tableRef} className="gantt-cal" style={{ width: Math.max(containerWidth, labelWidth + columns.length * dateColWidth) }}>
+        <table ref={tableRef} className="gantt-cal" style={{ width: tableWidth }}>
           {/* Los anchos se fijan aquí: con table-layout:fixed el <colgroup> es
               lo único que el navegador respeta (ignora min-width en celdas). */}
           <colgroup>
@@ -433,16 +464,14 @@ export default function GanttChart({ activities, taskStatus, onOpenActivity, pro
                   >
                     {/* Sangría por nivel: las subtareas se ven colgando de su
                         tarea principal, como en la planificación completa.
-                        Nivel 0 (tarea global) y nivel 1 (tarea padre) se
-                        destacan en negrilla — nivel 0 además con letra un
-                        poco más grande — para que la jerarquía se distinga
-                        de un vistazo sin depender solo de la sangría. */}
+                        Solo el nivel 0 (tarea global) se destaca — negrilla
+                        + letra un poco más grande — para que se distinga de
+                        un vistazo sin depender solo de la sangría. */}
                     {(() => {
                       const depth = depthById.get(a.id) || 0;
                       const rowTextClass = [
                         "gantt-cal__row-text",
                         depth === 0 && "gantt-cal__row-text--global",
-                        depth === 1 && "gantt-cal__row-text--parent",
                       ].filter(Boolean).join(" ");
                       return (
                         <span style={{ paddingLeft: depth * 14 }}>

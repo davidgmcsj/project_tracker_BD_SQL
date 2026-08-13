@@ -25,10 +25,17 @@
 /* ── Barra de filtros unificada (reemplaza al antiguo Zoom + panel de fechas
    separados, que mostraban el mismo control dos veces) — dos filas: atajos
    de período arriba, rango exacto + filtro de estado abajo. Siempre visible. */
+/* sticky top:0 — queda fija arriba de .fs-overlay__body (el contenedor con
+   scroll vertical real) sin importar cuánto se haya bajado entre las filas,
+   así los filtros/rango/búsqueda siempre están a mano. El <thead> de la
+   tabla es sticky por su cuenta (.gantt-cal__col-head, top:0) pero contra un
+   scrollport distinto (.gantt__scroll), así que ambos conviven sin pisarse y
+   NO hay que descontarle a uno la altura del otro. */
 .gantt-filterbar {
   display: flex; flex-direction: column; gap: var(--s2);
   padding: var(--s3) 12px; border-bottom: 1px solid var(--border); background: var(--bg-2, #f7f8fa);
   border-radius: 10px 10px 0 0;
+  position: sticky; top: 0; z-index: 6;
 }
 
 .gantt-filterbar__row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -95,6 +102,28 @@
    scroll horizontal sí se mantiene — hay más columnas de las que caben. */
 .gantt__scroll { overflow-x: auto; overflow-y: visible; }
 
+/* Barra de scroll horizontal FLOTANTE — sincronizada por JS con
+   .gantt__scroll (ver useSyncedHScroll). Sin ella, el único scrollbar
+   horizontal real queda al final de TODA la tabla (.gantt__scroll no tiene
+   scroll vertical propio, crece con las filas); con muchas actividades hay
+   que bajar hasta el final del documento para encontrarlo. sticky bottom:0
+   la deja pegada al fondo del contenedor con scroll vertical real
+   (.fs-overlay__body a pantalla completa, o la página en el resto de
+   contextos) sin importar cuánto se haya bajado. Altura mínima (14px) para
+   que el thumb del navegador sea agarrable; el div interior (mismo ancho
+   que la tabla real, con height:1 inline) es lo único que le da "contenido"
+   para poder generar scroll. */
+.gantt__hscroll {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
 
 /* ── Calendario de celdas (reemplaza el modelo de barras) ──────────────────
    Cada fila es una actividad, cada columna es una unidad de tiempo exacta
@@ -127,13 +156,10 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 
 .gantt-cal__row-text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Nivel 0 (tarea global/principal): negrilla + letra un poco más grande.
-   Nivel 1 (tarea padre): solo negrilla. Del nivel 2 en adelante (subtareas)
-   se mantiene el peso normal — la jerarquía ya la marca la sangría, esto
-   solo refuerza los dos primeros niveles para que se distingan de un vistazo. */
+/* Solo la tarea global/principal (nivel 0) se destaca: negrilla + letra un
+   poco más grande. Tarea padre (nivel 1) y subtareas mantienen peso normal —
+   la jerarquía ya la marca la sangría. */
 .gantt-cal__row-text--global { font-weight: 800; font-size: 14px; }
-
-.gantt-cal__row-text--parent { font-weight: 700; }
 
 
 /* Redimensionable desde CUALQUIER fila — cada <td>/<th> de esta columna
@@ -152,6 +178,24 @@ thead .gantt-cal__label-col { z-index: 3; font-weight: 700; color: var(--text-2)
 }
 
 .gantt-cal__col-head--weekend { background: rgba(0, 51, 153, 0.05); }
+
+/* Exportar imagen (html2canvas) NO soporta position:sticky de forma
+   confiable: en vez de resolver "posición natural vs. posición pegada" en
+   una sola, pinta el elemento sticky DOS VECES, desplazadas entre sí según
+   el scroll (horizontal y/o vertical) que hubiera en ese momento — el
+   cronograma exportado sale partido/duplicado. Como .gantt-cal__col-head es
+   sticky respecto al scroll VERTICAL de .fs-overlay__body (un ancestro
+   externo, fuera del control de GanttChart.jsx) y .gantt-cal__label-col
+   respecto al scroll HORIZONTAL de .gantt__scroll, no basta con resetear un
+   solo scroll antes de capturar — hay que anular el sticky de ambos.
+   GanttChart.jsx agrega esta clase al <table> justo antes de llamar a
+   html2canvas y la quita apenas termina (ver handleExportImage). Sin
+   sticky no hay "dos posiciones" que puedan divergir: la celda vuelve a su
+   lugar normal de tabla, que ya es donde está. */
+.gantt-cal--exporting .gantt-cal__label-col,
+.gantt-cal--exporting .gantt-cal__col-head {
+  position: static;
+}
 
 /* Único lugar donde se marca "hoy" — antes también se repetía en cada celda
    de cada fila (parecía una alerta de "vencido" en las 40 filas); ahora
