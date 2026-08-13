@@ -8,6 +8,8 @@ import {
   buildAutoMetrics as buildAutoMetricsFrom,
 } from "../../utils/formulas";
 import { mergePlannerImport, normalizeName } from "../../utils/plannerImport";
+import { mergeCronogramaTaskStatus } from "../../utils/cronogramaImport";
+import { rescheduleAfterChange } from "../../utils/scheduling";
 import { safeArr, transitionActivityStatus } from "./shared";
 
 // Fechas que se registran automáticamente por columna — mismo mapa que usa
@@ -120,6 +122,55 @@ export function useActivityHandlers({
     onUpdateProjectFull(editingIdx, updatedProject);
     // Persistir con el array explícito para evitar estado obsoleto (mismo patrón que
     // handleActivityModalSave). Los ingenieros nuevos ya se persistieron en onCreateEngineer.
+    if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
+  };
+
+  // Aplica una importación de Cronograma por entregable ya confirmada en el
+  // modal. A diferencia de handleApplyPlannerImport, esto es SIEMPRE ADITIVO:
+  // { activities, statusByActivityId, engineersToCreate } se concatena a lo
+  // que ya existe — nunca reemplaza, empareja ni archiva nada (ver cabecera
+  // de utils/cronogramaImport.js).
+  const handleApplyCronogramaImport = ({ activities: newActs, statusByActivityId, engineersToCreate }) => {
+    const nameToId = new Map();
+    (engineerCatalog || []).forEach(e => { if (e?.name) nameToId.set(normalizeName(e.name), e.id); });
+    (engineersToCreate || []).forEach(({ name }) => {
+      const newId = onCreateEngineer ? onCreateEngineer(name, "") : null;
+      if (newId) nameToId.set(normalizeName(name), newId);
+    });
+
+    // Los ids de responsable en newActs ya vienen resueltos por el modal
+    // (dry-run) contra el catálogo ANTES de que existieran los recién creados
+    // — se re-resuelven aquí con el mapa ya completo, mismo criterio de dos
+    // pasadas que handleApplyPlannerImport.
+    const reResolved = newActs.map(a => {
+      const rawName = a.assigned_engineers?.[0]?.name;
+      if (!rawName) return a;
+      const id = nameToId.get(normalizeName(rawName));
+      return id ? { ...a, assigned_engineers: [{ id, name: rawName }] } : a;
+    });
+
+    const mergedActivities = [...allActivities, ...reResolved];
+    const mergedTaskStatus = mergeCronogramaTaskStatus(p.task_status, statusByActivityId);
+
+    const teamIds = new Set((p.engineers || []).map(r => r.engineer_id).filter(Boolean));
+    const importedEngIds = new Set();
+    reResolved.forEach(a => {
+      (a.assigned_engineers || []).forEach(e => { if (e.id && e.id.startsWith("eng_")) importedEngIds.add(e.id); });
+    });
+    const newTeamRows = [...importedEngIds]
+      .filter(id => !teamIds.has(id))
+      .map(id => ({ ...createDefaultEngineer(), engineer_id: id }));
+    const mergedEngineers = [...(p.engineers || []), ...newTeamRows];
+
+    const updatedProject = {
+      ...p,
+      activities_identified: mergedActivities,
+      task_status:            mergedTaskStatus,
+      manual_metrics:         buildAutoMetrics(mergedActivities, mergedTaskStatus),
+      engineers:              mergedEngineers,
+    };
+    const updatedProjects = projects.map((pr, i) => i === editingIdx ? updatedProject : pr);
+    onUpdateProjectFull(editingIdx, updatedProject);
     if (onSaveProjectsDirect) onSaveProjectsDirect(updatedProjects, undefined, updatedProject.id);
   };
 
@@ -304,7 +355,25 @@ export function useActivityHandlers({
     // buckets de task_status vía transitionActivityStatus (misma lógica que el
     // Kanban), que además puede crear las subtareas automáticas de despliegue.
     const { _history, _newStatus, ...actClean } = updatedAct;
+
+    // Cascada de fechas (mismo motor y mismo criterio que HierarchyTable.
+    // handleDateChange): si due_date se atrasó respecto al valor que tenía
+    // ANTES de abrir el modal, recalcula hermanas solapadas y auto-extiende
+    // la fecha de fin de los ancestros. Sin esto, editar la fecha de una
+    // subtarea desde su tarjeta de detalle (a diferencia de editarla inline
+    // en la tabla jerárquica) dejaba a la actividad padre con su due_date
+    // vieja o vacía — el candado 🔒 de HierarchyTable la muestra como
+    // "calculada", pero nadie la había recalculado por este camino.
+    const previousAct = activities.find(a => a.id === actClean.id);
+    const previousDue = previousAct?.due_date;
     let newActs = activities.map(a => a.id === actClean.id ? actClean : a);
+    if (actClean.due_date !== previousDue) {
+      const cascadePatches = rescheduleAfterChange(newActs, actClean.id, previousDue);
+      if (cascadePatches.length) {
+        const byId = new Map(cascadePatches.map(pt => [pt.id, pt]));
+        newActs = newActs.map(a => byId.has(a.id) ? { ...a, ...byId.get(a.id) } : a);
+      }
+    }
     let updatedProject = { ...p, activities_identified: newActs };
     let ts = p.task_status && typeof p.task_status === "object" ? p.task_status : {};
     let openActivityId = null;
@@ -421,6 +490,7 @@ export function useActivityHandlers({
   return {
     handleActivitiesChange,
     handleApplyPlannerImport,
+    handleApplyCronogramaImport,
     handleUpdateActivityMeta,
     handleBulkAssign,
     handleAddActivity,

@@ -2,7 +2,10 @@
 // Único punto de control del calendario: reemplaza a los antiguos "Zoom"
 // (arriba) y "panel de fechas" (abajo), que mostraban la misma idea dos veces.
 
-import { toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS } from "./ganttHelpers";
+import {
+  toDate, toISO, fmtDayFull, QUARTERS, SEMESTERS,
+  STATUS_FILTERS, SCOPE_FILTERS_WITH_PARENT, LEVEL_FILTERS,
+} from "./ganttHelpers";
 import TokenFilterBar from "./TokenFilterBar";
 import DateInput from "../common/DateInput";
 
@@ -96,17 +99,36 @@ export default function FilterBar({
       <div className="gantt-filterbar__row">
         <span className="gantt-filterbar__label">Filtros:</span>
         <TokenFilterBar
-          statusFilter={statusFilter}
-          onSetStatusFilter={onSetStatusFilter}
-          parentOptions={parentOptions}
-          parentFilter={parentFilter}
-          onSetParentFilter={onSetParentFilter}
-          scopeFilter={scopeFilter}
-          onSetScopeFilter={onSetScopeFilter}
-          levelFilter={levelFilter}
-          onSetLevelFilter={onSetLevelFilter}
+          placeholder="Filtrar por Tarea padre, Niveles, Estado…"
           onClearAll={onClearAllFilters}
-          counts={counts}
+          sections={[
+            {
+              key: "parent", label: "Tarea padre", icon: "▸",
+              value: parentFilter, onSet: onSetParentFilter,
+              options: parentOptions.map(o => ({ value: o.id, label: o.label })),
+            },
+            {
+              // Solo aparece con una Tarea padre ya elegida — "Solo subtareas"
+              // no tiene sentido sin padre (ver SCOPE_FILTERS_WITH_PARENT).
+              key: "scope", label: "Mostrar", icon: "▾",
+              isVisible: !!parentFilter,
+              value: scopeFilter === "childrenOnly" ? "childrenOnly" : null,
+              onSet: v => onSetScopeFilter(v ? "childrenOnly" : "all"),
+              options: SCOPE_FILTERS_WITH_PARENT.filter(f => f.value !== "all"),
+            },
+            {
+              key: "level", label: "Niveles", icon: "≡",
+              value: levelFilter ? String(levelFilter) : null,
+              onSet: v => onSetLevelFilter(v || ""),
+              options: LEVEL_FILTERS.filter(f => f.value !== ""),
+            },
+            {
+              key: "status", label: "Estado", icon: "●", multi: true,
+              value: statusFilter,
+              onSet: onSetStatusFilter,
+              options: STATUS_FILTERS.filter(f => f.value !== "all").map(f => ({ value: f.value, label: `${f.label} (${counts[f.value] ?? 0})` })),
+            },
+          ]}
         />
       </div>
     </div>

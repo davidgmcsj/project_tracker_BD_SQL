@@ -18,6 +18,7 @@ export default function ActivitiesList({
   onAddActivityDetailed,
   onCreateExternal,
   onImportPlanner,
+  onImportCronograma,
 }) {
   const [draft,   setDraft]   = useState("");
   const [adding,  setAdding]  = useState(false);
@@ -121,6 +122,11 @@ export default function ActivitiesList({
             {onImportPlanner && (
               <button type="button" className="btn-import-planner" onClick={onImportPlanner} title="Cargar el Excel exportado de Planner">
                 📥 Importar de Planner
+              </button>
+            )}
+            {onImportCronograma && (
+              <button type="button" className="btn-import-planner" onClick={onImportCronograma} title="Cargar un Excel de Cronograma por entregable (Entregables → Tareas → Subtareas)">
+                📅 Importar Cronograma
               </button>
             )}
             {/* Abre la tarjeta completa (fechas, responsables, objetivos,

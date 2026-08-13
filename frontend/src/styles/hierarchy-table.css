@@ -16,8 +16,6 @@
 
 .htable-toolbar__chip:hover { border-color: var(--border-strong); }
 
-.htable-toolbar__chip--on { background: var(--inst-azul); border-color: var(--inst-azul); color: #fff; font-weight: 600; }
-
 .htable-toolbar__count { margin-left: auto; font-size: var(--t-cap); color: var(--text-2); }
 
 .htable-toolbar__hint { font-size: var(--t-cap); color: var(--text-3); font-style: italic; }
@@ -91,6 +89,11 @@
 }
 
 .htable__name-text--link:hover { color: var(--azul-claro); text-decoration: underline; }
+
+/* Solo el nivel 0 (tarea global/principal) se destaca: negrilla + letra un
+   poco más grande. Mismos valores que gantt-cal__row-text--global
+   (gantt.css) — estandarizado en toda la app, no repetido por proyecto. */
+.htable__name-text--global { font-weight: 800; font-size: 14px; }
 
 .htable__add-child {
   background: var(--accent-bg); border: 1px solid var(--accent-bdr); border-radius: var(--radius-sm);
