@@ -1,42 +1,64 @@
-// EngineerWeekTable.jsx — tabla "mi semana" / "próxima semana": actividad +
-// proyecto de origen + fechas + situación, cruzando TODOS los proyectos del
-// ingeniero (motor: utils/weekPlanning.js vía utils/engineers.js).
+// EngineerWeekTable.jsx — cola de tarjetas "Qué hacer ahora" / "Próxima
+// semana": actividad (con número jerárquico + tarea padre) + proyecto de
+// origen + fechas + situación, cruzando TODOS los proyectos del ingeniero
+// (motor: utils/weekPlanning.js vía utils/engineers.js).
+//
+// onToggleUrgent y onReorder son opcionales a propósito — "Próxima semana"
+// recibe onReorder (si el ingeniero quiere planear el orden con antelación)
+// pero no onToggleUrgent (marcar "urgente" es sobre el trabajo de AHORA).
 
-import { SITUATION_LABEL } from "../../utils/weekPlanning";
-import { formatDateDMY } from "../../utils/formulas";
+import { useState } from "react";
+import EngineerTaskCard from "./EngineerTaskCard";
 
-export default function EngineerWeekTable({ rows, onOpenActivity }) {
+export default function EngineerWeekTable({ rows, onOpenActivity, onToggleUrgent, onReorder }) {
+  const [draggedId, setDraggedId] = useState(null);
+  const [dropTargetId, setDropTargetId] = useState(null);
+
   if (rows.length === 0) {
     return <p style={{ color: "var(--text-2)", fontSize: "13px" }}>Sin actividades en este rango.</p>;
   }
+
+  const canDrag = !!onReorder;
+
+  // Arrastrar → soltar mueve draggedId a la posición de targetId dentro de
+  // ESTA lista visible y persiste el orden completo resultante (mismo patrón
+  // de interacción que HierarchyTable, ver componente hermano). onReorder
+  // recibe el array de ids en su nuevo orden — quien llama decide dónde se
+  // guarda (ver EngineerHub: orden_ahora / orden_proxima del ingeniero).
+  const handleDrop = (targetId) => {
+    if (draggedId && draggedId !== targetId) {
+      const ids = rows.map(r => r.activity.id);
+      const fromIdx = ids.indexOf(draggedId);
+      const toIdx = ids.indexOf(targetId);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const next = [...ids];
+        const [moved] = next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, moved);
+        onReorder(next);
+      }
+    }
+    setDraggedId(null);
+    setDropTargetId(null);
+  };
+
   return (
-    <div className="metrics-container" style={{ overflowX: "auto" }}>
-      <table className="metrics-table metrics-table--project">
-        <thead>
-          <tr>
-            <th>Actividad</th>
-            <th style={{ width: "160px" }}>Proyecto</th>
-            <th style={{ width: "100px" }}>Inicio</th>
-            <th style={{ width: "100px" }}>Fin</th>
-            <th style={{ width: "140px" }}>Situación</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ activity, situation, projectName, projectId }) => (
-            <tr
-              key={`${projectId}-${activity.id}`}
-              onClick={onOpenActivity ? () => onOpenActivity(projectId, activity.id) : undefined}
-              style={onOpenActivity ? { cursor: "pointer" } : undefined}
-            >
-              <td>{activity.text || "(sin nombre)"}</td>
-              <td style={{ color: "var(--text-2)", fontSize: "12px" }}>{projectName}</td>
-              <td style={{ fontSize: "12px" }}>{formatDateDMY(activity.start_date)}</td>
-              <td style={{ fontSize: "12px" }}>{formatDateDMY(activity.due_date)}</td>
-              <td><span className={`week-auto-table__situation week-auto-table__situation--${situation}`}>{SITUATION_LABEL[situation]}</span></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="eng-task-queue">
+      {rows.map(row => (
+        <EngineerTaskCard
+          key={`${row.projectId}-${row.activity.id}`}
+          row={row}
+          onOpenActivity={onOpenActivity}
+          onToggleUrgent={onToggleUrgent}
+          canDrag={canDrag}
+          isDragging={draggedId === row.activity.id}
+          isDropTarget={canDrag && dropTargetId === row.activity.id && draggedId !== row.activity.id}
+          onDragStart={() => setDraggedId(row.activity.id)}
+          onDragOverCard={() => setDropTargetId(row.activity.id)}
+          onDragLeaveCard={() => setDropTargetId(prev => (prev === row.activity.id ? null : prev))}
+          onDropCard={() => handleDrop(row.activity.id)}
+          onDragEnd={() => { setDraggedId(null); setDropTargetId(null); }}
+        />
+      ))}
     </div>
   );
 }

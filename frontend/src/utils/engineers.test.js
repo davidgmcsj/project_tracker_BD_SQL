@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   engineerWeekTasks, engineerNextWeekTasks,
   countLiveWeeklyTasks, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countActiveWeeklyTasks,
-  buildEngineerWeekKpis, buildEngineerTotals,
+  buildEngineerWeekKpis, buildEngineerTotals, applyManualOrder,
 } from "./engineers.js";
 
 // "Hoy" fijo para todos los tests: miércoles 2026-08-05.
@@ -303,4 +303,34 @@ test("buildEngineerTotals solo cuenta actividades asignadas a ESE ingeniero", ()
 test("buildEngineerTotals sin proyectos devuelve todo en cero", () => {
   const totals = buildEngineerTotals("e1", [], TODAY);
   assert.deepEqual(totals, { completed: 0, inProgress: 0, notStarted: 0, overdue: 0, total: 0 });
+});
+
+// ── applyManualOrder (cola "Mi semana" reordenada a mano) ─────────────────────
+
+function row(id) { return { activity: { id } }; }
+
+test("applyManualOrder sin orden guardado devuelve la lista tal cual", () => {
+  const rows = [row("a"), row("b"), row("c")];
+  assert.deepEqual(applyManualOrder(rows, []), rows);
+  assert.deepEqual(applyManualOrder(rows, null), rows);
+});
+
+test("applyManualOrder reordena las filas conocidas según orderIds", () => {
+  const rows = [row("a"), row("b"), row("c")];
+  const result = applyManualOrder(rows, ["c", "a", "b"]);
+  assert.deepEqual(result.map(r => r.activity.id), ["c", "a", "b"]);
+});
+
+test("applyManualOrder deja las filas NUEVAS (fuera de orderIds) al final, en su orden original", () => {
+  const rows = [row("a"), row("b"), row("c"), row("d")];
+  // El ingeniero solo había ordenado a/b; c y d son nuevas en la cola.
+  const result = applyManualOrder(rows, ["b", "a"]);
+  assert.deepEqual(result.map(r => r.activity.id), ["b", "a", "c", "d"]);
+});
+
+test("applyManualOrder ignora ids del orden guardado que ya no están en la lista", () => {
+  const rows = [row("a"), row("b")];
+  // "z" fue completada/desapareció de la cola — no debe romper nada.
+  const result = applyManualOrder(rows, ["z", "b", "a"]);
+  assert.deepEqual(result.map(r => r.activity.id), ["b", "a"]);
 });

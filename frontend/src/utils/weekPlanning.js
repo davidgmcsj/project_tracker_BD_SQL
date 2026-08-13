@@ -78,7 +78,15 @@ export function situationInWeek(activity, range, taskStatus) {
   if (!r) return null;
   const isCompleted = getActivityStatus(taskStatus, activity.id) === "Completada";
 
-  if (r.to < range.start) return isCompleted ? null : SITUATION.OVERDUE;
+  if (r.to < range.start) {
+    if (isCompleted) return null;
+    // Sin due_date propio, activityRange usó start_date como "to" a falta de
+    // otra cosa (ver su comentario) — no hay plazo real que pueda estar
+    // vencido, así que no se etiqueta "En demora". Sigue siendo trabajo que
+    // se arrastra (activitiesForWeek la sigue incluyendo más abajo), solo
+    // que como "Continúa" — en curso, sin fecha límite definida todavía.
+    return activity?.due_date ? SITUATION.OVERDUE : SITUATION.CONTINUES;
+  }
   if (r.to <= range.end)  return SITUATION.DUE;
   if (r.from >= range.start) return SITUATION.STARTS;
   return SITUATION.CONTINUES;
@@ -94,7 +102,13 @@ export function activitiesForWeek(activities, range, taskStatus, { includeOverdu
     .map(activity => ({ activity, situation: situationInWeek(activity, range, taskStatus) }))
     .filter(({ activity, situation }) => {
       if (!situation) return false;
-      if (situation === SITUATION.OVERDUE) return includeOverdue;
+      // Arrastre desde antes de la semana: incluye tanto OVERDUE (con
+      // due_date) como el CONTINUES "sin fecha de fin" que situationInWeek
+      // devuelve para el mismo caso sin plazo (ver su comentario) — ambos
+      // son la misma situación de fondo, solo cambia la etiqueta.
+      const r = activityRange(activity);
+      const isCarryOver = r && r.to < range.start;
+      if (isCarryOver) return includeOverdue;
       return overlapsWeek(activity, range);
     })
     .sort((a, b) => {

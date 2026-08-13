@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { getProjectsForEngineer, getAllAssignedActivitiesInProject, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countLiveWeeklyTasks, countTotalAssignedTasks } from "../utils/engineers";
-import { createEngineerTask } from "../utils/formulas";
-import EngineerTaskModal from "./EngineerTaskModal";
 import EngineerActivitiesTable from "./engineer/EngineerActivitiesTable";
-import AdditionalTasksTable from "./engineer/AdditionalTasksTable";
+import LooseTasksSection from "./engineer/LooseTasksSection";
 
 const STATUS_LABELS = { "on-track": "En curso", "at-risk": "En riesgo", blocked: "Bloqueado", completed: "Completado", "mejora-continua": "Mejora Continua" };
 
@@ -182,76 +180,6 @@ function ProjectActivitiesCard({ project, engineerId, onOpenActivity }) {
         </p>
       ) : (
         <EngineerActivitiesTable activities={allActivities} completedSet={completedSet} inProgressSet={inProgressSet} onOpenActivity={openActivity} />
-      )}
-    </div>
-  );
-}
-
-// ── Tareas sueltas (no asociadas a ningún proyecto) ───────────────────────────
-
-function LooseTasksSection({ tasks, onChange, engineerName }) {
-  const [draft,   setDraft]   = useState("");
-  const [adding,  setAdding]  = useState(false);
-  const [editingId, setEditingId] = useState(null);
-
-  const list = tasks || [];
-
-  const confirmAdd = () => {
-    const t = draft.trim();
-    if (t) onChange([...list, createEngineerTask(t)]);
-    setDraft(""); setAdding(false);
-  };
-
-  const saveTask = (updated) => onChange(list.map(t => t.id === updated.id ? updated : t));
-  const remove   = (id)      => onChange(list.filter(t => t.id !== id));
-
-  const editingTask = list.find(t => t.id === editingId) || null;
-
-  return (
-    <div className="field" style={{ marginTop: 24 }}>
-      <div className="field__header">
-        <label className="field__label">
-          Tareas adicionales
-          {list.length > 0 && <span className="act-count">{list.length}</span>}
-        </label>
-        {!adding && (
-          <button type="button" className="btn-add-item" onClick={() => setAdding(true)}>
-            + Agregar tarea
-          </button>
-        )}
-      </div>
-
-      {adding && (
-        <div className="list-field-draft">
-          <input
-            className="field__input list-field-draft__input"
-            autoFocus value={draft}
-            placeholder="Descripción de la tarea… (Enter para confirmar)"
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter") { e.preventDefault(); confirmAdd(); }
-              if (e.key === "Escape") { setDraft(""); setAdding(false); }
-            }}
-          />
-          <button type="button" className="list-field-draft__ok"     onClick={confirmAdd}                          title="Confirmar">✓</button>
-          <button type="button" className="list-field-draft__cancel" onClick={() => { setDraft(""); setAdding(false); }} title="Cancelar">✕</button>
-        </div>
-      )}
-
-      {list.length > 0 ? (
-        <AdditionalTasksTable tasks={list} mode="edit" onEdit={setEditingId} onRemove={remove} />
-      ) : (
-        !adding && <p className="act-list__empty">Sin tareas adicionales registradas.</p>
-      )}
-
-      {editingTask && (
-        <EngineerTaskModal
-          task={editingTask}
-          engineerName={engineerName}
-          onSave={saveTask}
-          onDelete={() => remove(editingTask.id)}
-          onClose={() => setEditingId(null)}
-        />
       )}
     </div>
   );

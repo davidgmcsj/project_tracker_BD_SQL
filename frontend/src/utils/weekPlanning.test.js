@@ -109,6 +109,17 @@ test("situación: venció antes pero ya está completada → no aparece", () => 
   assert.equal(situationInWeek(act("a", "2026-07-20", "2026-07-24"), WEEK, ts), null);
 });
 
+test("situación: solo fecha de inicio (sin due_date), inicio en el pasado → Continúa, NO en demora", () => {
+  // Sin fecha de fin no hay plazo que pueda estar vencido — ver comentario
+  // de situationInWeek. Antes se etiquetaba OVERDUE solo porque activityRange
+  // usa start_date como "to" a falta de due_date.
+  assert.equal(situationInWeek(act("a", "2026-07-20", ""), WEEK, {}), SITUATION.CONTINUES);
+});
+
+test("situación: solo fecha de inicio Y con due_date real vencido → sigue siendo OVERDUE", () => {
+  assert.equal(situationInWeek(act("a", "2026-07-20", "2026-07-24"), WEEK, {}), SITUATION.OVERDUE);
+});
+
 // ── activitiesForWeek ─────────────────────────────────────────────────────────
 
 test("activitiesForWeek incluye solapadas y vencidas, excluye futuras", () => {
@@ -126,6 +137,13 @@ test("activitiesForWeek con includeOverdue:false omite el arrastre", () => {
   const acts = [act("vencida", "2026-07-20", "2026-07-24"), act("vence", "2026-08-04", "2026-08-06")];
   const ids = activitiesForWeek(acts, WEEK, {}, { includeOverdue: false }).map(r => r.activity.id);
   assert.deepEqual(ids, ["vence"]);
+});
+
+test("activitiesForWeek sigue arrastrando una actividad sin due_date con inicio pasado (como Continúa, no se pierde de vista)", () => {
+  const acts = [act("sin-fin", "2026-07-20", "")];
+  const rows = activitiesForWeek(acts, WEEK, {});
+  assert.deepEqual(rows.map(r => r.activity.id), ["sin-fin"]);
+  assert.equal(rows[0].situation, SITUATION.CONTINUES);
 });
 
 test("activitiesForWeek ordena por fecha de entrega ascendente", () => {

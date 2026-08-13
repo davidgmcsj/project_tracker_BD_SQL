@@ -39,7 +39,7 @@ export default function ProjectPlanningOverlays({
     if (initialActivityId) setModalActId(initialActivityId);
   }, [initialActivityId]);
 
-  if (!project || !view) return null;
+  if (!project) return null;
 
   const activities = Array.isArray(project.activities_identified) ? project.activities_identified : [];
   const taskStatus = project.task_status && typeof project.task_status === "object" ? project.task_status : {};
@@ -168,40 +168,49 @@ export default function ProjectPlanningOverlays({
 
   return (
     <>
-      <FullscreenOverlay
-        open
-        onClose={onClose}
-        title={`${TITLES[view]} — ${project.project_name || "Proyecto"}`}
-      >
-        {view === "status" && StatusBoard && (
-          <StatusBoard
-            taskStatus={project.task_status}
-            activities={activities}
-            onOpenDetail={setModalActId}
-            onChange={handleStatusChange}
-          />
-        )}
-        {view === "gantt" && (
-          <GanttChart
-            activities={activities}
-            taskStatus={project.task_status}
-            onOpenActivity={setModalActId}
-            projectName={project.project_name}
-          />
-        )}
-        {view === "hierarchy" && (
-          <HierarchyTable
-            activities={activities}
-            taskStatus={project.task_status}
-            onApplyDateChange={handleApplyDateChange}
-            onAddChild={handleAddChild}
-            onDeleteActivity={handleDeleteActivity}
-            onOpenActivity={setModalActId}
-            onChangeStatus={handleChangeActivityStatus}
-            projectName={project.project_name}
-          />
-        )}
-      </FullscreenOverlay>
+      {/* view puede venir vacío a propósito (ver initialActivityId): un clic
+          en una tarjeta de "Mi semana" solo quiere abrir el detalle de ESA
+          actividad, no el overlay grande de Planificación/Gantt/Estado
+          detrás. Antes este componente exigía `view` truthy para renderizar
+          NADA (incluido el modal), así que ese clic terminaba abriendo
+          Planificación completa en vez de la tarjeta — este condicional es
+          el fix. */}
+      {view && (
+        <FullscreenOverlay
+          open
+          onClose={onClose}
+          title={`${TITLES[view]} — ${project.project_name || "Proyecto"}`}
+        >
+          {view === "status" && StatusBoard && (
+            <StatusBoard
+              taskStatus={project.task_status}
+              activities={activities}
+              onOpenDetail={setModalActId}
+              onChange={handleStatusChange}
+            />
+          )}
+          {view === "gantt" && (
+            <GanttChart
+              activities={activities}
+              taskStatus={project.task_status}
+              onOpenActivity={setModalActId}
+              projectName={project.project_name}
+            />
+          )}
+          {view === "hierarchy" && (
+            <HierarchyTable
+              activities={activities}
+              taskStatus={project.task_status}
+              onApplyDateChange={handleApplyDateChange}
+              onAddChild={handleAddChild}
+              onDeleteActivity={handleDeleteActivity}
+              onOpenActivity={setModalActId}
+              onChangeStatus={handleChangeActivityStatus}
+              projectName={project.project_name}
+            />
+          )}
+        </FullscreenOverlay>
+      )}
 
       {modalActivity && (
         <ActivityDetailModal
@@ -214,7 +223,14 @@ export default function ProjectPlanningOverlays({
           allActivities={activities}
           onSave={handleActivitySave}
           onDelete={handleDeleteActivity}
-          onClose={() => setModalActId(null)}
+          onClose={() => {
+            setModalActId(null);
+            // Sin overlay grande detrás (view vacío, ver comentario arriba):
+            // avisa también al padre para que limpie `planning` — si no, la
+            // próxima vez que se pida la MISMA actividad, initialActivityId
+            // no cambiaría de valor y el modal no se volvería a abrir.
+            if (!view) onClose();
+          }}
           subtasks={modalSubtasks}
           computedProgress={modalComputedProgress}
           onCreateSubtask={handleCreateSubtaskFromModal}

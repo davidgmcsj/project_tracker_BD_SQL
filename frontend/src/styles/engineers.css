@@ -509,3 +509,173 @@ div.eng-kpi-chip:hover { border-color: var(--border); }
 .workload-matrix__legend { display: flex; align-items: center; gap: 6px; font-size: var(--t-cap); color: var(--text-2); margin: var(--s3) 0 0; }
 
 .workload-matrix__legend-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--red-bg); border: 1px solid var(--red); display: inline-block; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   COLA DE TAREAS "MI SEMANA" — tarjetas en vez de tabla plana.
+   Reemplaza la lista de filas de EngineerWeekTable — cada tarjeta lleva su
+   propio color según situación (mismo criterio que week-auto-table__situation,
+   ver report.css) para que el estado se lea de un vistazo, sin depender solo
+   del texto del badge. La variante --focus es la MISMA tarjeta, ampliada.
+   ═══════════════════════════════════════════════════════════════════ */
+.eng-task-queue {
+  display: flex; flex-direction: column; gap: var(--s3);
+  animation: eng-task-queue-in .35s ease-out;
+}
+
+@keyframes eng-task-queue-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.eng-task-card {
+  position: relative;
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: var(--s4); cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.eng-task-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+.eng-task-card:focus-visible {
+  outline: 2px solid var(--azul-claro); outline-offset: 2px;
+}
+
+.eng-task-card__drag-handle {
+  position: absolute; top: var(--s3); right: var(--s3);
+  color: var(--text-3); font-size: 16px; line-height: 1;
+  cursor: grab; padding: 2px 4px; border-radius: var(--radius-sm);
+}
+
+.eng-task-card__drag-handle:hover { background: var(--surface-2); color: var(--text-2); }
+
+.eng-task-card--dragging { opacity: 0.45; }
+
+.eng-task-card--drop-target {
+  outline: 2px dashed var(--azul-claro); outline-offset: 2px;
+}
+
+.eng-task-card--overdue   { border-left-color: var(--red); }
+
+.eng-task-card--due       { border-left-color: var(--amber); }
+
+.eng-task-card--starts    { border-left-color: var(--info); }
+
+.eng-task-card--continues { border-left-color: var(--border-strong); }
+
+.eng-task-card--completed { border-left-color: var(--green); }
+
+/* Urgente es ORTOGONAL a la situación (border-left ya la representa) — se
+   marca con un aro cálido alrededor de toda la tarjeta, para que se distinga
+   incluso si la situación de fondo es la misma (ej. dos vencidas, una
+   urgente y otra no). */
+.eng-task-card--urgent {
+  box-shadow: 0 0 0 2px var(--amber), var(--shadow);
+}
+
+.eng-task-card__breadcrumb {
+  font-size: var(--t-cap); color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.eng-task-card__main {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+}
+
+.eng-task-card__number {
+  font-weight: 800; color: var(--text-2); flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.eng-task-card__text {
+  font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+.eng-task-card__meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3);
+  font-size: var(--t-sm); color: var(--text-2);
+}
+
+.eng-task-card__project { font-weight: 600; }
+
+.eng-task-card__dates { font-variant-numeric: tabular-nums; color: var(--text-3); }
+
+.eng-task-card__urgent-btn {
+  align-self: flex-start; margin-top: 4px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-pill); padding: 4px 12px;
+  font-size: var(--t-cap); font-weight: 700; color: var(--text-2);
+  cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+}
+
+.eng-task-card__urgent-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+.eng-task-card__urgent-btn--active {
+  background: var(--amber-bg); border-color: var(--amber); color: var(--amber);
+}
+
+/* ── Variante Foco: la misma tarjeta, grande y en primer plano ── */
+.eng-task-card--focus {
+  padding: var(--s5); gap: 10px;
+  border-left-width: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.14);
+  margin-bottom: var(--s5);
+}
+
+.eng-task-card--focus:hover { transform: none; }
+
+.eng-task-card--focus.eng-task-card--urgent {
+  box-shadow: 0 0 0 3px var(--amber), 0 10px 28px rgba(0,0,0,0.14);
+}
+
+.eng-task-card--focus .eng-task-card__eyebrow {
+  font-size: var(--t-cap); font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--azul-claro);
+}
+
+.eng-task-card--focus .eng-task-card__number { font-size: var(--t-lg); }
+
+.eng-task-card--focus .eng-task-card__text {
+  font-size: var(--t-xl); white-space: normal; overflow: visible; text-overflow: clip;
+}
+
+.eng-task-card--focus .eng-task-card__meta { font-size: var(--t-body); }
+
+@media (max-width: 560px) {
+  .eng-task-card--focus .eng-task-card__text { font-size: var(--t-lg); }
+}
+
+
+/* ── Botones "Ver jerarquía completa por proyecto" (Mi semana) ── */
+.eng-project-buttons {
+  display: flex; flex-wrap: wrap; gap: var(--s2);
+  margin-bottom: var(--s5);
+}
+
+.eng-project-btn-group {
+  display: flex; border-radius: var(--radius-pill); overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.eng-project-btn {
+  background: var(--surface); border: none;
+  padding: 6px 16px;
+  font-size: var(--t-sm); font-weight: 700; color: var(--text);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+
+.eng-project-btn:hover { background: var(--accent-bg); }
+
+.eng-project-btn--export {
+  border-left: 1px solid var(--border);
+  padding: 6px 10px; color: var(--text-2);
+}
+
+.eng-project-btn--export:hover { color: var(--azul-claro); }

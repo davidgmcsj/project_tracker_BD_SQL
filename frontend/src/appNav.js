@@ -34,20 +34,40 @@ export const BASE_TABS = [
   },
 ];
 
-// Un usuario SIN rol admin (migración 019) solo ve un botón fijo a su propio
-// dashboard — nada de Dashboard general, Editar, Reportes ni Administración.
+// Un usuario SIN rol admin (migración 019) navega toda la app — Dashboard,
+// Gantt/Jerarquía (vía las tarjetas de Dashboard → Editar), Ingenieros y
+// Reportes — pero los datos que ve ya vienen filtrados por el backend
+// (GET /api/projects solo devuelve proyectos donde tiene una actividad
+// asignada, ver routes/projects.routes.cjs). Lo que SÍ se le oculta son
+// operaciones de portafolio completo, no de "su" información:
+//   - "Dashboard Dirección": vista ejecutiva agregada de TODA la oficina.
+//   - "Trimestres": el cierre trimestral es irreversible y afecta a todos
+//     los proyectos, no solo los suyos.
+//   - "Administración": gestión de usuarios.
 // El botón oculto aquí es la primera capa (evita el clic normal); la guarda
 // real está en el useEffect de App.jsx (fuerza `view` aunque alguien navegue
-// directo por URL) y en el backend (requireApiKey/requireAdmin siguen
-// aplicando sin importar qué muestre esta nav).
-export const LOCKED_TABS = [{ key: "engineers", label: "Mi dashboard" }];
+// directo por URL) y en el backend (requireAdmin en las rutas
+// correspondientes — quarter-reset, clean-stats, restore-from-db, report).
+const NON_ADMIN_TABS = [
+  { key: "dashboard", label: "Dashboard" },
+  {
+    label: "Ingenieros",
+    options: [
+      { key: "engineers",       label: "Equipo y mi semana" },
+      { key: "engineer-report", label: "Historial por ingeniero" },
+    ],
+  },
+  {
+    label: "Reportes",
+    options: [
+      { key: "report",   label: "Reporte semanal" },
+      { key: "reportes", label: "Consultas" },
+    ],
+  },
+];
 
-// "Administración" (usuarios) solo se agrega para admins — un usuario normal
-// ni siquiera ve el botón, no solo se le bloquea el endpoint (eso ya lo hace
-// requireAdmin en el backend; esto es además no confundir con una opción que
-// de todos modos le daría 403).
 export function buildTabs(esAdmin) {
-  if (!esAdmin) return LOCKED_TABS;
+  if (!esAdmin) return NON_ADMIN_TABS;
   return [...BASE_TABS, { key: "admin-users", label: "Administración" }];
 }
 

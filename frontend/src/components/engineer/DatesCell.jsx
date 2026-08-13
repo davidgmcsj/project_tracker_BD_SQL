@@ -8,9 +8,9 @@ export default function DatesCell({ history }) {
   const h = history || {};
   return (
     <>
-      <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{formatDateDMY(h.added)}</td>
-      <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{formatDateDMY(h.in_progress)}</td>
-      <td style={{ fontSize: "11px", color: "var(--text-2)" }}>{formatDateDMY(h.completed)}</td>
+      <td style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-2)" }}>{formatDateDMY(h.added)}</td>
+      <td style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-2)" }}>{formatDateDMY(h.in_progress)}</td>
+      <td style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-2)" }}>{formatDateDMY(h.completed)}</td>
     </>
   );
 }

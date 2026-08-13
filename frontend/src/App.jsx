@@ -77,16 +77,21 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  // ── Restricción de navegación para usuarios sin rol admin (migración 019) ──
-  // Sin esto, un usuario no-admin podía llegar a Dashboard/Editar/Reportes/
-  // Administración por el valor por defecto de useUrlState ("dashboard") o
+  // ── Restricción de navegación para usuarios sin rol admin ───────────────────
+  // Los no-admin navegan toda la app (Dashboard, Editar, Ingenieros, Reportes)
+  // — los datos que ven ya vienen filtrados por proyecto desde el backend
+  // (GET /api/projects). Lo único que se bloquea son vistas de operaciones de
+  // PORTAFOLIO COMPLETO, no de "su" información: "director" (dashboard
+  // ejecutivo agregado), "quarters" (cierre trimestral irreversible) y
+  // "admin-users" (gestión de usuarios). Sin esto, alguien podía llegar ahí
   // por un enlace compartido con ?view=algo — el botón oculto en la nav
   // (buildTabs) no alcanza para bloquear eso, solo evita el clic normal.
-  // Corre cada vez que currentUser o view cambian: cubre tanto el estado
-  // inicial como cualquier intento de navegar directo por URL después.
+  // El backend igual exige requireAdmin en esas rutas — esto es la primera
+  // capa (UX), no el control de acceso real.
   useEffect(() => {
     if (!currentUser || currentUser.esAdmin) return;
-    if (view !== "engineers" && view !== "engineer-report") setView("engineers");
+    const vistasSoloAdmin = ["director", "quarters", "admin-users"];
+    if (vistasSoloAdmin.includes(view)) setView("dashboard");
   }, [currentUser, view, setView]);
 
   // Aplica el tema al documento y lo persiste. data-theme en <html> activa los
@@ -430,6 +435,27 @@ export default function App() {
     saveProjects(next, weekLabel, engineers, externalContacts, id);
   };
 
+  // Alterna es_urgente de UNA actividad puntual (dashboard "Mi semana" del
+  // ingeniero) y persiste de inmediato — mismo patrón que togglePriority,
+  // pero a nivel de actividad en vez de proyecto. changedProjectId=projectId
+  // en saveProjects: el guardado no-admin del backend solo autoriza tocar
+  // proyectos donde el ingeniero ya tiene una actividad asignada (ver
+  // routes/projects.routes.cjs) — este proyecto siempre califica, porque la
+  // actividad que se está marcando es justamente una de las suyas.
+  const toggleActivityUrgent = (projectId, activityId) => {
+    const next = projects.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        activities_identified: (p.activities_identified || []).map(a =>
+          a.id === activityId ? { ...a, es_urgente: !a.es_urgente } : a
+        ),
+      };
+    });
+    setProjects(next);
+    saveProjects(next, weekLabel, engineers, externalContacts, projectId);
+  };
+
   const viewProjectReport = (idx) => { setReportProjectIdx(idx); setView("report"); };
 
   const exportProjectReport = (idx) => {
@@ -542,6 +568,14 @@ export default function App() {
     const newIds = new Set(tasks.map(t => t.id));
     oldTasks.forEach(t => { if (!newIds.has(t.id)) deleteEngineerTaskFromSQL(t.id); });
     tasks.forEach(t => syncEngineerTaskToSQL(eng, t));
+  };
+
+  // Orden manual de la cola "Mi semana" (arrastrar y soltar, ver
+  // EngineerWeekTable) — field es "orden_ahora" u "orden_proxima". Es
+  // preferencia personal de trabajo, no dato de negocio: a diferencia de
+  // updateEngineerTasks, no se sincroniza a SQL.
+  const updateEngineerQueueOrder = (id, field, orderIds) => {
+    persistEngineers(engineers.map(e => e.id === id ? { ...e, [field]: orderIds } : e));
   };
 
   // ── Catálogo de colaboradores externos ────────────────────────────────────
@@ -756,14 +790,26 @@ export default function App() {
             onUpdate={updateEngineer}
             onToggleActive={toggleEngineerActive}
             onUpdateTasks={updateEngineerTasks}
+            onToggleUrgent={toggleActivityUrgent}
+            onReorderQueue={updateEngineerQueueOrder}
             onOpenActivity={(projectId, activityId) => {
               const idx = projects.findIndex(p => p.id === projectId);
               if (idx === -1) return;
-              setPlanning({ idx, view: "hierarchy", activityId });
+              // Sin "view": abre SOLO la tarjeta de detalle de la actividad,
+              // no el overlay grande de Planificación de atrás (antes de
+              // ProjectPlanningOverlays.jsx, view era obligatorio para que
+              // renderizara algo — incluido el modal — así que este clic
+              // terminaba abriendo Planificación completa).
+              setPlanning({ idx, activityId });
+            }}
+            onOpenProjectHierarchy={(projectId) => {
+              const idx = projects.findIndex(p => p.id === projectId);
+              if (idx === -1) return;
+              setPlanning({ idx, view: "hierarchy" });
             }}
           />
         )}
-        {view === "director" && (
+        {view === "director" && currentUser?.esAdmin && (
           <ProjectOverviewTable
             projects={projects}
             engineers={engineers}
@@ -797,7 +843,7 @@ export default function App() {
             onOpenPlanning={(idx, which) => setPlanning({ idx, view: which })}
           />
         )}
-        {view === "quarters" && (
+        {view === "quarters" && currentUser?.esAdmin && (
           <QuartersView
             projects={projects}
             quarterInfo={getCurrentQuarterInfo(reportDate, getToday)}

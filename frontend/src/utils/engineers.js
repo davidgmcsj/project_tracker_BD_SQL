@@ -1,8 +1,8 @@
 // engineers.js — Agregación cross-proyecto para la vista por ingeniero.
 // Funciones puras: no tocan React ni el DOM, solo leen projects/engineers ya cargados.
 
-import { buildActivityIndex, getActivityStatus, toISODate } from "./formulas.js";
-import { activitiesForWeek, weekRange, nextWeekRange, SITUATION } from "./weekPlanning.js";
+import { buildActivityIndex, getActivityStatus, toISODate, buildHierarchyIndex, ancestorChain, leafActivities } from "./formulas.js";
+import { activitiesForWeek, weekRange, nextWeekRange, SITUATION, SITUATION_LABEL } from "./weekPlanning.js";
 import { ESTADO_ACTIVIDAD_LABEL } from "./filtroOpciones.js";
 
 // Actividades del ingeniero en ese proyecto que asignadas a él, fuente de
@@ -135,16 +135,42 @@ export function getAllAssignedActivitiesInProject(engineerId, project) {
 // semana (mismo motor de solapamiento de utils/weekPlanning.js), con el
 // nombre del proyecto agregado a cada fila para distinguir el origen.
 
-// { activity, situation, projectName, projectId } por cada actividad del
-// ingeniero, en cualquier proyecto, que caiga en `range`.
+// { activity, situation, projectName, projectId, number, ancestors } por cada
+// actividad del ingeniero, en cualquier proyecto, que caiga en `range`.
+//
+// number/ancestors: mismo número jerárquico y cadena de tareas padre que
+// muestra Planificación (ver activityHierarchy.js) — sin esto, una subtarea
+// aparecía en la lista sin ningún indicio de que era parte de una tarea más
+// grande, y si esa tarea padre TAMBIÉN caía en el rango (su fecha agregada
+// suele cubrir todo el rango de sus hijas), se veían como dos filas sueltas y
+// aparentemente iguales. El número + la cadena de padres le dan contexto a
+// cada fila sin cambiar CUÁLES actividades se listan.
 function engineerActivitiesForRange(engineerId, projects, range, opts) {
   const rows = [];
   getProjectsForEngineer(engineerId, projects).forEach(project => {
+    // Solo HOJAS (sin subtareas) — mismo criterio que ya usa el resto de la
+    // app para "unidad de trabajo medible" (ver leafActivities,
+    // formulas/activityHierarchy.js). Sin este filtro, una tarea padre con
+    // fecha agregada (ej. "Mesas de trabajo") aparecía como una fila más,
+    // suelta y sin relación aparente con sus propias hijas que también
+    // caían en el rango — dos entradas para lo que en realidad es una sola
+    // pieza de trabajo jerárquica. El padre sigue siendo visible como
+    // contexto (ancestors, más abajo), solo deja de listarse como si fuera
+    // él mismo algo para "hacer".
+    const leafIds = new Set(leafActivities(project.activities_identified).map(a => a.id));
     const mine = (project.activities_identified || []).filter(a =>
+      leafIds.has(a.id) &&
       (a.assigned_engineers || []).some(e => e.id === engineerId || e.engineer_id === engineerId)
     );
+    const hIndex = buildHierarchyIndex(project.activities_identified);
     activitiesForWeek(mine, range, project.task_status, opts).forEach(row => {
-      rows.push({ ...row, projectName: project.project_name || "Proyecto", projectId: project.id });
+      rows.push({
+        ...row,
+        projectName: project.project_name || "Proyecto",
+        projectId: project.id,
+        number: hIndex.map.get(row.activity.id)?.number || "",
+        ancestors: ancestorChain(row.activity.id, hIndex),
+      });
     });
   });
   return rows.sort((a, b) => {
@@ -167,6 +193,80 @@ export function engineerNextWeekTasks(engineerId, projects, today = new Date()) 
   );
 }
 
+// Aplica el orden manual que el propio ingeniero armó a mano (arrastrar y
+// soltar en EngineerWeekTable) sobre una lista ya calculada — orderIds es un
+// array de activity.id en el orden elegido (engineer.orden_ahora /
+// engineer.orden_proxima). Las filas que SÍ están en orderIds van primero,
+// en ese orden; el resto (tareas nuevas que el ingeniero nunca tocó, o que
+// cambiaron de rango) cae detrás, en el orden automático que ya traía `rows`
+// — así una tarea recién aparecida no se cuela a mitad de un orden que el
+// ingeniero ya fijó a propósito.
+export function applyManualOrder(rows, orderIds) {
+  if (!Array.isArray(orderIds) || !orderIds.length) return rows;
+  const orderIndex = new Map(orderIds.map((id, i) => [id, i]));
+  const known   = rows.filter(r => orderIndex.has(r.activity.id))
+    .sort((a, b) => orderIndex.get(a.activity.id) - orderIndex.get(b.activity.id));
+  const unknown = rows.filter(r => !orderIndex.has(r.activity.id));
+  return [...known, ...unknown];
+}
+
+// ── Exportar la cola a Markdown (tabla) ───────────────────────────────────────
+// Una tabla por sección, en el orden EXACTO que el ingeniero ya armó (manual
+// o automático, da igual — recibe las filas ya ordenadas tal como se ven en
+// pantalla). fecha sin formatear a propósito (ISO): esto es para pegar en un
+// chat/nota/issue, no para imprimir.
+//
+// "|" en el texto de una actividad rompería la tabla si no se escapa —
+// escMd() lo neutraliza (y colapsa saltos de línea, que igual rompen una fila).
+function escMd(s) {
+  return String(s || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
+// showProject=false omite la columna Proyecto — se usa en el export POR
+// proyecto (ProjectPlanningOverlays ya lo dice en el título del overlay, no
+// hace falta repetirlo en cada fila).
+function mdTableForRows(rows, showProject) {
+  const header = showProject
+    ? "| N° | Actividad | Proyecto | Inicio | Fin | Situación |"
+    : "| N° | Actividad | Inicio | Fin | Situación |";
+  const sep = showProject
+    ? "|---|---|---|---|---|---|"
+    : "|---|---|---|---|---|";
+  const body = rows.map(row => {
+    const breadcrumb = row.ancestors.length ? `${row.ancestors.map(a => escMd(a.text)).join(" › ")} › ` : "";
+    const actividad = `${breadcrumb}${escMd(row.activity.text) || "(sin nombre)"}`;
+    const inicio = row.activity.start_date || "?";
+    const fin = row.activity.due_date || "?";
+    const situacion = SITUATION_LABEL[row.situation] || row.situation;
+    return showProject
+      ? `| ${row.number} | ${actividad} | ${escMd(row.projectName)} | ${inicio} | ${fin} | ${situacion} |`
+      : `| ${row.number} | ${actividad} | ${inicio} | ${fin} | ${situacion} |`;
+  });
+  return [header, sep, ...body].join("\n");
+}
+
+/**
+ * @param {string} engineerName
+ * @param {{ title: string, rows: object[] }[]} sections — en el orden que deben aparecer
+ * @param {object} [opts]
+ * @param {string} [opts.scopeLabel] — ej. nombre del proyecto, para el título ("Mi cola — PRO-10-GTH")
+ * @param {boolean} [opts.showProject] — false cuando ya se sabe el proyecto (export por proyecto)
+ */
+export function buildEngineerQueueMarkdown(engineerName, sections, opts = {}) {
+  const { scopeLabel, showProject = true } = opts;
+  const titulo = scopeLabel ? `Mi cola de trabajo — ${engineerName} — ${scopeLabel}` : `Mi cola de trabajo — ${engineerName}`;
+  const lines = [`# ${titulo}`, ""];
+  sections.forEach(({ title, rows }) => {
+    lines.push(`## ${title}`, "");
+    if (!rows.length) {
+      lines.push("_Sin actividades._", "");
+    } else {
+      lines.push(mdTableForRows(rows, showProject), "");
+    }
+  });
+  return lines.join("\n");
+}
+
 // ── KPIs accionables + "qué hacer ahora" (pantalla "mi semana", EngineerHub) ──
 // A partir de las filas de engineerWeekTasks (que SÍ incluyen completadas
 // on-time — activitiesForWeek solo excluye vencidas-ya-completadas), arma los
@@ -184,7 +284,15 @@ export function buildEngineerWeekKpis(rows, projects, today = new Date()) {
   const overdue = pendingRows.filter(r => r.situation === SITUATION.OVERDUE).length;
   const dueToday = pendingRows.filter(r => r.activity.due_date === todayIso).length;
 
+  // Urgente (marca manual del propio ingeniero sobre la actividad — ver
+  // App.jsx toggleActivityUrgent) manda sobre todo lo demás, incluida una
+  // vencida. Así una tarea marcada urgente siempre es la que sale de primera
+  // ("Foco"), y al desmarcarla o completarla la cola vuelve sola al orden que
+  // ya tenía (vencidas → fecha ascendente) sin que haya que recordar nada.
   const todo = [...pendingRows].sort((a, b) => {
+    const aUrgent = a.activity.es_urgente === true;
+    const bUrgent = b.activity.es_urgente === true;
+    if (aUrgent !== bUrgent) return aUrgent ? -1 : 1;
     const aOverdue = a.situation === SITUATION.OVERDUE;
     const bOverdue = b.situation === SITUATION.OVERDUE;
     if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;

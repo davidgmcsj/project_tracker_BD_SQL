@@ -102,6 +102,41 @@ export function buildActivityTree(activities) {
   return { rootIds, childrenOf: childrenOfFlat };
 }
 
+// Índice id → { number, level, parentId } de TODAS las actividades del
+// proyecto, mismo número que muestra el Cronograma (ver buildActivityIndex
+// arriba) pero con parentId incluido — lo necesita ancestorChain para subir
+// por la cadena de padres sin reconstruir el árbol en cada llamada.
+export function buildHierarchyIndex(activities) {
+  const acts = Array.isArray(activities) ? activities : [];
+  const byId = new Map(acts.map(a => [a.id, a]));
+  const map = new Map();
+  flattenTree(acts).forEach(({ activity, level, path }) => {
+    if (activity && activity.id != null) {
+      map.set(activity.id, { number: formatHierarchyNumber(path), level, parentId: activity.parent_id ?? null });
+    }
+  });
+  return { byId, map };
+}
+
+// Cadena de tareas padre de una actividad, de la raíz hacia abajo (sin
+// incluir la propia actividad) — { id, text, number } por cada ancestro. Se
+// corta si un parent_id queda huérfano o forma un ciclo (mismo criterio de
+// tolerancia que buildActivityTree: no cuelga el recorrido).
+export function ancestorChain(activityId, { byId, map }) {
+  const chain = [];
+  const seen = new Set();
+  let curParentId = map.get(activityId)?.parentId ?? null;
+  while (curParentId != null && !seen.has(curParentId)) {
+    seen.add(curParentId);
+    const parentAct = byId.get(curParentId);
+    const info = map.get(curParentId);
+    if (!parentAct || !info) break;
+    chain.unshift({ id: curParentId, text: parentAct.text || "", number: info.number });
+    curParentId = info.parentId;
+  }
+  return chain;
+}
+
 // Recorre el árbol en preorden (respetando sequence_order) y devuelve un array
 // plano de { activity, level, path }. path = [1,1,13,3,1] — números 1-based por
 // nivel; level = path.length - 1. La numeración NUNCA se guarda, se calcula en
