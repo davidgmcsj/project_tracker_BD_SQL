@@ -1,0 +1,44 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      NODE_ENV: production
+      DB_SERVER: ${DB_SERVER}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      API_KEY: ${API_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+    volumes:
+      # data.json + history.json (ver backend/lib/json-store.cjs: con HOME=/home
+      # fijado en el Dockerfile, el código ya sabe escribir aquí).
+      - tracker-data:/home/data
+      # Cierres trimestrales (backend/routes/quarters.routes.cjs) — carpeta
+      # DISTINTA de la anterior, no se puede fusionar.
+      - tracker-archive:/app/archive
+    restart: unless-stopped
+    # Sin "ports": el backend no se expone directo a internet, solo es
+    # visible para el contenedor "frontend" dentro de la red interna de
+    # Docker Compose. Todo el tráfico externo entra por Nginx (frontend).
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_KEY: ${API_KEY}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Certificado HTTPS — ver GUIA_DESPLIEGUE_DOCKER.md para generarlo.
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  tracker-data:
+  tracker-archive:
