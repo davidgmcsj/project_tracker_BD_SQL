@@ -25,6 +25,21 @@ function NewUserForm({ engineers, onConfirm, onCancel }) {
 
   const set = (field) => (e) => setDraft(d => ({ ...d, [field]: e.target.value }));
 
+  // Autocompleta "Nombre completo" con el nombre del ingeniero elegido —
+  // son dos campos independientes (el desplegable solo VINCULA la cuenta al
+  // catálogo, no llena el nombre) y sin esto era fácil creer que ya estaba
+  // lleno, elegir el ingeniero y llevarse el error de "nombre obligatorio"
+  // con el campo vacío sin darse cuenta. Solo autocompleta si el nombre
+  // sigue vacío — si el admin ya escribió algo a mano, no se lo pisa.
+  const handleEngineerChange = (e) => {
+    const ingenieroId = e.target.value;
+    setDraft(d => {
+      const selected = engineers.find(en => String(en.sql_id) === ingenieroId);
+      const shouldAutofill = selected && !d.name.trim();
+      return { ...d, ingenieroId, name: shouldAutofill ? selected.name : d.name };
+    });
+  };
+
   const confirm = async () => {
     if (!draft.username.trim() || !draft.name.trim() || !draft.password) {
       setError("Usuario, nombre y contraseña son obligatorios.");
@@ -54,7 +69,7 @@ function NewUserForm({ engineers, onConfirm, onCancel }) {
         <input className="field__input" placeholder="Nombre completo…" value={draft.name} onChange={set("name")} />
         <input className="field__input" placeholder="Correo (opcional)…" value={draft.email} onChange={set("email")} />
         <input className="field__input" type="password" placeholder="Contraseña (mín. 8 caracteres)…" value={draft.password} onChange={set("password")} />
-        <select className="field__input" value={draft.ingenieroId} onChange={set("ingenieroId")}>
+        <select className="field__input" value={draft.ingenieroId} onChange={handleEngineerChange}>
           <option value="">Sin ingeniero vinculado</option>
           {engineers.map(e => <option key={e.id} value={e.sql_id || ""} disabled={!e.sql_id}>{e.name}{!e.sql_id ? " (sin sincronizar con SQL)" : ""}</option>)}
         </select>
