@@ -17,8 +17,9 @@ const express = require("express");
  * @param {Function} deps.writeJson
  * @param {Function} [deps.saveWeekReportToDB]
  * @param {Function} deps.errorBody
+ * @param {Function} deps.requireAdmin
  */
-function crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, saveWeekReportToDB, errorBody }) {
+function crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, saveWeekReportToDB, errorBody, requireAdmin }) {
   const router = express.Router();
 
   // Normaliza cualquier fecha a su lunes de semana (YYYY-MM-DD). Sirve como
@@ -32,7 +33,10 @@ function crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, save
     return d.toISOString().slice(0, 10);
   }
 
-  router.post("/report", async (req, res) => {
+  // Cierre semanal del PORTAFOLIO completo — solo admin. Antes solo estaba
+  // "protegido" porque el botón de la UI era admin-only; sin requireAdmin
+  // cualquier sesión válida podía cerrar la semana de todos los proyectos.
+  router.post("/report", requireAdmin, async (req, res) => {
     try {
       const { projects, weekLabel, saved_at } = req.body;
       if (!projects?.length) return res.status(400).json({ error: "Sin proyectos" });

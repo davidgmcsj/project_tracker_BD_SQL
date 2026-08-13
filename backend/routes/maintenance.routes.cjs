@@ -11,11 +11,14 @@ const express = require("express");
  * @param {Function} deps.writeJson
  * @param {Function} [deps.rebuildDataJsonFromSQL]
  * @param {Function} deps.errorBody
+ * @param {Function} deps.requireAdmin
  */
-function crearMaintenanceRouter({ DATA_FILE, readJson, writeJson, rebuildDataJsonFromSQL, errorBody }) {
+function crearMaintenanceRouter({ DATA_FILE, readJson, writeJson, rebuildDataJsonFromSQL, errorBody, requireAdmin }) {
   const router = express.Router();
 
-  router.post("/restore-from-db", async (req, res) => {
+  // Solo admin: reemplaza los proyectos de TODO el portafolio con lo último
+  // guardado en SQL.
+  router.post("/restore-from-db", requireAdmin, async (req, res) => {
     if (!rebuildDataJsonFromSQL) {
       return res.status(503).json({ error: "Módulo de BD no disponible" });
     }

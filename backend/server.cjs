@@ -29,7 +29,7 @@ const { computeQuarterStats, buildResetProjects } = require("./quarter-reset.cjs
 // parte del contrato de seguridad — ver los comentarios de cada módulo.
 const { requireApiKey }                     = require("./middleware/api-key.cjs");
 const { montarRateLimits }                  = require("./middleware/rate-limits.cjs");
-const { crearResolverSesion, requireAdmin } = require("./middleware/session.cjs");
+const { crearResolverSesion, requireAdmin, requireAuth } = require("./middleware/session.cjs");
 const { logSecurityEvent }                  = require("./middleware/security-log.cjs");
 const { errorBody }                         = require("./middleware/error-handler.cjs");
 
@@ -159,13 +159,13 @@ app.use("/api/attachments", crearAttachmentsRouter({ attachmentJsonParser, saveA
 
 app.use("/api", crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody }));
 
-app.use("/api", crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, saveWeekReportToDB, errorBody }));
+app.use("/api", crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, saveWeekReportToDB, errorBody, requireAdmin }));
 
-app.use("/api", crearQuartersRouter({ BACKEND_DIR, DATA_FILE, readJson, writeJson, getPool, computeQuarterStats, buildResetProjects, errorBody }));
+app.use("/api", crearQuartersRouter({ BACKEND_DIR, DATA_FILE, readJson, writeJson, getPool, computeQuarterStats, buildResetProjects, errorBody, requireAdmin }));
 
-app.use("/api", crearMaintenanceRouter({ DATA_FILE, readJson, writeJson, rebuildDataJsonFromSQL, errorBody }));
+app.use("/api", crearMaintenanceRouter({ DATA_FILE, readJson, writeJson, rebuildDataJsonFromSQL, errorBody, requireAdmin }));
 
-app.use("/api/projects", crearProjectsRouter({ DATA_FILE, readJson, writeJson, syncActividadesDetalle }));
+app.use("/api/projects", crearProjectsRouter({ DATA_FILE, readJson, writeJson, syncActividadesDetalle, requireAuth }));
 
 app.use("/api/auth", crearAuthRouter({
   jsonParser, getPool, createSession, deleteSession, verifyPassword, parseCookies,

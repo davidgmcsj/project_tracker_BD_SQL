@@ -61,7 +61,11 @@ test("una API key de longitud distinta no rompe timingSafeEqual", async () => {
 });
 
 test("con la API key correcta la petición pasa de requireApiKey", async () => {
-  const res = await srv.api("/api/projects");
+  // /api/history en vez de /api/projects: desde que GET /api/projects exige
+  // sesión (requireAuth, para poder filtrar por ingeniero) ya no sirve como
+  // "cualquier ruta autenticada" — daría 401 aunque la API key sea correcta.
+  // /api/history sigue sin exigir sesión, solo API key.
+  const res = await srv.api("/api/history");
   assert.notEqual(res.status, 401);
 });
 

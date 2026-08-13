@@ -38,21 +38,26 @@ function assertRutaViva(res, ruta) {
 
 // ── Proyectos ─────────────────────────────────────────────────────────────────
 
-test("GET /api/projects responde JSON con la lista de proyectos", async () => {
+// GET /api/projects ahora exige sesión (requireAuth), no solo API key —
+// necesaria para saber a qué ingeniero filtrar. Sin sesión real (este test
+// harness no toca SQL, ver test-server.cjs), el contrato correcto es 401, no
+// 200. assertRutaViva no aplica aquí a propósito: 401 es el comportamiento
+// esperado, no un error de montaje de ruta.
+test("GET /api/projects sin sesión responde 401 (requiere login, filtra por ingeniero)", async () => {
   const res = await srv.api("/api/projects");
-  assertRutaViva(res, "GET /api/projects");
-  assert.equal(res.status, 200);
-  const body = await res.json();
-  assert.ok(Array.isArray(body.projects), "debe traer projects[]");
+  assert.notEqual(res.status, 404, "GET /api/projects devolvió 404: la ruta se perdió");
+  assert.equal(res.status, 401);
 });
 
 // NOTA sobre POST /api/projects: no se prueba aquí porque ESCRIBE en el
 // data.json real (no hay inyección de dependencias para la ruta de datos).
-// Su comportamiento comprobado a mano es tolerante por diseño: el handler
-// hace `Array.isArray(req.body?.projects) ? ... : []`, así que un cuerpo sin
-// projects responde 200 y guarda una lista vacía, en vez de rechazar con 400.
-// Cubrirlo de verdad exige parametrizar DATA_FILE — trabajo de la Fase 2,
-// cuando json-store.cjs se extraiga como módulo propio.
+// Su comportamiento comprobado a mano es tolerante por diseño PARA ADMIN: el
+// handler hace `Array.isArray(req.body?.projects) ? ... : []`, así que un
+// cuerpo sin projects responde 200 y guarda una lista vacía, en vez de
+// rechazar con 400. Para no-admin el contrato es distinto (merge autorizado
+// por proyecto, ver routes/projects.routes.cjs). Cubrirlo de verdad exige
+// parametrizar DATA_FILE — trabajo de la Fase 2, cuando json-store.cjs se
+// extraiga como módulo propio.
 
 // ── Historial ─────────────────────────────────────────────────────────────────
 
@@ -67,9 +72,13 @@ test("GET /api/history/:date con fecha inexistente responde 404", async () => {
   assert.equal(res.status, 404);
 });
 
-test("POST /api/report sin datos responde 400", async () => {
+// POST /api/report ahora exige rol admin (requireAdmin) — cierra la semana
+// del PORTAFOLIO completo, antes solo estaba "protegido" por el botón oculto
+// en la UI. Sin sesión, el 401 de requireAdmin corre ANTES que la validación
+// de body, así que el contrato pasa de 400 a 401.
+test("POST /api/report sin sesión responde 401 (requiere rol admin)", async () => {
   const res = await srv.api("/api/report", { method: "POST", body: {} });
-  assert.ok(res.status === 400 || res.status >= 500, `recibí ${res.status}`);
+  assert.equal(res.status, 401);
 });
 
 // ── Adjuntos — la exclusión del body parser ───────────────────────────────────

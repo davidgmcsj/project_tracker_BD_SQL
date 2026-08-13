@@ -54,4 +54,14 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { crearResolverSesion, requireAdmin };
+/**
+ * Exige sesión activa, sin importar el rol. Base del control de acceso por
+ * ingeniero (GET/POST /api/projects) — sin esto req.user podría llegar null
+ * y no habría forma de saber a qué proyectos filtrar/autorizar.
+ */
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "No autenticado" });
+  next();
+}
+
+module.exports = { crearResolverSesion, requireAdmin, requireAuth };

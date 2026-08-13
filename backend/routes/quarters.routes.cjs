@@ -29,8 +29,9 @@ const fs      = require("fs");
  * @param {Function} deps.computeQuarterStats
  * @param {Function} deps.buildResetProjects
  * @param {Function} deps.errorBody
+ * @param {Function} deps.requireAdmin
  */
-function crearQuartersRouter({ BACKEND_DIR, DATA_FILE, readJson, writeJson, getPool, computeQuarterStats, buildResetProjects, errorBody }) {
+function crearQuartersRouter({ BACKEND_DIR, DATA_FILE, readJson, writeJson, getPool, computeQuarterStats, buildResetProjects, errorBody, requireAdmin }) {
   const router = express.Router();
   const archiveDir = path.join(BACKEND_DIR, "archive");
 
@@ -52,7 +53,8 @@ function crearQuartersRouter({ BACKEND_DIR, DATA_FILE, readJson, writeJson, getP
   //   - weekly_achievements, next_week_plan, impediments: se vacían
   //   - manual_metrics: se recalcula basado en las actividades que quedan
   //   - La actividad en sí (checklist, notas, fechas clave, prioridad, etc.): se conserva intacta
-  router.post("/quarter-reset", async (req, res) => {
+  // Solo admin: irreversible y afecta TODOS los proyectos del portafolio.
+  router.post("/quarter-reset", requireAdmin, async (req, res) => {
     try {
       const { projects = [], engineers = [], externalContacts = [], weekLabel = "", quarterLabel = "", quarterStart = "" } = req.body;
 
@@ -129,7 +131,8 @@ function crearQuartersRouter({ BACKEND_DIR, DATA_FILE, readJson, writeJson, getP
   //   Borra weekly_total, weekly_detail, status_history, weekly_achievements,
   //   next_week_plan e impediments de todos los proyectos actuales.
   //   NO archiva nada. Úsalo cuando el reset ya se ejecutó pero quedaron datos sucios.
-  router.post("/clean-stats", async (req, res) => {
+  // Solo admin: afecta TODOS los proyectos del portafolio.
+  router.post("/clean-stats", requireAdmin, async (req, res) => {
     try {
       const currentData = await readJson(DATA_FILE, {});
 
