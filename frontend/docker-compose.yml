@@ -1,0 +1,32 @@
+# Solo el frontend (Nginx). Se conecta a "tracker-net", la misma red externa
+# compartida que usa el docker-compose.yml del repo del BACKEND
+# (project_tracker_backend) — así nginx.conf le habla al contenedor
+# "backend" por nombre, sin que su puerto quede expuesto a internet.
+#
+# La red se crea UNA sola vez en el servidor, antes de levantar cualquiera
+# de los dos:
+#   docker network create tracker-net
+#
+# Luego, en cualquier orden:
+#   docker compose up -d --build   (en project_tracker_backend/)
+#   docker compose up -d --build   (aquí, en project_tracker_front/)
+
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_KEY: ${API_KEY}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Certificado HTTPS — ver README.md para generarlo.
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - tracker-net
+    restart: unless-stopped
+
+networks:
+  tracker-net:
+    external: true
