@@ -17,6 +17,7 @@ import {
 } from "../utils/formulas";
 import ActivityDetailModal from "./ActivityDetailModal";
 import PlannerImportModal from "./PlannerImportModal";
+import CronogramaImportModal from "./CronogramaImportModal";
 import { ProjectNotesPanel } from "./ProjectNotesPanel";
 import ProjectPlanningOverlays from "./ProjectPlanningOverlays";
 
@@ -58,6 +59,7 @@ export default function EditView({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [modalActId,      setModalActId]      = useState(null);
   const [showPlannerModal, setShowPlannerModal] = useState(false);
+  const [showCronogramaModal, setShowCronogramaModal] = useState(false);
   const [planningView,    setPlanningView]    = useState(null); // "status" | "gantt" | "hierarchy" | null
 
   const p          = editingIdx !== null ? projects[editingIdx] : null;
@@ -116,7 +118,7 @@ export default function EditView({
   // vía los argumentos del hook, igual que antes cerraban sobre las mismas
   // variables locales.
   const {
-    handleActivitiesChange, handleApplyPlannerImport, handleUpdateActivityMeta,
+    handleActivitiesChange, handleApplyPlannerImport, handleApplyCronogramaImport, handleUpdateActivityMeta,
     handleBulkAssign, handleAddActivity, handleActivityModalSave,
     handleActivityModalDelete: handleActivityModalDeleteBase,
     handleHierarchyAddChild, handleHierarchyDelete, handleApplyDateChange,
@@ -325,6 +327,7 @@ export default function EditView({
             onAddActivityDetailed={handleAddActivityDetailed}
             onCreateExternal={onAddExternalContact}
             onImportPlanner={() => setShowPlannerModal(true)}
+            onImportCronograma={() => setShowCronogramaModal(true)}
           />
 
           {/* ══ 3b. Asignación masiva ══ */}
@@ -540,6 +543,15 @@ export default function EditView({
           onConfirm={handleApplyPlannerImport}
           existingActivities={allActivities}
           existingTaskStatus={p.task_status}
+          engineerCatalog={engineerCatalog}
+        />
+      )}
+
+      {p && (
+        <CronogramaImportModal
+          isOpen={showCronogramaModal}
+          onClose={() => setShowCronogramaModal(false)}
+          onConfirm={handleApplyCronogramaImport}
           engineerCatalog={engineerCatalog}
         />
       )}

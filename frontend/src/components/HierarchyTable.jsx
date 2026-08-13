@@ -31,6 +31,7 @@ import { ESTADO_ACTIVIDAD_LABEL, estadoActividadKey } from "../utils/filtroOpcio
 import { matchesSearch } from "../utils/search";
 import { exportPlanning } from "../utils/storage";
 import DateInput from "./common/DateInput";
+import TokenFilterBar from "./gantt/TokenFilterBar";
 
 // getActivityStatus (formulas.js) devuelve labels en ESPAÑOL ("Completada",
 // "En proceso", "No iniciada") porque así los consumen los reportes de texto.
@@ -39,12 +40,16 @@ import DateInput from "./common/DateInput";
 // vive en utils/filtroOpciones.js (estadoActividadKey), fuente única para
 // toda la app, y evita el bug de comparar español contra inglés.
 
-// Filtro de la vista (no toca el dato, solo qué filas se muestran).
+// Filtro de la vista (no toca el dato, solo qué filas se muestran). Mismo
+// vocabulario de 5 estados que el <select> de Estado de cada fila
+// (STATUS_SELECT_KEYS más abajo), para que el filtro pueda distinguir
+// Ambiente Pruebas/Producción y no solo los 3 básicos del Gantt.
 const STATUS_FILTERS = [
-  { value: "all",          label: "Todas" },
-  { value: "not_started",  label: "No iniciadas" },
-  { value: "in_progress",  label: "En proceso" },
-  { value: "completed",    label: "Completadas" },
+  { value: "not_started",         label: "No iniciadas" },
+  { value: "in_progress",         label: "En proceso" },
+  { value: "ambiente_pruebas",    label: "Ambiente Pruebas" },
+  { value: "ambiente_produccion", label: "Ambiente Producción" },
+  { value: "completed",           label: "Completadas" },
 ];
 
 const STATUS_CLASS = {
@@ -152,7 +157,19 @@ function Row({
           {a.deployment_role && (
             <span className="htable__auto-badge" title="Subtarea creada automáticamente por la cadena de despliegue">⚙ Auto</span>
           )}
-          <button type="button" className="htable__name-text htable__name-text--link" onClick={() => onOpenActivity?.(a.id)} title="Ver detalle completo">
+          {/* Misma jerarquía tipográfica que el Gantt (gantt-cal__row-text--
+              global, ver gantt.css): solo el nivel 0 (tarea global) se
+              destaca — negrilla + letra un poco más grande — estandarizado
+              en toda la app, no por proyecto. */}
+          <button
+            type="button"
+            className={[
+              "htable__name-text htable__name-text--link",
+              level === 0 && "htable__name-text--global",
+            ].filter(Boolean).join(" ")}
+            onClick={() => onOpenActivity?.(a.id)}
+            title="Ver detalle completo"
+          >
             {a.text || "(sin nombre)"}
           </button>
           {hover && (
@@ -225,7 +242,9 @@ export default function HierarchyTable({
 }) {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [cascadeNotice, setCascadeNotice] = useState(null); // { count } — aviso no bloqueante tras un recálculo
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Array = OR entre los estados elegidos (estilo GitLab, ver TokenFilterBar
+  // — mismo criterio que el Gantt). [] = "todas", sin filtrar.
+  const [statusFilter, setStatusFilter] = useState([]);
   const [textFilter, setTextFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState(2); // 1-4 = profundidad máxima (1=solo raíces), null = todos
   const [exporting, setExporting] = useState(false);
@@ -254,10 +273,10 @@ export default function HierarchyTable({
   // (matchesSearch), así que sin escribir nada el comportamiento es idéntico
   // al filtro de estado solo.
   const rows = useMemo(() => {
-    if (statusFilter === "all" && !textFilter.trim()) return allRows;
+    if (!statusFilter.length && !textFilter.trim()) return allRows;
     const matches = new Set();
     allRows.forEach(({ activity }) => {
-      const matchesStatus = statusFilter === "all" || statusKey(taskStatus, activity.id) === statusFilter;
+      const matchesStatus = !statusFilter.length || statusFilter.includes(statusKey(taskStatus, activity.id));
       const matchesText = matchesSearch(activity.text || "", textFilter);
       if (matchesStatus && matchesText) matches.add(activity.id);
     });
@@ -360,16 +379,22 @@ export default function HierarchyTable({
           <option value="4">Nivel 4</option>
         </select>
         <span className="htable-toolbar__sep" />
-        <span className="htable-toolbar__label">Mostrar:</span>
-        {STATUS_FILTERS.map(f => (
-          <button
-            key={f.value} type="button"
-            className={`htable-toolbar__chip ${statusFilter === f.value ? "htable-toolbar__chip--on" : ""}`}
-            onClick={() => setStatusFilter(f.value)}
-          >
-            {f.label}
-          </button>
-        ))}
+        {/* Filtros acumulativos estilo GitLab (mismo componente que el Gantt,
+            ver TokenFilterBar) — hoy solo Estado (multi-select: se pueden
+            combinar varios a la vez, ej. "No iniciadas" + "En proceso"), con
+            espacio para agregar más tipos de filtro sin rediseñar de nuevo. */}
+        <TokenFilterBar
+          placeholder="Filtrar por Estado…"
+          onClearAll={() => setStatusFilter([])}
+          sections={[
+            {
+              key: "status", label: "Estado", icon: "●", multi: true,
+              value: statusFilter,
+              onSet: v => setStatusFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]),
+              options: STATUS_FILTERS,
+            },
+          ]}
+        />
         <span className="htable-toolbar__sep" />
         <input
           type="text"
@@ -382,7 +407,7 @@ export default function HierarchyTable({
           <button type="button" className="htable-toolbar__chip" onClick={() => setTextFilter("")}>✕ Limpiar</button>
         )}
         <span className="htable-toolbar__count">{rows.length} de {allRowsFull.length}</span>
-        {(statusFilter !== "all" || textFilter.trim()) && (
+        {(statusFilter.length > 0 || textFilter.trim()) && (
           <span className="htable-toolbar__hint">Con un filtro activo no se puede reordenar — quita el estado y la búsqueda primero.</span>
         )}
         <button type="button" className="htable-toolbar__chip" onClick={handleExportExcel} disabled={exporting}>
@@ -443,7 +468,7 @@ export default function HierarchyTable({
                 onOpenActivity={onOpenActivity}
                 onChangeStatus={onChangeStatus}
                 aggProgress={aggregatedProgress(row.activity, childrenOf)}
-                canReorder={statusFilter === "all" && !textFilter.trim()}
+                canReorder={!statusFilter.length && !textFilter.trim()}
                 isDragging={draggedId === row.activity.id}
                 isDropTarget={dropTargetId === row.activity.id && draggedId !== row.activity.id}
                 onRowDragStart={setDraggedId}
