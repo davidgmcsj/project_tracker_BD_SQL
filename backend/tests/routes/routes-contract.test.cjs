@@ -153,9 +153,17 @@ test("GET /api/quarters/:id con id válido pero inexistente responde 404", async
 
 // ── Ingenieros y contactos ────────────────────────────────────────────────────
 
-test("POST /api/engineers/sync-one sin ingeniero responde 400", async () => {
+// requireAdmin: gestión del catálogo completo de ingenieros — mismo
+// criterio que ya oculta "Equipo" para no-admin en el frontend. Sin sesión
+// el 401 de requireAdmin corre ANTES que la validación de body.
+test("POST /api/engineers/sync-one sin sesión responde 401 (requiere rol admin)", async () => {
   const res = await srv.api("/api/engineers/sync-one", { method: "POST", body: {} });
-  assert.ok(res.status === 400 || res.status === 503, `recibí ${res.status}`);
+  assert.equal(res.status, 401);
+});
+
+test("POST /api/engineers/delete-one sin sesión responde 401 (requiere rol admin)", async () => {
+  const res = await srv.api("/api/engineers/delete-one", { method: "POST", body: {} });
+  assert.equal(res.status, 401);
 });
 
 test("POST /api/external-contacts/sync-one sin contacto responde 400", async () => {

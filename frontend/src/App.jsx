@@ -23,10 +23,11 @@ import {
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
-  syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
+  syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
   syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
-  authHeaders, getCurrentUser, logout,
+  authHeaders, getCurrentUser, logout, loadUsers,
 } from "./utils/storage";
+import { countTotalAssignedTasks } from "./utils/engineers";
 import { apiUrl } from "./utils/api";
 import { generateQuarterlyReport } from "./utils/generateQuarterlyReport";
 import { recomputeWeeklyFields } from "./utils/weekPlanning";
@@ -556,6 +557,56 @@ export default function App() {
     syncAndStoreSqlId(updated);
   };
 
+  // Borrado real del catálogo (no "desactivar") — a propósito más
+  // restrictivo que activar/desactivar: una vez borrado no hay vuelta atrás
+  // sin recrearlo desde cero. Dos bloqueos antes de tocar nada:
+  //   1. Tiene actividades asignadas en algún proyecto — borrarlo dejaría
+  //      "assigned_engineers" apuntando a un id que ya no existe en el
+  //      catálogo, rompiendo el nombre mostrado en cualquier vista.
+  //   2. Está vinculado a una cuenta de Usuario (login) — esa cuenta
+  //      quedaría con IngenieroID apuntando a nadie, y un no-admin logueado
+  //      con ella perdería el vínculo que la app usa para filtrar sus
+  //      propios proyectos (ver lockedEngineerId en EngineerHub).
+  // Devuelve { ok: true } o { ok: false, reason } — el caller (EngineersView)
+  // decide cómo mostrar el bloqueo, esto no lanza para el caso esperado de
+  // "no se puede borrar todavía".
+  const removeEngineer = async (id) => {
+    const eng = engineers.find(e => e.id === id);
+    if (!eng) return { ok: false, reason: "Ingeniero no encontrado." };
+
+    const totalAsignadas = projects.reduce((sum, p) => sum + countTotalAssignedTasks(id, p), 0);
+    if (totalAsignadas > 0) {
+      return { ok: false, reason: `Tiene ${totalAsignadas} actividad(es) asignada(s) en proyectos. Reasígnalas antes de eliminarlo.` };
+    }
+
+    if (eng.sql_id) {
+      const usuarios = await loadUsers().catch(() => null);
+      if (usuarios === null) {
+        return { ok: false, reason: "No se pudo verificar si tiene un usuario vinculado (sin conexión). Intenta de nuevo." };
+      }
+      const usuarioVinculado = usuarios.find(u => u.ingenieroId === eng.sql_id);
+      if (usuarioVinculado) {
+        return { ok: false, reason: `Está vinculado al usuario "${usuarioVinculado.username}". Desvincúlalo o elimina ese usuario primero (pestaña Administración).` };
+      }
+    }
+
+    const next = engineers.filter(e => e.id !== id);
+    persistEngineers(next);
+
+    if (eng.sql_id) {
+      try {
+        await deleteEngineerFromSQL(eng.sql_id);
+      } catch (e) {
+        // El catálogo local ya quedó sin él — SQL puede tener historial
+        // (reportes, actividades archivadas) que bloquea el DELETE ahí.
+        // No revertimos el borrado local por esto: el mensaje se lo
+        // pasamos al admin para que sepa que en SQL sigue existiendo.
+        return { ok: true, sqlWarning: e.message };
+      }
+    }
+    return { ok: true };
+  };
+
   // Sincroniza cada tarea nueva/editada a SQL y borra las que ya no están en la
   // lista nueva. El cambio local ya se guardó por persistEngineers antes de esto,
   // así que un fallo de red aquí no pierde nada — solo queda desactualizado en SQL
@@ -789,6 +840,7 @@ export default function App() {
             onAdd={addEngineer}
             onUpdate={updateEngineer}
             onToggleActive={toggleEngineerActive}
+            onRemove={removeEngineer}
             onUpdateTasks={updateEngineerTasks}
             onToggleUrgent={toggleActivityUrgent}
             onReorderQueue={updateEngineerQueueOrder}

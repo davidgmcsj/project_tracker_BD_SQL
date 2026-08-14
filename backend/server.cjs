@@ -39,7 +39,7 @@ const { errorBody }                         = require("./middleware/error-handle
 // engineers.routes.cjs).
 const { db, ai, auth, reportsRouter } = require("./config/modules.cjs");
 
-const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL,
+const { getPool, saveWeekReportToDB, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL,
         deleteEngineerTaskFromSQL, syncActividadesDetalle, syncExternalContactToSQL,
         saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
         rebuildDataJsonFromSQL, maxSqlSavedAt,
@@ -157,7 +157,7 @@ app.use("/api/users", crearUsersRouter({ requireAdmin, listUsers, createUser, up
 
 app.use("/api/attachments", crearAttachmentsRouter({ attachmentJsonParser, saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, errorBody }));
 
-app.use("/api", crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody }));
+app.use("/api", crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody, requireAdmin }));
 
 app.use("/api", crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, saveWeekReportToDB, errorBody, requireAdmin }));
 

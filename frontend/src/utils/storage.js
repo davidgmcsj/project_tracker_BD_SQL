@@ -149,6 +149,22 @@ export async function syncEngineerToSQL(engineer) {
   }
 }
 
+// Borrado real del ingeniero en SQL — a diferencia de syncEngineerToSQL, NO
+// traga el error: el caller (App.jsx removeEngineer) necesita saber si falló
+// por historial vinculado (FK) para mostrarle al admin un mensaje útil en
+// vez de fingir que se borró.
+export async function deleteEngineerFromSQL(sqlId) {
+  const res = await fetch(`${API_BASE}/api/engineers/delete-one`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "include",
+    body: JSON.stringify({ sqlId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // ── Sincronización de tareas sueltas del ingeniero con SQL ────────────────────
 // Mismo principio: el cambio local ya quedó guardado por saveProjects antes de
 // llamar esto, así que un fallo de red/BD aquí no pierde datos del usuario.

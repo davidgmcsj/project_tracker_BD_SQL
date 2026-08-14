@@ -11,11 +11,13 @@ const express = require("express");
  * @param {object} deps
  * @param {Function} [deps.syncExternalContactToSQL]
  * @param {Function} [deps.syncEngineerToSQL]
+ * @param {Function} [deps.deleteEngineerFromSQL]
  * @param {Function} [deps.syncEngineerTaskToSQL]
  * @param {Function} [deps.deleteEngineerTaskFromSQL]
  * @param {Function} deps.errorBody
+ * @param {Function} deps.requireAdmin
  */
-function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody }) {
+function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody, requireAdmin }) {
   const router = express.Router();
 
   router.post("/external-contacts/sync-one", async (req, res) => {
@@ -37,7 +39,14 @@ function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syn
   // que la tabla Ingenieros de Azure SQL quede al día de inmediato (nombre,
   // cargo, estado). Devuelve el IngenieroID real de SQL para guardarlo en el
   // catálogo local (sql_id).
-  router.post("/engineers/sync-one", async (req, res) => {
+  //
+  // requireAdmin: gestión del catálogo completo (alta/edición de CUALQUIER
+  // ingeniero) — mismo criterio que ya oculta la pestaña "Equipo" para
+  // no-admin en el frontend, ahora también aplicado en el servidor. NO se
+  // aplica a /engineers/tasks/* (tareas sueltas propias) ni a
+  // /external-contacts/sync-one — esas sí las usa un ingeniero no-admin
+  // sobre sus propios datos (ver EngineerHub "Mi semana" y AssigneeDropdown).
+  router.post("/engineers/sync-one", requireAdmin, async (req, res) => {
     if (!syncEngineerToSQL) {
       return res.status(503).json({ error: "Módulo de BD no disponible" });
     }
@@ -49,6 +58,32 @@ function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syn
     } catch (e) {
       console.error("[SQL] Error sincronizando ingeniero:", e.message);
       res.status(500).json(errorBody("Error sincronizando ingeniero", e));
+    }
+  });
+
+  // Borrado real del catálogo — a diferencia de "desactivar" (Estado=0 vía
+  // sync-one), esto QUITA la fila. El frontend (App.jsx removeEngineer) ya
+  // bloqueó el intento si el ingeniero tiene actividades asignadas o un
+  // usuario vinculado, pero SQL puede tener sus propias FK (reportes
+  // históricos, etc.) que el frontend no ve — si el DELETE falla por eso,
+  // se devuelve tal cual para que el admin sepa que hay historial
+  // vinculado, en vez de un 500 genérico.
+  router.post("/engineers/delete-one", requireAdmin, async (req, res) => {
+    if (!deleteEngineerFromSQL) {
+      return res.status(503).json({ error: "Módulo de BD no disponible" });
+    }
+    try {
+      const { sqlId } = req.body;
+      if (!sqlId) return res.status(400).json({ error: "Falta el id del ingeniero" });
+      await deleteEngineerFromSQL(sqlId);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[SQL] Error borrando ingeniero:", e.message);
+      const esFK = /REFERENCE|FOREIGN KEY|constraint/i.test(e.message || "");
+      const msg = esFK
+        ? "No se pudo eliminar: tiene historial vinculado en la base de datos (reportes, actividades). Solo se puede desactivar."
+        : "Error borrando ingeniero";
+      res.status(esFK ? 409 : 500).json(errorBody(msg, e));
     }
   });
 
