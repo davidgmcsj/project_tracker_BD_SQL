@@ -7,10 +7,10 @@
 // Cada actividad puede traer status ya resuelto (a.status) o resolverse desde
 // completedSet/inProgressSet — lo que ya tenga cada caller.
 //
-// onOpenActivity recibe solo el activityId (no projectId como
-// EngineerWeekTable): esta tabla vive SIEMPRE dentro de un bloque de un
-// único proyecto ya conocido por quien la usa (ProjectActivitiesCard,
-// ProjectBlock) — pedirle el projectId por fila sería redundante.
+// onOpenActivity recibe solo el activityId (no projectId): esta tabla vive
+// SIEMPRE dentro de un bloque de un único proyecto ya conocido por quien la
+// usa (ProjectActivitiesCard, ProjectBlock) — pedirle el projectId por fila
+// sería redundante.
 
 import StatusBadge, { statusFromSets } from "./StatusBadge";
 import DatesCell from "./DatesCell";

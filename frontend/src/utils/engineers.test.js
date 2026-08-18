@@ -9,6 +9,7 @@ import {
   engineerWeekTasks, engineerNextWeekTasks,
   countLiveWeeklyTasks, getLiveWeekActivitiesInProject, hasLiveWeeklyTasks, countActiveWeeklyTasks,
   buildEngineerWeekKpis, buildEngineerTotals, applyManualOrder,
+  buildEngineerProjectQueue, filterEngineerProjectQueue, QUEUE_SECTION,
 } from "./engineers.js";
 
 // "Hoy" fijo para todos los tests: miércoles 2026-08-05.
@@ -333,4 +334,103 @@ test("applyManualOrder ignora ids del orden guardado que ya no están en la list
   // "z" fue completada/desapareció de la cola — no debe romper nada.
   const result = applyManualOrder(rows, ["z", "b", "a"]);
   assert.deepEqual(result.map(r => r.activity.id), ["b", "a"]);
+});
+
+// ── buildEngineerProjectQueue / filterEngineerProjectQueue ───────────────────
+// Cola jerárquica de UN proyecto (rediseño "Mi semana" por tarjetas): a
+// diferencia de engineerWeekTasks (solo hojas + breadcrumb en texto), aquí se
+// esperan también los ANCESTROS como filas propias (isLeaf:false).
+
+function actWithParent(id, start, due, engineerId, parentId = null, seq = 0) {
+  return { ...act(id, start, due, engineerId), parent_id: parentId, sequence_order: seq };
+}
+
+test("buildEngineerProjectQueue incluye la tarea padre como fila de contexto, una sola vez", () => {
+  const p = project("p1", "Proyecto A", [
+    actWithParent("padre", null, null, null, null, 0),
+    actWithParent("h1", "2026-08-04", "2026-08-06", "e1", "padre", 0),
+    actWithParent("h2", "2026-08-05", "2026-08-07", "e1", "padre", 1),
+  ], {}, "e1");
+
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  const thisWeek = queue[QUEUE_SECTION.THIS_WEEK];
+
+  const padreRows = thisWeek.filter(r => r.activity.id === "padre");
+  assert.equal(padreRows.length, 1, "el padre no debe repetirse aunque dos hojas lo compartan");
+  assert.equal(padreRows[0].isLeaf, false);
+  assert.equal(padreRows[0].situation, null);
+
+  const leafIds = thisWeek.filter(r => r.isLeaf).map(r => r.activity.id);
+  assert.deepEqual(leafIds.sort(), ["h1", "h2"]);
+});
+
+test("buildEngineerProjectQueue ordena las hojas de una sección por fecha de fin ascendente", () => {
+  const p = project("p1", "Proyecto A", [
+    act("tarde", "2026-08-04", "2026-08-09", "e1"),
+    act("pronto", "2026-08-04", "2026-08-05", "e1"),
+  ], {}, "e1");
+
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  const leafIds = queue[QUEUE_SECTION.THIS_WEEK].filter(r => r.isLeaf).map(r => r.activity.id);
+  assert.deepEqual(leafIds, ["pronto", "tarde"]);
+});
+
+test("buildEngineerProjectQueue: una tarea sin ninguna fecha no rompe la clasificación", () => {
+  const p = project("p1", "Proyecto A", [
+    act("sin-fecha", null, null, "e1"),
+    act("con-fecha", "2026-08-04", "2026-08-06", "e1"),
+  ], {}, "e1");
+
+  assert.doesNotThrow(() => buildEngineerProjectQueue("e1", p, TODAY));
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  const allIds = Object.values(queue).flat().filter(r => r.isLeaf).map(r => r.activity.id);
+  assert.ok(!allIds.includes("sin-fecha"), "sin ninguna fecha no se puede ubicar, se descarta");
+  assert.ok(allIds.includes("con-fecha"));
+});
+
+test("buildEngineerProjectQueue: una tarea con fecha más allá de la próxima semana cae en 'later'", () => {
+  const p = project("p1", "Proyecto A", [
+    act("lejana", "2026-08-20", "2026-08-24", "e1"), // 2+ semanas después de TODAY
+  ], {}, "e1");
+
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  assert.equal(queue[QUEUE_SECTION.THIS_WEEK].length, 0);
+  assert.equal(queue[QUEUE_SECTION.NEXT_WEEK].length, 0);
+  const laterIds = queue[QUEUE_SECTION.LATER].filter(r => r.isLeaf).map(r => r.activity.id);
+  assert.deepEqual(laterIds, ["lejana"]);
+});
+
+test("filterEngineerProjectQueue con 'overdue' conserva el ancestro de contexto y descarta hojas no vencidas", () => {
+  const p = project("p1", "Proyecto A", [
+    actWithParent("padre", null, null, null, null, 0),
+    actWithParent("vencida", "2026-07-20", "2026-07-25", "e1", "padre", 0), // antes de TODAY, sin completar
+    actWithParent("al-dia", "2026-08-04", "2026-08-06", "e1", "padre", 1),
+  ], {}, "e1");
+
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  const filtered = filterEngineerProjectQueue(queue, "overdue", "2026-08-05");
+  const thisWeek = filtered[QUEUE_SECTION.THIS_WEEK];
+
+  const leafIds = thisWeek.filter(r => r.isLeaf).map(r => r.activity.id);
+  assert.deepEqual(leafIds, ["vencida"], "solo la hoja vencida sobrevive al filtro");
+  assert.ok(thisWeek.some(r => !r.isLeaf && r.activity.id === "padre"), "el ancestro de contexto se conserva");
+});
+
+test("filterEngineerProjectQueue: un proyecto sin coincidencias tras filtrar queda con secciones vacías", () => {
+  const p = project("p1", "Proyecto A", [
+    act("al-dia", "2026-08-04", "2026-08-06", "e1"),
+  ], {}, "e1");
+
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  const filtered = filterEngineerProjectQueue(queue, "overdue", "2026-08-05");
+  Object.values(filtered).forEach(rows => assert.deepEqual(rows, []));
+});
+
+test("filterEngineerProjectQueue sin filterKey devuelve la cola tal cual", () => {
+  const p = project("p1", "Proyecto A", [
+    act("h1", "2026-08-04", "2026-08-06", "e1"),
+  ], {}, "e1");
+
+  const queue = buildEngineerProjectQueue("e1", p, TODAY);
+  assert.deepEqual(filterEngineerProjectQueue(queue, null, "2026-08-05"), queue);
 });

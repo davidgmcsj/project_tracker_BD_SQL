@@ -2,7 +2,7 @@
 // Funciones puras: no tocan React ni el DOM, solo leen projects/engineers ya cargados.
 
 import { buildActivityIndex, getActivityStatus, toISODate, buildHierarchyIndex, ancestorChain, leafActivities } from "./formulas.js";
-import { activitiesForWeek, weekRange, nextWeekRange, SITUATION, SITUATION_LABEL } from "./weekPlanning.js";
+import { activitiesForWeek, weekRange, nextWeekRange, situationInWeek, activityRange, overlapsWeek, SITUATION, SITUATION_LABEL } from "./weekPlanning.js";
 import { ESTADO_ACTIVIDAD_LABEL } from "./filtroOpciones.js";
 
 // Actividades del ingeniero en ese proyecto que asignadas a él, fuente de
@@ -194,13 +194,13 @@ export function engineerNextWeekTasks(engineerId, projects, today = new Date()) 
 }
 
 // Aplica el orden manual que el propio ingeniero armó a mano (arrastrar y
-// soltar en EngineerWeekTable) sobre una lista ya calculada — orderIds es un
-// array de activity.id en el orden elegido (engineer.orden_ahora /
-// engineer.orden_proxima). Las filas que SÍ están en orderIds van primero,
-// en ese orden; el resto (tareas nuevas que el ingeniero nunca tocó, o que
-// cambiaron de rango) cae detrás, en el orden automático que ya traía `rows`
-// — así una tarea recién aparecida no se cuela a mitad de un orden que el
-// ingeniero ya fijó a propósito.
+// soltar en EngineerProjectTable) sobre una lista ya calculada — orderIds es
+// un array de activity.id en el orden elegido (engineer.orden_ahora_<sección>
+// _<projectId>, ver claves en EngineerHub). Las filas que SÍ están en
+// orderIds van primero, en ese orden; el resto (tareas nuevas que el
+// ingeniero nunca tocó, o que cambiaron de rango) cae detrás, en el orden
+// automático que ya traía `rows` — así una tarea recién aparecida no se cuela
+// a mitad de un orden que el ingeniero ya fijó a propósito.
 export function applyManualOrder(rows, orderIds) {
   if (!Array.isArray(orderIds) || !orderIds.length) return rows;
   const orderIndex = new Map(orderIds.map((id, i) => [id, i]));
@@ -208,6 +208,160 @@ export function applyManualOrder(rows, orderIds) {
     .sort((a, b) => orderIndex.get(a.activity.id) - orderIndex.get(b.activity.id));
   const unknown = rows.filter(r => !orderIndex.has(r.activity.id));
   return [...known, ...unknown];
+}
+
+// ── Cola de tareas de UN proyecto, con jerarquía completa (pantalla "mi
+// semana" del ingeniero, rediseño por tarjetas — ver EngineerHub) ────────────
+// A diferencia de engineerWeekTasks/engineerNextWeekTasks (que solo listan
+// hojas, cruzando todos los proyectos, con el breadcrumb de ancestros como
+// texto plano dentro de la misma celda), esta función trabaja UN proyecto a
+// la vez y devuelve TAMBIÉN los ancestros como filas propias — para que el
+// ingeniero vea la tarea global/padre (nivel 0), el nivel intermedio y la
+// hoja como renglones separados con su propia tipografía, igual que
+// Planificación (HierarchyTable), en vez de un breadcrumb concatenado.
+
+export const QUEUE_SECTION = { THIS_WEEK: "thisWeek", NEXT_WEEK: "nextWeek", LATER: "later" };
+
+export const QUEUE_SECTION_LABEL = {
+  [QUEUE_SECTION.THIS_WEEK]: "Esta semana",
+  [QUEUE_SECTION.NEXT_WEEK]: "Próxima semana",
+  [QUEUE_SECTION.LATER]:     "Más adelante",
+};
+
+// Hojas del proyecto asignadas al ingeniero, sin completar — mismo criterio
+// que engineerActivitiesForRange (leafActivities + assigned_engineers) y
+// buildEngineerWeekKpis (excluye "Completada").
+function myPendingLeaves(engineerId, project) {
+  const leafIds = new Set(leafActivities(project.activities_identified).map(a => a.id));
+  return (project.activities_identified || []).filter(a =>
+    leafIds.has(a.id) &&
+    (a.assigned_engineers || []).some(e => e.id === engineerId || e.engineer_id === engineerId) &&
+    getActivityStatus(project.task_status, a.id) !== "Completada"
+  );
+}
+
+// A qué sección pertenece una hoja: primero se prueba "esta semana" (con
+// arrastre de vencidas, igual que activitiesForWeek), luego "próxima semana"
+// (sin arrastre — una vencida ya se contó en "esta semana"), y si ninguna
+// aplica, "más adelante" con una situación derivada directamente de sus
+// fechas (STARTS si arranca después de la próxima semana, CONTINUES si ya
+// venía de antes sin encajar en ninguna, DUE como último recurso).
+// situationInWeek(activity, range) por sí sola no basta para decidir en QUÉ
+// sección cae una actividad: además del arrastre de vencidas (r.to <
+// range.start, que sí es intencional), su rama STARTS solo exige "arranca en
+// o después del inicio del rango", SIN techo — una tarea que empieza varias
+// semanas más adelante también cumple esa condición. overlapsWeek sí exige
+// solapamiento real con el rango.
+function classifySection(activity, taskStatus, thisWeek, nextWeek) {
+  const r = activityRange(activity);
+  if (!r) return null; // sin ninguna fecha: no se puede ubicar, se descarta
+
+  const isCarryOver = r.to < thisWeek.start; // arrastre de vencidas, ver activitiesForWeek
+  if (isCarryOver || overlapsWeek(activity, thisWeek)) {
+    const s1 = situationInWeek(activity, thisWeek, taskStatus);
+    if (s1) return { section: QUEUE_SECTION.THIS_WEEK, situation: s1 };
+  }
+  if (overlapsWeek(activity, nextWeek)) {
+    const s2 = situationInWeek(activity, nextWeek, taskStatus);
+    if (s2) return { section: QUEUE_SECTION.NEXT_WEEK, situation: s2 };
+  }
+
+  const situation = r.from > nextWeek.end ? SITUATION.STARTS : SITUATION.CONTINUES;
+  return { section: QUEUE_SECTION.LATER, situation };
+}
+
+/**
+ * Cola de tareas del ingeniero en UN proyecto, con jerarquía completa lista
+ * para render: por cada hoja pendiente, además de su propia fila se insertan
+ * (una sola vez, aunque varias hojas compartan padre) las filas de sus
+ * ancestros, inmediatamente antes de la primera hoja descendiente que
+ * aparece en esa sección — así el ingeniero ve de qué tarea global/objetivo
+ * viene cada pendiente sin que la tabla repita el mismo padre N veces.
+ *
+ * @returns {{ thisWeek: Row[], nextWeek: Row[], later: Row[] }}
+ *   Row = { activity, level, number, isLeaf, situation (null en ancestros) }
+ */
+export function buildEngineerProjectQueue(engineerId, project, today = new Date()) {
+  const thisWeek = weekRange(toISODate(today));
+  const nextWeek = nextWeekRange(toISODate(today));
+  const hIndex = buildHierarchyIndex(project.activities_identified);
+
+  const bySection = { [QUEUE_SECTION.THIS_WEEK]: [], [QUEUE_SECTION.NEXT_WEEK]: [], [QUEUE_SECTION.LATER]: [] };
+
+  myPendingLeaves(engineerId, project).forEach(activity => {
+    const classified = classifySection(activity, project.task_status, thisWeek, nextWeek);
+    if (!classified) return;
+    bySection[classified.section].push({ activity, situation: classified.situation });
+  });
+
+  const result = {};
+  Object.entries(bySection).forEach(([section, leaves]) => {
+    // Prioridad: fecha de fin ascendente (la más próxima primero) — mismo
+    // criterio confirmado por el usuario ("organizar de acuerdo a su fecha
+    // de fin para saber cuál priorizar").
+    leaves.sort((a, b) => (a.activity.due_date || a.activity.start_date || "")
+      .localeCompare(b.activity.due_date || b.activity.start_date || ""));
+
+    const emitted = new Set();
+    const rows = [];
+    leaves.forEach(({ activity, situation }) => {
+      ancestorChain(activity.id, hIndex).forEach(anc => {
+        if (emitted.has(anc.id)) return;
+        emitted.add(anc.id);
+        const info = hIndex.map.get(anc.id);
+        rows.push({ activity: hIndex.byId.get(anc.id), level: info?.level ?? 0, number: anc.number, isLeaf: false, situation: null });
+      });
+      const info = hIndex.map.get(activity.id);
+      rows.push({ activity, level: info?.level ?? 0, number: info?.number || "", isLeaf: true, situation });
+    });
+    result[section] = rows;
+  });
+
+  return result;
+}
+
+// Filtra una cola ya construida (buildEngineerProjectQueue) a solo las hojas
+// que matchean `filterKey`, conservando los ancestros de contexto que esas
+// hojas todavía necesitan (mismo patrón de "propagar el match hacia arriba"
+// que ya usa HierarchyTable, pero aquí sobre filas ya aplanadas en vez de
+// sobre el árbol completo). Una sección sin ninguna hoja que matchee queda
+// como array vacío — la tabla la renderiza sin filas, no la oculta (así el
+// ingeniero ve que ese proyecto no tiene nada en esa condición, en vez de que
+// el proyecto entero desaparezca de la vista).
+export function filterEngineerProjectQueue(queue, filterKey, todayIso) {
+  if (!filterKey) return queue;
+
+  const matchesFilter = (row) => {
+    if (!row.isLeaf) return false;
+    if (filterKey === "overdue")  return row.situation === SITUATION.OVERDUE;
+    if (filterKey === "dueToday") return row.activity.due_date === todayIso;
+    return true; // filterKey === "thisWeek": ya viene resuelto por la sección
+  };
+
+  const result = {};
+  Object.entries(queue).forEach(([section, rows]) => {
+    const keepIds = new Set(rows.filter(matchesFilter).map(r => r.activity.id));
+    if (!keepIds.size) { result[section] = []; return; }
+
+    // Un ancestro se conserva si alguna hoja que sobrevivió al filtro está
+    // "debajo" de él en la lista ya aplanada (entre su propia posición y la
+    // del siguiente ancestro/hoja del mismo nivel) — más simple: como las
+    // filas ya vienen intercaladas (ancestro justo antes de su primera hoja
+    // visible), basta con recorrer de atrás hacia adelante y arrastrar el
+    // "necesito este ancestro" hacia arriba mientras el nivel decrece.
+    const kept = [];
+    let needLevel = Infinity;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      if (row.isLeaf) {
+        if (keepIds.has(row.activity.id)) { kept.unshift(row); needLevel = row.level; }
+        continue;
+      }
+      if (row.level < needLevel) { kept.unshift(row); needLevel = row.level; }
+    }
+    result[section] = kept;
+  });
+  return result;
 }
 
 // ── Exportar la cola a Markdown (tabla) ───────────────────────────────────────
@@ -222,48 +376,54 @@ function escMd(s) {
   return String(s || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
-// showProject=false omite la columna Proyecto — se usa en el export POR
-// proyecto (ProjectPlanningOverlays ya lo dice en el título del overlay, no
-// hace falta repetirlo en cada fila).
-function mdTableForRows(rows, showProject) {
-  const header = showProject
-    ? "| N° | Actividad | Proyecto | Inicio | Fin | Situación |"
-    : "| N° | Actividad | Inicio | Fin | Situación |";
-  const sep = showProject
-    ? "|---|---|---|---|---|---|"
-    : "|---|---|---|---|---|";
+// Tabla markdown de UNA sección de una cola (buildEngineerProjectQueue): cada
+// fila lleva su número jerárquico y su texto indentado con "—" según el
+// nivel, para que un ancestro (isLeaf:false) se distinga de una hoja incluso
+// en texto plano. La columna Situación queda vacía en las filas de ancestro
+// (no tienen situación propia, son solo contexto).
+function mdTableForQueueSection(rows) {
+  const header = "| N° | Actividad | Inicio | Fin | Situación |";
+  const sep    = "|---|---|---|---|---|";
   const body = rows.map(row => {
-    const breadcrumb = row.ancestors.length ? `${row.ancestors.map(a => escMd(a.text)).join(" › ")} › ` : "";
-    const actividad = `${breadcrumb}${escMd(row.activity.text) || "(sin nombre)"}`;
+    const indent = row.level > 0 ? "—".repeat(row.level) + " " : "";
+    const actividad = `${indent}${escMd(row.activity.text) || "(sin nombre)"}`;
     const inicio = row.activity.start_date || "?";
     const fin = row.activity.due_date || "?";
-    const situacion = SITUATION_LABEL[row.situation] || row.situation;
-    return showProject
-      ? `| ${row.number} | ${actividad} | ${escMd(row.projectName)} | ${inicio} | ${fin} | ${situacion} |`
-      : `| ${row.number} | ${actividad} | ${inicio} | ${fin} | ${situacion} |`;
+    const situacion = row.isLeaf ? (SITUATION_LABEL[row.situation] || row.situation || "") : "";
+    return `| ${row.number} | ${actividad} | ${inicio} | ${fin} | ${situacion} |`;
   });
   return [header, sep, ...body].join("\n");
 }
 
 /**
+ * Exporta una o más colas de proyecto (buildEngineerProjectQueue) a Markdown,
+ * una sección `## Proyecto` por proyecto y, dentro, una sub-sección `###` por
+ * cada QUEUE_SECTION_LABEL (Esta semana / Próxima semana / Más adelante) —
+ * misma estructura que se ve en pantalla (EngineerProjectTable), para que lo
+ * descargado coincida con lo que el ingeniero ya revisó.
+ *
  * @param {string} engineerName
- * @param {{ title: string, rows: object[] }[]} sections — en el orden que deben aparecer
- * @param {object} [opts]
- * @param {string} [opts.scopeLabel] — ej. nombre del proyecto, para el título ("Mi cola — PRO-10-GTH")
- * @param {boolean} [opts.showProject] — false cuando ya se sabe el proyecto (export por proyecto)
+ * @param {{ project: object, queue: ReturnType<typeof buildEngineerProjectQueue> }[]} projectQueues
  */
-export function buildEngineerQueueMarkdown(engineerName, sections, opts = {}) {
-  const { scopeLabel, showProject = true } = opts;
-  const titulo = scopeLabel ? `Mi cola de trabajo — ${engineerName} — ${scopeLabel}` : `Mi cola de trabajo — ${engineerName}`;
+export function buildEngineerQueueMarkdown(engineerName, projectQueues) {
+  const titulo = projectQueues.length === 1
+    ? `Mis tareas — ${engineerName} — ${projectQueues[0].project.project_name || "Proyecto"}`
+    : `Mis tareas — ${engineerName}`;
   const lines = [`# ${titulo}`, ""];
-  sections.forEach(({ title, rows }) => {
-    lines.push(`## ${title}`, "");
-    if (!rows.length) {
-      lines.push("_Sin actividades._", "");
-    } else {
-      lines.push(mdTableForRows(rows, showProject), "");
-    }
+
+  projectQueues.forEach(({ project, queue }) => {
+    lines.push(`## ${project.project_name || "Proyecto"}`, "");
+    [QUEUE_SECTION.THIS_WEEK, QUEUE_SECTION.NEXT_WEEK, QUEUE_SECTION.LATER].forEach(section => {
+      const rows = queue[section] || [];
+      lines.push(`### ${QUEUE_SECTION_LABEL[section]}`, "");
+      if (!rows.length) {
+        lines.push("_Sin actividades._", "");
+      } else {
+        lines.push(mdTableForQueueSection(rows), "");
+      }
+    });
   });
+
   return lines.join("\n");
 }
 

@@ -17,17 +17,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  engineerWeekTasks,
-  engineerNextWeekTasks,
-  buildEngineerWeekKpis,
   buildEngineerTotals,
   generateEngineerReportText,
   getProjectsForEngineer,
   applyManualOrder,
+  buildEngineerProjectQueue,
+  filterEngineerProjectQueue,
   buildEngineerQueueMarkdown,
 } from "../utils/engineers";
-import EngineerWeekTable from "./engineer/EngineerWeekTable";
-import EngineerTaskCard from "./engineer/EngineerTaskCard";
+import ProjectQueueCard from "./engineer/ProjectQueueCard";
+import ProjectQueueOverlay from "./engineer/ProjectQueueOverlay";
 import LooseTasksSection from "./engineer/LooseTasksSection";
 import EngineersView from "./EngineersView";
 import EngineerReportBody from "./EngineerReportBody";
@@ -53,23 +52,8 @@ const SUBTABS = [
   { key: "historial", label: "Historial" },
 ];
 
-function KpiChip({ tone, count, label, active, onClick }) {
-  return (
-    <button
-      type="button"
-      className={`eng-kpi-chip eng-kpi-chip--${tone} ${active ? "eng-kpi-chip--active" : ""}`}
-      onClick={onClick}
-    >
-      <span className="eng-kpi-chip__count">{count}</span>
-      <span className="eng-kpi-chip__label">{label}</span>
-    </button>
-  );
-}
-
-// Variante de solo lectura de KpiChip — para el panorama agregado
-// (buildEngineerTotals), que no filtra nada al hacer clic, a diferencia de
-// la franja semanal de arriba. <div>, no <button>: un control sin acción
-// confunde más de lo que ayuda.
+// Panorama agregado de solo lectura (buildEngineerTotals) — <div>, no
+// <button>: un control sin acción confunde más de lo que ayuda.
 function KpiStat({ tone, count, label }) {
   return (
     <div className={`eng-kpi-chip eng-kpi-chip--${tone}`}>
@@ -79,68 +63,74 @@ function KpiStat({ tone, count, label }) {
   );
 }
 
-// Sub-pestaña "Mi semana": KPIs accionables + lista priorizada "qué hacer
-// ahora" + vista rápida de la próxima semana. Todo se deriva en vivo desde
-// las fechas (utils/weekPlanning.js vía utils/engineers.js) — nada nuevo que
-// mantener sincronizado.
-function MyWeekTab({ engineer, projects, onOpenActivity, onToggleUrgent, onReorderQueue, onUpdateTasks, onOpenProjectHierarchy }) {
-  const [filter, setFilter] = useState(null); // "overdue" | "today" | null
+// Reordena las filas de UNA sección de una cola (buildEngineerProjectQueue)
+// según el orden manual que el ingeniero fijó para las HOJAS (leafOrder, ver
+// applyManualOrder) — los ancestros de contexto no tienen orden propio, así
+// que cada uno se re-emite junto con la primera hoja que lo traía consigo en
+// la cola original (buildEngineerProjectQueue ya los intercala justo antes
+// de esa hoja), sin importar en qué posición quede esa hoja tras reordenar.
+function reorderQueueSection(rows, leafOrder) {
+  if (!Array.isArray(leafOrder) || !leafOrder.length) return rows;
 
-  const weekRows = useMemo(
-    () => engineerWeekTasks(engineer.id, projects, TODAY),
-    [engineer.id, projects]
+  // Agrupa cada hoja con los ancestros que la preceden inmediatamente en la
+  // cola original (un solo recorrido: cualquier ancestro "suelto" se adjunta
+  // a la próxima hoja que aparezca).
+  const groupByLeafId = new Map();
+  let pendingAncestors = [];
+  rows.forEach(row => {
+    if (!row.isLeaf) { pendingAncestors.push(row); return; }
+    groupByLeafId.set(row.activity.id, [...pendingAncestors, row]);
+    pendingAncestors = [];
+  });
+
+  const orderedLeaves = applyManualOrder(
+    rows.filter(r => r.isLeaf).map(r => ({ activity: r.activity })),
+    leafOrder
   );
-  const nextWeekRows = useMemo(
-    () => engineerNextWeekTasks(engineer.id, projects, TODAY),
-    [engineer.id, projects]
-  );
-  const kpis = useMemo(
-    () => buildEngineerWeekKpis(weekRows, projects, TODAY),
-    [weekRows, projects]
-  );
+  return orderedLeaves.flatMap(({ activity }) => groupByLeafId.get(activity.id) || []);
+}
+
+// Sub-pestaña "Mi semana": KPIs agregados + una tarjeta por proyecto
+// (ProjectQueueCard). Cada tarjeta abre su propia tabla jerárquica
+// (ProjectQueueOverlay → EngineerProjectTable) con Esta semana/Próxima
+// semana/Más adelante — reemplaza la lista plana cross-proyecto anterior.
+function MyWeekTab({ engineer, projects, onOpenActivity, onToggleUrgent, onReorderQueue, onUpdateTasks, onOpenProjectHierarchy }) {
+  const [queueProject, setQueueProject] = useState(null); // proyecto abierto en ProjectQueueOverlay, o null
+  const [activeFilter, setActiveFilter] = useState(null); // "overdue" | "dueToday" | null — con qué se abrió el overlay
+
   const totals = useMemo(
     () => buildEngineerTotals(engineer.id, projects, TODAY),
     [engineer.id, projects]
   );
 
-  // Orden manual del propio ingeniero (arrastrar y soltar, ver
-  // EngineerWeekTable) por encima del orden automático — persiste en
-  // engineer.orden_ahora/orden_proxima (ver App.jsx toggleQueueOrder).
-  const orderedTodo = useMemo(
-    () => applyManualOrder(kpis.todo, engineer.orden_ahora),
-    [kpis.todo, engineer.orden_ahora]
-  );
-  const orderedNextWeek = useMemo(
-    () => applyManualOrder(nextWeekRows, engineer.orden_proxima),
-    [nextWeekRows, engineer.orden_proxima]
+  const myProjects = useMemo(
+    () => getProjectsForEngineer(engineer.id, projects),
+    [engineer.id, projects]
   );
 
-  // La tarjeta de Foco es SIEMPRE la primera de la cola ya priorizada/
-  // reordenada a mano — no depende de los chips de filtro de abajo, para que
-  // "en qué debo estar trabajando ahora" nunca cambie por estar mirando un
-  // filtro distinto.
-  const focusRow = orderedTodo[0] || null;
+  // Una cola jerárquica por proyecto (buildEngineerProjectQueue), con el
+  // orden manual del ingeniero ya aplicado por sección — reemplaza el orden
+  // global "orden_ahora"/"orden_proxima" cross-proyecto por uno acotado a
+  // cada proyecto+sección (engineer.orden_<sección>_<projectId>), porque el
+  // reordenar a mano ahora vive DENTRO de la tabla de un proyecto, no en una
+  // lista que cruza todos (confirmado con el usuario).
+  const projectQueues = useMemo(() => myProjects.map(project => {
+    const raw = buildEngineerProjectQueue(engineer.id, project, TODAY);
+    const ordered = {};
+    Object.entries(raw).forEach(([section, rows]) => {
+      ordered[section] = reorderQueueSection(rows, engineer[`orden_${section}_${project.id}`]);
+    });
+    return { project, queue: ordered };
+  }), [myProjects, engineer]);
 
   const todayIso = TODAY.toISOString().slice(0, 10);
-  const visibleTodo = orderedTodo.filter(row => {
-    if (focusRow && row.activity.id === focusRow.activity.id && row.projectId === focusRow.projectId) return false;
-    if (filter === "overdue") return row.situation === "overdue";
-    if (filter === "today") return row.activity.due_date === todayIso;
-    return true;
-  });
 
-  // El drag & drop de "Qué hacer ahora" solo mueve entre sí los elementos
-  // REALMENTE visibles (visibleTodo, ya sin el de Foco) — solo es seguro
-  // reordenar y guardar cuando esa lista es la cola completa sin recortar
-  // (filter === null); con un chip activo, guardar el orden de un
-  // SUBCONJUNTO borraría del orden guardado todo lo que el filtro esconde.
-  // La tarjeta de Foco no se puede arrastrar en esta primera versión: cambia
-  // sola al resolverla o al marcar otra como urgente.
-  const handleReorderNow = (visibleIds) => {
-    const ids = focusRow ? [focusRow.activity.id, ...visibleIds] : visibleIds;
-    onReorderQueue?.(engineer.id, "orden_ahora", ids);
+  const countInQueue = (queue, pred) =>
+    Object.values(queue).reduce((sum, rows) => sum + rows.filter(r => r.isLeaf && pred(r)).length, 0);
+
+  const handleReorderSection = (project, section, leafIds) => {
+    onReorderQueue?.(engineer.id, `orden_${section}_${project.id}`, leafIds);
   };
-  const handleReorderNext = (ids) => onReorderQueue?.(engineer.id, "orden_proxima", ids);
 
   // Nombre de archivo seguro: sin tildes/ñ (normalize NFD + descarta marcas
   // combinantes ̀-ͯ) ni caracteres que Windows/macOS rechacen en
@@ -159,23 +149,22 @@ function MyWeekTab({ engineer, projects, onOpenActivity, onToggleUrgent, onReord
     URL.revokeObjectURL(url);
   };
 
-  // Sin project: exporta TODOS los proyectos del ingeniero, con columna
-  // Proyecto (para distinguir de dónde viene cada fila). Con project: solo
-  // las tareas de ESE proyecto, sin esa columna (ya se sabe cuál es por el
-  // título del archivo).
+  // Sin project: exporta TODOS los proyectos del ingeniero ("Exportar todas
+  // las tareas"). Con project: solo ese proyecto ("Descargar tareas" de la
+  // tarjeta) — misma estructura jerárquica + 3 secciones en ambos casos.
   const handleExportMarkdown = (project) => {
-    const filterByProject = (rows) => project ? rows.filter(r => r.projectId === project.id) : rows;
-    const md = buildEngineerQueueMarkdown(engineer.name, [
-      { title: "Qué hacer ahora", rows: filterByProject(orderedTodo) },
-      { title: "Próxima semana", rows: filterByProject(orderedNextWeek) },
-    ], { scopeLabel: project?.project_name, showProject: !project });
-    downloadMarkdown(md, `mi-cola-${slug(engineer.name)}${project ? `-${slug(project.project_name)}` : ""}`);
+    const scoped = project ? projectQueues.filter(pq => pq.project.id === project.id) : projectQueues;
+    const md = buildEngineerQueueMarkdown(engineer.name, scoped);
+    downloadMarkdown(md, `mis-tareas-${slug(engineer.name)}${project ? `-${slug(project.project_name)}` : ""}`);
   };
 
-  const myProjects = useMemo(
-    () => getProjectsForEngineer(engineer.id, projects),
-    [engineer.id, projects]
-  );
+  const openQueueFor = (project, filterKey) => {
+    setQueueProject(project);
+    setActiveFilter(filterKey || null);
+  };
+
+  const openPq = projectQueues.find(pq => pq.project.id === queueProject?.id);
+  const displayedQueue = openPq ? filterEngineerProjectQueue(openPq.queue, activeFilter, todayIso) : null;
 
   return (
     <>
@@ -190,85 +179,47 @@ function MyWeekTab({ engineer, projects, onOpenActivity, onToggleUrgent, onReord
         <KpiStat tone="danger"  count={totals.overdue}    label="Vencidas" />
       </div>
 
-      {myProjects.length > 0 && (
-        <>
-          <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
-            Ver jerarquía completa por proyecto
-          </h3>
-          <div className="eng-project-buttons">
-            {myProjects.map(p => (
-              <div key={p.id} className="eng-project-btn-group">
-                <button
-                  type="button"
-                  className="eng-project-btn"
-                  onClick={() => onOpenProjectHierarchy?.(p.id)}
-                  title={`Ver ${p.project_name} en Planificación, con toda la jerarquía de tareas`}
-                >
-                  📂 {p.project_name || "Proyecto"}
-                </button>
-                <button
-                  type="button"
-                  className="eng-project-btn eng-project-btn--export"
-                  onClick={() => handleExportMarkdown(p)}
-                  title={`Descargar tareas pendientes de ${p.project_name} en .md`}
-                >
-                  ⬇ Descargar tareas pendientes
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
-        Esta semana
-      </h3>
-      <div className="eng-kpi-strip">
-        <KpiChip tone="danger"  count={kpis.overdue}  label="Vencidas"
-          active={filter === "overdue"} onClick={() => setFilter(f => f === "overdue" ? null : "overdue")} />
-        <KpiChip tone="warn"    count={kpis.dueToday} label="Vence hoy"
-          active={filter === "today"} onClick={() => setFilter(f => f === "today" ? null : "today")} />
-        <KpiChip tone="info"    count={kpis.thisWeek} label="Esta semana"
-          active={filter === null} onClick={() => setFilter(null)} />
-        <KpiChip tone="neutral" count={kpis.pending}  label="Pendientes"
-          active={false} onClick={() => setFilter(null)} />
-      </div>
-
-      {focusRow && (
-        <EngineerTaskCard
-          row={focusRow}
-          variant="focus"
-          onOpenActivity={onOpenActivity}
-          onToggleUrgent={onToggleUrgent}
-        />
-      )}
-
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "20px 0 12px" }}>
-        <h3 className="report-section-title" style={{ margin: 0 }}>
-          Qué hacer ahora {filter && <span className="act-count">{visibleTodo.length}</span>}
-        </h3>
-        <button type="button" className="btn" onClick={() => handleExportMarkdown()}>⬇ Exportar .md (todos los proyectos)</button>
+        <h3 className="report-section-title" style={{ margin: 0 }}>Mis proyectos</h3>
+        {projectQueues.length > 0 && (
+          <button type="button" className="btn" onClick={() => handleExportMarkdown()}>⬇ Exportar todas las tareas</button>
+        )}
       </div>
-      {/* Reordenar arrastrando solo disponible sin filtro activo — con un
-          chip activo, visibleTodo es un SUBCONJUNTO y guardar su orden
-          borraría del orden guardado todo lo que el filtro esconde (ver
-          comentario de handleReorderNow). */}
-      <EngineerWeekTable
-        rows={visibleTodo}
-        onOpenActivity={onOpenActivity}
-        onToggleUrgent={onToggleUrgent}
-        onReorder={filter === null ? handleReorderNow : undefined}
-      />
 
-      <h3 className="report-section-title" style={{ margin: "20px 0 12px" }}>
-        Próxima semana ({orderedNextWeek.length})
-      </h3>
-      <EngineerWeekTable rows={orderedNextWeek} onOpenActivity={onOpenActivity} onReorder={handleReorderNext} />
+      {projectQueues.length === 0 && (
+        <p style={{ color: "var(--text-2)" }}>Sin proyectos asignados todavía.</p>
+      )}
+
+      <div className="eng-pcard-grid">
+        {projectQueues.map(({ project, queue }) => (
+          <ProjectQueueCard
+            key={project.id}
+            project={project}
+            overdueCount={countInQueue(queue, r => r.situation === "overdue")}
+            dueTodayCount={countInQueue(queue, r => r.activity.due_date === todayIso)}
+            onOpenPlanning={() => onOpenProjectHierarchy?.(project.id)}
+            onViewQueue={(filterKey) => openQueueFor(project, filterKey)}
+            onDownload={() => handleExportMarkdown(project)}
+          />
+        ))}
+      </div>
 
       <LooseTasksSection
         tasks={engineer.tasks}
         onChange={tasks => onUpdateTasks?.(engineer.id, tasks)}
         engineerName={engineer.name}
+      />
+
+      <ProjectQueueOverlay
+        open={!!queueProject}
+        onClose={() => { setQueueProject(null); setActiveFilter(null); }}
+        project={queueProject}
+        queue={displayedQueue || {}}
+        filterKey={activeFilter}
+        onOpenActivity={onOpenActivity}
+        onToggleUrgent={onToggleUrgent}
+        onReorderSection={activeFilter === null ? (section, ids) => handleReorderSection(queueProject, section, ids) : undefined}
+        onExportMarkdown={handleExportMarkdown}
       />
     </>
   );
@@ -278,7 +229,7 @@ export default function EngineerHub({
   engineers, projects,
   onAdd, onUpdate, onToggleActive, onRemove, onUpdateTasks,
   onToggleUrgent,  // (projectId, activityId) => void — alterna es_urgente, ver App.jsx
-  onReorderQueue,  // (engineerId, "orden_ahora"|"orden_proxima", ids[]) => void
+  onReorderQueue,  // (engineerId, "orden_<sección>_<projectId>", ids[]) => void
   onOpenActivity,  // (projectId, activityId) => void — abre la tarjeta de detalle
   onOpenProjectHierarchy, // (projectId) => void — abre Planificación completa del proyecto
   initialSubtab,  // sub-pestaña con la que abrir al navegar desde fuera (NavGroup)

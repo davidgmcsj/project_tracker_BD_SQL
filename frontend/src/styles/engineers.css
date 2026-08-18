@@ -460,11 +460,6 @@
 
 .eng-kpi-chip--ok      .eng-kpi-chip__count { color: var(--green); }
 
-.eng-kpi-chip--active {
-  border-color: var(--azul-oscuro);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--azul-oscuro) 25%, transparent);
-}
-
 /* KpiStat (EngineerHub.jsx) reusa .eng-kpi-chip pero es un <div> de solo
    lectura, no un <button> — sin cursor de mano ni hover de enlace. */
 div.eng-kpi-chip { cursor: default; }
@@ -653,29 +648,107 @@ div.eng-kpi-chip:hover { border-color: var(--border); }
 }
 
 
-/* ── Botones "Ver jerarquía completa por proyecto" (Mi semana) ── */
-.eng-project-buttons {
-  display: flex; flex-wrap: wrap; gap: var(--s2);
-  margin-bottom: var(--s5);
+/* ── Tarjeta dinámica por proyecto (ProjectQueueCard, "Mi semana") ──────────
+   Hover con elevación + iluminación del borde — pedido explícito del usuario
+   ("que se ilumine, que se mueva al pasar por ella"), no plantilla genérica. */
+.eng-pcard-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--s4); margin-bottom: var(--s6);
 }
 
-.eng-project-btn-group {
-  display: flex; border-radius: var(--radius-pill); overflow: hidden;
-  border: 1px solid var(--border);
+.eng-pcard {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow);
+  padding: var(--s4);
+  display: flex; flex-direction: column; gap: var(--s3);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
 
-.eng-project-btn {
-  background: var(--surface); border: none;
-  padding: 6px 16px;
-  font-size: var(--t-sm); font-weight: 700; color: var(--text);
-  cursor: pointer; transition: border-color .15s, background .15s;
+.eng-pcard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -8px color-mix(in srgb, var(--azul-oscuro) 30%, transparent);
+  border-color: var(--azul-claro);
 }
 
-.eng-project-btn:hover { background: var(--accent-bg); }
+.eng-pcard__header { display: flex; flex-direction: column; gap: 6px; }
 
-.eng-project-btn--export {
-  border-left: 1px solid var(--border);
-  padding: 6px 10px; color: var(--text-2);
+.eng-pcard__name { margin: 0; font-size: var(--t-md); font-weight: 800; color: var(--text); }
+
+.eng-pcard__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.eng-pcard__badge {
+  border: 1px solid transparent; border-radius: var(--radius-pill);
+  padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  transition: filter .15s;
 }
 
-.eng-project-btn--export:hover { color: var(--azul-claro); }
+.eng-pcard__badge:hover { filter: brightness(0.95); }
+
+.eng-pcard__badge--overdue   { background: var(--red-bg);   color: var(--red); }
+
+.eng-pcard__badge--due-today { background: var(--amber-bg); color: var(--amber); }
+
+.eng-pcard__actions { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
+
+.eng-pcard__btn {
+  background: var(--azul-oscuro); color: white; border: none;
+  border-radius: var(--radius); padding: 8px 12px;
+  font-size: var(--t-sm); font-weight: 700; cursor: pointer; text-align: left;
+  transition: background .15s;
+}
+
+.eng-pcard__btn:hover { background: var(--azul-medio); }
+
+.eng-pcard__btn--ghost {
+  background: none; color: var(--text-2); border: 1px solid var(--border);
+}
+
+.eng-pcard__btn--ghost:hover { background: var(--surface-2); color: var(--text); border-color: var(--azul-claro); }
+
+/* ── Tabla jerárquica por proyecto (EngineerProjectTable) ───────────────────
+   Esta semana / Próxima semana / Más adelante como filas de separador
+   dentro de la MISMA tabla (patrón ya usado en MetricsTable__section-header). */
+.eng-ptable-wrap { overflow-x: auto; }
+
+.eng-ptable { min-width: 640px; }
+
+.eng-ptable th, .eng-ptable td { white-space: nowrap; }
+
+.eng-ptable .week-auto-table__name { white-space: normal; }
+
+.eng-ptable__drag-col { width: 20px; text-align: center; cursor: grab; color: var(--text-3); }
+
+.eng-ptable__number { font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.eng-ptable__section-header td {
+  background: var(--azul-medio) !important; color: white;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 5px 12px;
+}
+
+.eng-ptable__row--ancestor { color: var(--text-3); background: var(--surface-2); }
+
+.eng-ptable__row--urgent td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+
+.eng-ptable__row--dragging { opacity: 0.45; }
+
+.eng-ptable__row--drop-target td { box-shadow: inset 0 2px 0 var(--azul-claro); }
+
+/* Jerarquía tipográfica de 3 niveles — extiende el criterio de HierarchyTable
+   (solo nivel 0 destacado) porque el usuario pidió distinguir a simple vista
+   tarea global / tarea intermedia / tarea de tercer nivel sin abrir la fila. */
+.eng-ptable__name--level-0 { font-weight: 800; font-size: 14px; }
+
+.eng-ptable__name--level-1 { font-weight: 400; font-size: 14px; }
+
+.eng-ptable__name--level-2plus { font-weight: 400; font-size: 12px; }
+
+.eng-ptable__urgent-btn {
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  padding: 2px 8px; font-size: 12px; cursor: pointer; opacity: 0.4;
+  transition: opacity .15s, border-color .15s;
+}
+
+.eng-ptable__urgent-btn:hover { opacity: 1; border-color: var(--amber); }
+
+.eng-ptable__urgent-btn--active { opacity: 1; background: var(--amber-bg); border-color: var(--amber); }

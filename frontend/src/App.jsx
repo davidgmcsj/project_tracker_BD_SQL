@@ -624,8 +624,9 @@ export default function App() {
     syncEngineerTasksBatch(eng, tasks, deletedTaskIds);
   };
 
-  // Orden manual de la cola "Mi semana" (arrastrar y soltar, ver
-  // EngineerWeekTable) — field es "orden_ahora" u "orden_proxima". Es
+  // Orden manual de la cola "Mi semana" (arrastrar y soltar dentro de la
+  // tabla de un proyecto, ver EngineerProjectTable) — field es
+  // "orden_<sección>_<projectId>" (sección: thisWeek/nextWeek/later). Es
   // preferencia personal de trabajo, no dato de negocio: a diferencia de
   // updateEngineerTasks, no se sincroniza a SQL.
   const updateEngineerQueueOrder = (id, field, orderIds) => {
