@@ -1,0 +1,15 @@
+# configmap.yaml — Configuración NO sensible del backend, separada del
+# Secret (patrón visto en pqrs.api: ConfigMap para constantes/flags, Secret
+# solo para credenciales reales — reduce qué hay que tratar como secreto).
+#
+# Hoy vacío a propósito: todas las variables actuales del backend
+# (DB_*, API_KEY, FRONTEND_URL, claves de IA, Azure Storage) son credenciales
+# o dependen del entorno real, así que viven en backend/k8s/secret.example.yaml.
+# Si en el futuro se agrega una constante no sensible (ej. un flag de feature,
+# un timeout configurable), va aquí — no en el Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: __NAMESPACE__
+data: {}

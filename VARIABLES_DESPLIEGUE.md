@@ -28,6 +28,9 @@ A diferencia de GitLab, GitHub Actions no distingue "Protect"/"Mask" por variabl
 | `ACR_PASSWORD` | Sí | Te lo da el equipo de infraestructura | Login a ACR |
 | `KUBE_CONFIG` | Sí | `cat kubeconfig.yaml \| base64 -w0` (kubeconfig que te dé el equipo de infraestructura) | Autenticación de `kubectl` contra el clúster AKS |
 | `API_KEY` | Sí | `backend/.env` (local) — la misma que va en el Secret `backend-secrets` de Kubernetes | Se pasa como build-arg `VITE_API_KEY` al compilar el frontend |
+| `AKS_NAMESPACE` | Sí | **Confirmar con el equipo de infraestructura** — nunca copiar el de otro proyecto (ej. `pqrs-development` es el namespace de PQRS, no el nuestro) | Namespace real donde viven los recursos de este proyecto en el clúster |
+
+> Los manifiestos (`backend/k8s/*.yaml`, `frontend/k8s/*.yaml`) usan el placeholder `__NAMESPACE__` en vez de un nombre fijo — el pipeline lo sustituye por `AKS_NAMESPACE` en tiempo de deploy (ver el paso "Sustituir placeholders" de `.github/workflows/deploy.yml`). Si aplicas un manifiesto a mano con `kubectl apply`, sustituye `__NAMESPACE__` tú mismo primero (o usa `-n <namespace>`, que sobrescribe el `metadata.namespace` del archivo).
 
 ## Secret de Kubernetes `backend-secrets` (creado a mano en el clúster, no por el pipeline)
 
@@ -46,6 +49,10 @@ Ver plantilla completa en [backend/k8s/secret.example.yaml](backend/k8s/secret.e
 | `OPENROUTER_API_KEY` | No | `backend/.env` (local) |
 | `AZURE_STORAGE_CONNECTION_STRING` | Si se usa Blob Storage para adjuntos | `backend/.env` (local) |
 | `AZURE_STORAGE_CONTAINER` | Si se usa Blob Storage para adjuntos | `backend/.env` (local) |
+
+## ConfigMap de Kubernetes `backend-config` (aplicado por el pipeline)
+
+Ver [backend/k8s/configmap.yaml](backend/k8s/configmap.yaml). Hoy vacío a propósito — todas las variables actuales del backend son credenciales o dependen del entorno real, así que viven en `backend-secrets`. Si en el futuro se agrega una constante no sensible (un flag, un timeout configurable), va aquí en vez de mezclarla con el Secret — mismo patrón que separa `ConfigMap`/`Secret` en otros proyectos internos (ej. pqrs.api).
 
 ## Secret de Kubernetes `frontend-tls-certs` (creado a mano en el clúster)
 

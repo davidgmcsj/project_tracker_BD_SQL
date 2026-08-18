@@ -9,7 +9,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: tracker-data
-  namespace: pruebas
+  namespace: __NAMESPACE__
 spec:
   accessModes:
     - ReadWriteOnce
@@ -21,7 +21,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: tracker-archive
-  namespace: pruebas
+  namespace: __NAMESPACE__
 spec:
   accessModes:
     - ReadWriteOnce

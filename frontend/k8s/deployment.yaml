@@ -4,11 +4,24 @@
 # Service "backend" (ver nginx.conf: proxy_pass http://backend:3002). Sin
 # variables de entorno en runtime — VITE_API_KEY ya quedó incrustada en el
 # JavaScript compilado en build time (ver .github/workflows/deploy.yml).
+#
+# __NAMESPACE__: ver nota en backend/k8s/deployment.yaml — sustituido por el
+# pipeline, confirmar el valor real con infraestructura.
+#
+# Puertos 80/443 con TLS servido DESDE el pod (certs montados vía Secret
+# frontend-tls-certs): distinto del patrón de pqrs-front, que expone 8080
+# sin TLS propio porque el LoadBalancer interno de Azure ya lo hace público
+# solo dentro de la red corporativa (annotation
+# azure-load-balancer-internal) y aparentemente no termina TLS en el pod. Si
+# infraestructura confirma que nuestro AKS también maneja TLS por fuera del
+# pod (ingress/gateway), este Deployment podría simplificarse a un solo
+# puerto 8080 sin certs — no se asume aquí porque cambiaría nginx.conf y el
+# Dockerfile, no solo este manifiesto.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: pruebas
+  namespace: __NAMESPACE__
 spec:
   replicas: 1
   selector:
@@ -25,6 +38,19 @@ spec:
           ports:
             - containerPort: 80
             - containerPort: 443
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
           volumeMounts:
             - name: tls-certs
               mountPath: /etc/nginx/certs
@@ -36,11 +62,14 @@ spec:
 ---
 # Service LoadBalancer: única pieza expuesta a internet — el backend queda
 # detrás, solo alcanzable dentro del clúster (ver backend/k8s/deployment.yaml).
+# Si infraestructura indica que este frontend también debe ser solo interno
+# (no público), agregar aquí la misma annotation que usa pqrs-front:
+#   service.beta.kubernetes.io/azure-load-balancer-internal: "true"
 apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: pruebas
+  namespace: __NAMESPACE__
 spec:
   type: LoadBalancer
   selector:
