@@ -1,0 +1,82 @@
+# deployment.yaml — Backend (Node/Express).
+#
+# replicas:1 + strategy:Recreate es OBLIGATORIO, no una elección de
+# rendimiento: el backend escribe data.json/history.json a disco sin ningún
+# bloqueo entre procesos. Un RollingUpdate corre brevemente el pod viejo y
+# el nuevo a la vez → dos procesos escribiendo el mismo archivo →
+# corrupción. Ver INFRAESTRUCTURA_Y_DESPLIEGUE.md §8 y
+# GUIA_DESPLIEGUE_DOCKER.md §2. No escalar este Deployment sin antes migrar
+# esa persistencia a SQL.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: pruebas
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tracker-backend
+  template:
+    metadata:
+      labels:
+        app: tracker-backend
+    spec:
+      containers:
+        - name: backend
+          image: __ACR_LOGIN_SERVER__/project-tracker-backend:__TAG__
+          ports:
+            - containerPort: 3002
+          env:
+            - name: NODE_ENV
+              value: "production"
+          envFrom:
+            - secretRef:
+                name: backend-secrets
+          # /healthz no consulta SQL a propósito (ver
+          # backend/routes/diagnostics.routes.cjs) — un liveness probe no
+          # debe depender de un recurso externo lento.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            # HOME=/home fijado en backend/Dockerfile — data.json/history.json
+            # quedan en /home/data (misma heurística que Azure App Service).
+            - name: tracker-data
+              mountPath: /home/data
+            - name: tracker-archive
+              mountPath: /app/archive
+      volumes:
+        - name: tracker-data
+          persistentVolumeClaim:
+            claimName: tracker-data
+        - name: tracker-archive
+          persistentVolumeClaim:
+            claimName: tracker-archive
+---
+# Service ClusterIP: el backend NO se expone directo a internet, solo es
+# visible dentro del clúster para el pod del frontend (que hace de proxy vía
+# Nginx) — mismo criterio que docker-compose.yml (sin "ports" ahí).
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: pruebas
+spec:
+  type: ClusterIP
+  selector:
+    app: tracker-backend
+  ports:
+    - port: 3002
+      targetPort: 3002

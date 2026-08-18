@@ -1,0 +1,106 @@
+# deploy.yml — Build + push a ACR + deploy a AKS.
+#
+# Dispara SOLO en push a "develop": el flujo de ramas de este proyecto es
+# feature/* -> Pull Request a develop -> al hacer merge, ese push a develop
+# es lo único que despliega (namespace "pruebas"). "main" queda como rama
+# estable sin pipeline propio -- no hay ambiente de producción todavía (ver
+# FLUJO_GIT_Y_BLOB_STORAGE.md). Cuando exista un ambiente de producción real,
+# basta con duplicar este trigger a "main" apuntando a otro namespace -- no
+# se implementa ahora porque ese namespace todavía no existe.
+#
+# Secrets que este workflow necesita en GitHub (Settings -> Secrets and
+# variables -> Actions) -- ver VARIABLES_DESPLIEGUE.md:
+#   ACR_LOGIN_SERVER, ACR_USERNAME, ACR_PASSWORD, KUBE_CONFIG, API_KEY
+#
+# Los Secrets DE KUBERNETES (backend-secrets, frontend-tls-certs) NO los crea
+# este pipeline -- se crean una sola vez a mano en el clúster (ver
+# backend/k8s/secret.example.yaml y frontend/k8s/secret.example.yaml).
+
+name: Deploy a pruebas (AKS)
+
+on:
+  push:
+    branches: [develop]
+
+env:
+  NAMESPACE: pruebas
+  BACKEND_IMAGE: project-tracker-backend
+  FRONTEND_IMAGE: project-tracker-frontend
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login a ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build y push imagen backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.BACKEND_IMAGE }}:latest
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login a ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build y push imagen frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          # VITE_API_KEY debe ser IDÉNTICA al API_KEY del backend (ver
+          # VARIABLES_DESPLIEGUE.md) -- Vite la incrusta en el bundle en
+          # build time, por eso viaja como build-arg y no como env var.
+          build-args: |
+            VITE_API_KEY=${{ secrets.API_KEY }}
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.FRONTEND_IMAGE }}:latest
+
+  deploy:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar kubectl contra el clúster
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Sustituir placeholders de imagen en los manifiestos
+        run: |
+          for f in backend/k8s/deployment.yaml frontend/k8s/deployment.yaml; do
+            sed -i "s#__ACR_LOGIN_SERVER__#${{ secrets.ACR_LOGIN_SERVER }}#g" "$f"
+            sed -i "s#__TAG__#${{ github.sha }}#g" "$f"
+          done
+
+      - name: Aplicar manifiestos
+        run: |
+          kubectl apply -n ${{ env.NAMESPACE }} -f backend/k8s/pvc.yaml
+          kubectl apply -n ${{ env.NAMESPACE }} -f backend/k8s/deployment.yaml
+          kubectl apply -n ${{ env.NAMESPACE }} -f frontend/k8s/deployment.yaml
+
+      - name: Esperar a que el rollout termine
+        run: |
+          kubectl rollout status deployment/backend -n ${{ env.NAMESPACE }} --timeout=180s
+          kubectl rollout status deployment/frontend -n ${{ env.NAMESPACE }} --timeout=180s

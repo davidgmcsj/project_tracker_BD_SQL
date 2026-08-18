@@ -15,6 +15,7 @@
 // romper los imports existentes que ya lo traen desde storage.js.
 import { API_BASE, authHeaders } from "./api.js";
 import { getToday } from "./formulas.js";
+import { withCache, invalidateCache } from "./requestCache.js";
 export { authHeaders };
 
 const LS_PROJECTS = "wt-projects";
@@ -165,19 +166,6 @@ export async function deleteEngineerFromSQL(sqlId) {
   return data;
 }
 
-// ── Sincronización de tareas sueltas del ingeniero con SQL ────────────────────
-// Mismo principio: el cambio local ya quedó guardado por saveProjects antes de
-// llamar esto, así que un fallo de red/BD aquí no pierde datos del usuario.
-export async function syncEngineerTaskToSQL(engineer, task) {
-  try {
-    await apiFetch("/api/engineers/tasks/sync-one", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ engineer, task }),
-    });
-  } catch { /* el cambio local ya quedó guardado */ }
-}
-
 // ── Sincronización de colaboradores externos con SQL ─────────────────────────
 export async function syncExternalContactToSQL(contact) {
   try {
@@ -192,12 +180,20 @@ export async function syncExternalContactToSQL(contact) {
   }
 }
 
-export async function deleteEngineerTaskFromSQL(taskId) {
+// ── Sincronización de tareas sueltas del ingeniero con SQL ────────────────────
+// Reemplaza lo que antes eran N peticiones (una por tarea nueva/editada +
+// una por cada borrada) por UNA sola — ver el comentario en
+// syncEngineerTasksBatch (backend/db/engineer-tasks.repo.cjs) para el
+// porqué. El cambio local ya quedó guardado por persistEngineers antes de
+// llamar esto (ver App.jsx updateEngineerTasks), así que un fallo de
+// red/BD aquí no pierde datos del usuario — solo queda desactualizado en
+// SQL hasta el siguiente cambio.
+export async function syncEngineerTasksBatch(engineer, tasks, deletedTaskIds) {
   try {
-    await apiFetch("/api/engineers/tasks/delete-one", {
+    await apiFetch("/api/engineers/tasks/sync-batch", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ taskId }),
+      body:    JSON.stringify({ engineer, tasks, deletedTaskIds }),
     });
   } catch { /* el cambio local ya quedó guardado */ }
 }
@@ -206,9 +202,16 @@ export async function deleteEngineerTaskFromSQL(taskId) {
 // Viven solo en SQL (Proyecto_Notas), no en data.json — a diferencia de
 // status_notes, que sigue siendo el "pulso" de una línea dentro del proyecto.
 
+// Con caché (1 min) + dedupe de peticiones simultáneas — ver requestCache.js.
+// Sin esto, el historial de un ingeniero con N proyectos montaba un panel de
+// notas por proyecto y disparaba N peticiones HTTP idénticas cada vez que se
+// abría esa pestaña, para un dato (notas de proyecto) que casi no cambia.
 export async function loadProjectNotes(proyectoAppID) {
   try {
-    return await apiFetch(`/api/reports/notes/${encodeURIComponent(proyectoAppID)}`);
+    return await withCache(
+      `notes:${proyectoAppID}`,
+      () => apiFetch(`/api/reports/notes/${encodeURIComponent(proyectoAppID)}`)
+    );
   } catch {
     return [];
   }
@@ -223,19 +226,23 @@ export async function saveProjectNote(proyectoAppID, nota) {
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ nota: { ...nota, proyectoAppID } }),
     });
+    invalidateCache(`notes:${proyectoAppID}`); // la próxima lectura debe ver esta nota nueva
     return true;
   } catch {
     return false;
   }
 }
 
-export async function deleteProjectNote(appNotaID) {
+export async function deleteProjectNote(appNotaID, proyectoAppID) {
   try {
     await apiFetch("/api/reports/notes/delete", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ id: appNotaID }),
     });
+    // proyectoAppID es opcional (parámetro nuevo) — sin él, la caché de ese
+    // proyecto queda con la nota borrada hasta que expire su TTL (1 min).
+    if (proyectoAppID) invalidateCache(`notes:${proyectoAppID}`);
     return true;
   } catch {
     return false;

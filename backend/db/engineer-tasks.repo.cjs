@@ -112,4 +112,41 @@ async function deleteEngineerTaskFromSQL(appTaskId) {
     .query("DELETE FROM Tareas_Sueltas_Ingeniero WHERE AppTaskID = @appId");
 }
 
-module.exports = { syncEngineerTaskToSQL, deleteEngineerTaskFromSQL };
+// Sincroniza TODAS las tareas de un ingeniero en una sola llamada — antes el
+// frontend hacía una petición HTTP por tarea (App.jsx updateEngineerTasks:
+// tasks.forEach(t => syncEngineerTaskToSQL(...))), así que editar una sola
+// tarea de una lista de 20 disparaba 20 round-trips completos al backend
+// (cada uno abriendo su propia conexión del pool de Azure SQL). Aquí el loop
+// sigue existiendo, pero corre DENTRO del servidor — sin latencia de red
+// entre cada paso — y el navegador solo hace 1 petición.
+//
+// Best-effort por tarea: si una falla, se registra el error y se sigue con
+// las demás — un problema puntual con una tarea no debe bloquear que las
+// otras 19 se guarden. Devuelve { synced, deleted, errors } para que el
+// caller decida si avisar al usuario.
+async function syncEngineerTasksBatch(engineerSqlId, tasksToSync, taskIdsToDelete) {
+  const errors = [];
+  let synced = 0, deleted = 0;
+
+  for (const task of tasksToSync) {
+    try {
+      await syncEngineerTaskToSQL(engineerSqlId, task);
+      synced++;
+    } catch (e) {
+      errors.push({ taskId: task.id, message: e.message });
+    }
+  }
+
+  for (const taskId of taskIdsToDelete) {
+    try {
+      await deleteEngineerTaskFromSQL(taskId);
+      deleted++;
+    } catch (e) {
+      errors.push({ taskId, message: e.message });
+    }
+  }
+
+  return { synced, deleted, errors };
+}
+
+module.exports = { syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncEngineerTasksBatch };

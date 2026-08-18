@@ -1,6 +1,7 @@
 "use strict";
 
-// diagnostics.routes.cjs — Diagnóstico de conexión a BD (solo desarrollo).
+// diagnostics.routes.cjs — Diagnóstico de conexión a BD (solo desarrollo) y
+// healthcheck para el orquestador (producción).
 //
 // GET /api/db-ping deshabilitada en producción: expone nombre de servidor/BD
 // y detalle de error, información que no debe salir fuera de un entorno de
@@ -38,4 +39,20 @@ function crearDiagnosticsRouter({ isProduction, getPool, saveWeekReportToDB }) {
   return router;
 }
 
-module.exports = { crearDiagnosticsRouter };
+// crearHealthRouter — liveness/readiness probe para Kubernetes.
+//
+// Deliberadamente NO pasa por requireApiKey (los probes del kubelet no
+// mandan X-API-Key) y NO consulta la base de datos: un liveness probe debe
+// reflejar si el proceso Node sigue vivo, no si Azure SQL está lento — de lo
+// contrario Kubernetes reiniciaría el pod por una lentitud ajena a él.
+function crearHealthRouter() {
+  const router = express.Router();
+
+  router.get("/healthz", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  return router;
+}
+
+module.exports = { crearDiagnosticsRouter, crearHealthRouter };

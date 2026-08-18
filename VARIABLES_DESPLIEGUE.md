@@ -6,42 +6,50 @@ Depende de cómo despliegues:
 
 | Forma de desplegar | ¿Dónde van las variables? |
 |---|---|
-| **Manual** (clonas el repo en el servidor, `docker compose up`) — como está documentado en cada `README.md` | En un archivo `.env`, **en el servidor**, junto al `docker-compose.yml` de cada repo. GitLab no necesita saber nada de esto. |
-| **Automatizado con GitLab CI/CD** (pipeline que compila/empuja una imagen o hace el deploy por ti) | Además del `.env` del servidor (o en vez de, según cómo armes el pipeline), **en GitLab**: Settings → CI/CD → Variables, de cada proyecto. |
+| **Manual** (clonas el repo en el servidor, `docker compose up`) — ver `GUIA_DESPLIEGUE_DOCKER.md` | En un archivo `.env`, **en el servidor**, junto al `docker-compose.yml`. Ningún sistema de CI/CD necesita saber nada de esto. |
+| **Automatizado con GitHub Actions → AKS** (ver `.github/workflows/deploy.yml`) | En **GitHub**: Settings → Secrets and variables → Actions, del repo. Además, las credenciales de la app (`DB_*`, `API_KEY`, etc.) viven **también** en un Secret de Kubernetes creado a mano en el clúster (`backend-secrets`) — el pipeline no las gestiona, solo hace `kubectl apply` de los Deployments. |
 
-Hoy no hay ningún `.gitlab-ci.yml` — o sea, todavía estás en el primer caso. Esta sección de variables de CI/CD es para cuando decidas automatizar; si vas a seguir desplegando a mano por ahora, con el `.env` en el servidor (ver cada README) es suficiente y puedes saltarte el resto de este documento.
+> **Nota histórica:** este documento mencionaba antes GitLab CI/CD + variables de grupo — eso describía otro par de repos (`project_tracker_backend`/`project_tracker_front` en GitLab). Este repo (`project_tracker_BD_SQL`) vive en **GitHub**, así que el mecanismo real es GitHub Actions Secrets, documentado abajo.
 
-## Cómo crear una variable en GitLab (si automatizas)
+## Cómo crear un Secret en GitHub Actions
 
-En cada proyecto → **Settings → CI/CD → Variables → Add variable**. Por cada una:
-- **Key**: el nombre exacto (tabla abajo)
-- **Value**: el valor real — cópialo de tu `.env` local (nunca lo pegues en un `.md` ni lo compartas por chat)
-- **Type**: `Variable`
-- **Protect variable**: ✅ (solo disponible en ramas/tags protegidos)
-- **Mask variable**: ✅ en todas las que sean contraseñas/claves (GitLab exige que el valor cumpla un formato mínimo para poder enmascararlo — si no lo deja, revisa que no tenga saltos de línea)
+En el repo → **Settings → Secrets and variables → Actions → New repository secret**. Por cada uno:
+- **Name**: el nombre exacto (tabla abajo)
+- **Secret**: el valor real — cópialo de tu `.env` local (nunca lo pegues en un `.md` ni lo compartas por chat)
 
-Como son **dos proyectos separados**, hay que repetir esto en cada uno — no se comparten variables entre `project_tracker_backend` y `project_tracker_front` a menos que las definas a nivel de **grupo** (`project_tracker` → Settings → CI/CD → Variables), que si aplica a ambos con el mismo valor (`API_KEY`/`VITE_API_KEY`) puede ahorrarte definirla dos veces.
+A diferencia de GitLab, GitHub Actions no distingue "Protect"/"Mask" por variable: los secrets de repo ya quedan ocultos en los logs automáticamente, y puedes restringir por rama con **Environments** (Settings → Environments → `pruebas` → Deployment branches → solo `develop`) si quieres esa capa extra.
 
-## project_tracker_backend
+## Secrets del pipeline (`.github/workflows/deploy.yml`)
 
-| Key | Obligatoria | Sacar el valor real de | Mask |
+| Name | Obligatoria | Sacar el valor real de | Para qué |
 |---|---|---|---|
-| `DB_USER` | Sí | `backend/.env` (local) | ✅ |
-| `DB_PASSWORD` | Sí | `backend/.env` (local) | ✅ |
-| `DB_SERVER` | Sí | `backend/.env` (local) | No hace falta |
-| `DB_NAME` | Sí | `backend/.env` (local) | No hace falta |
-| `API_KEY` | Sí | `backend/.env` (local) — misma que `VITE_API_KEY` del frontend | ✅ |
-| `FRONTEND_URL` | Sí en producción | La URL real donde quede publicado el frontend (https://…) | No hace falta |
-| `GEMINI_API_KEY` | No | `backend/.env` (local) | ✅ |
-| `GROQ_API_KEY` | No | `backend/.env` (local) | ✅ |
-| `OPENROUTER_API_KEY` | No | `backend/.env` (local) | ✅ |
+| `ACR_LOGIN_SERVER` | Sí | Te lo da el equipo de infraestructura (ej. `misregistro.azurecr.io`) | Login y tag de las imágenes |
+| `ACR_USERNAME` | Sí | Te lo da el equipo de infraestructura | Login a ACR |
+| `ACR_PASSWORD` | Sí | Te lo da el equipo de infraestructura | Login a ACR |
+| `KUBE_CONFIG` | Sí | `cat kubeconfig.yaml \| base64 -w0` (kubeconfig que te dé el equipo de infraestructura) | Autenticación de `kubectl` contra el clúster AKS |
+| `API_KEY` | Sí | `backend/.env` (local) — la misma que va en el Secret `backend-secrets` de Kubernetes | Se pasa como build-arg `VITE_API_KEY` al compilar el frontend |
 
-## project_tracker_front
+## Secret de Kubernetes `backend-secrets` (creado a mano en el clúster, no por el pipeline)
 
-| Key | Obligatoria | Sacar el valor real de | Mask |
-|---|---|---|---|
-| `VITE_API_KEY` | Sí | `frontend/.env` (local) — **debe ser idéntica** a `API_KEY` del backend | ✅ |
-| `VITE_API_URL` | No (vacío = mismo origen, vía proxy de Nginx) | — | No hace falta |
+Ver plantilla completa en [backend/k8s/secret.example.yaml](backend/k8s/secret.example.yaml).
+
+| Key | Obligatoria | Sacar el valor real de |
+|---|---|---|
+| `DB_USER` | Sí | `backend/.env` (local) |
+| `DB_PASSWORD` | Sí | `backend/.env` (local) |
+| `DB_SERVER` | Sí | `backend/.env` (local) |
+| `DB_NAME` | Sí | `backend/.env` (local) |
+| `API_KEY` | Sí | `backend/.env` (local) — misma que el Secret `API_KEY` de GitHub Actions |
+| `FRONTEND_URL` | Sí en producción | La URL real donde quede publicado el frontend (https://…) |
+| `GEMINI_API_KEY` | No | `backend/.env` (local) |
+| `GROQ_API_KEY` | No | `backend/.env` (local) |
+| `OPENROUTER_API_KEY` | No | `backend/.env` (local) |
+| `AZURE_STORAGE_CONNECTION_STRING` | Si se usa Blob Storage para adjuntos | `backend/.env` (local) |
+| `AZURE_STORAGE_CONTAINER` | Si se usa Blob Storage para adjuntos | `backend/.env` (local) |
+
+## Secret de Kubernetes `frontend-tls-certs` (creado a mano en el clúster)
+
+Ver plantilla completa en [frontend/k8s/secret.example.yaml](frontend/k8s/secret.example.yaml). Certificado HTTPS que monta Nginx — ver `GUIA_DESPLIEGUE_DOCKER.md` §1.3 para generarlo.
 
 ## Nota de seguridad
 

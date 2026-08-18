@@ -14,10 +14,11 @@ const express = require("express");
  * @param {Function} [deps.deleteEngineerFromSQL]
  * @param {Function} [deps.syncEngineerTaskToSQL]
  * @param {Function} [deps.deleteEngineerTaskFromSQL]
+ * @param {Function} [deps.syncEngineerTasksBatch]
  * @param {Function} deps.errorBody
  * @param {Function} deps.requireAdmin
  */
-function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody, requireAdmin }) {
+function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncEngineerTasksBatch, errorBody, requireAdmin }) {
   const router = express.Router();
 
   router.post("/external-contacts/sync-one", async (req, res) => {
@@ -105,6 +106,30 @@ function crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, del
     } catch (e) {
       console.error("[SQL] Error sincronizando tarea suelta:", e.message);
       res.status(500).json(errorBody("Error sincronizando tarea suelta", e));
+    }
+  });
+
+  // Reemplaza N peticiones (una por tarea, ver el comentario en
+  // syncEngineerTasksBatch) por 1 sola: el frontend manda el array COMPLETO
+  // de tareas vigentes del ingeniero + los ids que ya no están (a borrar), y
+  // el loop corre del lado del servidor. Mismo criterio best-effort que ya
+  // tenía App.jsx cuando hacía esto una por una en el navegador: una tarea
+  // que falla no bloquea que las demás se guarden.
+  router.post("/engineers/tasks/sync-batch", async (req, res) => {
+    if (!syncEngineerTasksBatch) {
+      return res.status(503).json({ error: "Módulo de BD no disponible" });
+    }
+    try {
+      const { engineer, tasks, deletedTaskIds } = req.body;
+      if (!engineer?.name || !Array.isArray(tasks)) {
+        return res.status(400).json({ error: "Falta el ingeniero o el array de tareas" });
+      }
+      const engineerSqlId = engineer.sql_id || await syncEngineerToSQL(engineer);
+      const result = await syncEngineerTasksBatch(engineerSqlId, tasks, Array.isArray(deletedTaskIds) ? deletedTaskIds : []);
+      res.json({ ok: true, sql_id: engineerSqlId, ...result });
+    } catch (e) {
+      console.error("[SQL] Error sincronizando tareas en lote:", e.message);
+      res.status(500).json(errorBody("Error sincronizando tareas en lote", e));
     }
   });
 

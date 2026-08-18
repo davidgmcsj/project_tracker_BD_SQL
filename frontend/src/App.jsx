@@ -23,7 +23,7 @@ import {
 } from "./utils/formulas";
 import {
   loadProjects, saveProjects, saveWeekReport, getStoredWeekLabel, storeWeekLabel,
-  syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL,
+  syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTasksBatch,
   syncExternalContactToSQL, executeQuarterReset, reloadProjectsFromServer, cleanCurrentStats,
   authHeaders, getCurrentUser, logout, loadUsers,
 } from "./utils/storage";
@@ -607,9 +607,12 @@ export default function App() {
     return { ok: true };
   };
 
-  // Sincroniza cada tarea nueva/editada a SQL y borra las que ya no están en la
-  // lista nueva. El cambio local ya se guardó por persistEngineers antes de esto,
-  // así que un fallo de red aquí no pierde nada — solo queda desactualizado en SQL
+  // Sincroniza TODAS las tareas del ingeniero en UNA sola petición (ver
+  // syncEngineerTasksBatch/backend db/engineer-tasks.repo.cjs) — antes era
+  // una petición HTTP por tarea (N llamadas para editar una sola de una
+  // lista de 20), cada una abriendo su propio round-trip al backend. El
+  // cambio local ya se guardó por persistEngineers antes de esto, así que un
+  // fallo de red aquí no pierde nada — solo queda desactualizado en SQL
   // hasta el siguiente cambio.
   const updateEngineerTasks = (id, tasks) => {
     const eng = engineers.find(e => e.id === id);
@@ -617,8 +620,8 @@ export default function App() {
     persistEngineers(engineers.map(e => e.id === id ? { ...e, tasks } : e));
 
     const newIds = new Set(tasks.map(t => t.id));
-    oldTasks.forEach(t => { if (!newIds.has(t.id)) deleteEngineerTaskFromSQL(t.id); });
-    tasks.forEach(t => syncEngineerTaskToSQL(eng, t));
+    const deletedTaskIds = oldTasks.filter(t => !newIds.has(t.id)).map(t => t.id);
+    syncEngineerTasksBatch(eng, tasks, deletedTaskIds);
   };
 
   // Orden manual de la cola "Mi semana" (arrastrar y soltar, ver
