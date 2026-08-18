@@ -16,7 +16,7 @@ const crypto = require("crypto");
 const sql = require("mssql");
 
 const SESSION_COOKIE = "sid";
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 días
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24; // 24 horas
 const SCRYPT_KEYLEN = 64;
 
 // Parser manual de cookies — evita agregar cookie-parser como dependencia

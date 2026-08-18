@@ -1,0 +1,30 @@
+# pvc.yaml — Almacenamiento persistente del backend.
+#
+# El backend NO es stateless: escribe data.json/history.json en HOME=/home
+# (ver Dockerfile) y los cierres trimestrales en /app/archive — dos rutas
+# DISTINTAS, no se pueden fusionar en un solo PVC (ver
+# INFRAESTRUCTURA_Y_DESPLIEGUE.md §8). Sin estos volúmenes, cada reinicio del
+# pod borraría todos los datos.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tracker-data
+  namespace: pruebas
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tracker-archive
+  namespace: pruebas
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

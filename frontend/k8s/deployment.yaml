@@ -1,0 +1,54 @@
+# deployment.yaml — Frontend (SPA compilado + Nginx).
+#
+# Stateless: Nginx solo sirve archivos estáticos y hace de proxy hacia el
+# Service "backend" (ver nginx.conf: proxy_pass http://backend:3002). Sin
+# variables de entorno en runtime — VITE_API_KEY ya quedó incrustada en el
+# JavaScript compilado en build time (ver .github/workflows/deploy.yml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: pruebas
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tracker-frontend
+  template:
+    metadata:
+      labels:
+        app: tracker-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: __ACR_LOGIN_SERVER__/project-tracker-frontend:__TAG__
+          ports:
+            - containerPort: 80
+            - containerPort: 443
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /etc/nginx/certs
+              readOnly: true
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: frontend-tls-certs
+---
+# Service LoadBalancer: única pieza expuesta a internet — el backend queda
+# detrás, solo alcanzable dentro del clúster (ver backend/k8s/deployment.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: pruebas
+spec:
+  type: LoadBalancer
+  selector:
+    app: tracker-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443

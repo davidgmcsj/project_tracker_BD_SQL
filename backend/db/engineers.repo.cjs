@@ -66,6 +66,18 @@ async function syncEngineerToSQL(engineer) {
   return ins.recordset[0].IngenieroID;
 }
 
+// Borrado real (no soft-delete): a diferencia de syncEngineerToSQL, que solo
+// apaga Estado, esto quita la fila de Ingenieros. Puede fallar por FK si hay
+// tablas históricas (reportes, actividades) que todavía referencian este
+// IngenieroID — el caller (routes/engineers.routes.cjs) decide qué hacer con
+// ese error; aquí no se traga, se deja subir tal cual.
+async function deleteEngineerFromSQL(ingenieroId) {
+  const pool = await getPool();
+  await pool.request()
+    .input("id", sql.Int, ingenieroId)
+    .query("DELETE FROM Ingenieros WHERE IngenieroID = @id");
+}
+
 // ── Sync de colaboradores externos ───────────────────────────────────────────
 // Crea o actualiza un registro en Colaboradores_Externos.
 // Devuelve el ColaboradorID de SQL para guardarlo como sql_id en el catálogo local.
@@ -94,4 +106,4 @@ async function syncExternalContactToSQL(contact) {
   return ins.recordset[0].ColaboradorID;
 }
 
-module.exports = { resolveEngineer, syncEngineerToSQL, syncExternalContactToSQL };
+module.exports = { resolveEngineer, syncEngineerToSQL, deleteEngineerFromSQL, syncExternalContactToSQL };

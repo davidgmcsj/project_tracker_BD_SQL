@@ -153,9 +153,17 @@ test("GET /api/quarters/:id con id válido pero inexistente responde 404", async
 
 // ── Ingenieros y contactos ────────────────────────────────────────────────────
 
-test("POST /api/engineers/sync-one sin ingeniero responde 400", async () => {
+// requireAdmin: gestión del catálogo completo de ingenieros — mismo
+// criterio que ya oculta "Equipo" para no-admin en el frontend. Sin sesión
+// el 401 de requireAdmin corre ANTES que la validación de body.
+test("POST /api/engineers/sync-one sin sesión responde 401 (requiere rol admin)", async () => {
   const res = await srv.api("/api/engineers/sync-one", { method: "POST", body: {} });
-  assert.ok(res.status === 400 || res.status === 503, `recibí ${res.status}`);
+  assert.equal(res.status, 401);
+});
+
+test("POST /api/engineers/delete-one sin sesión responde 401 (requiere rol admin)", async () => {
+  const res = await srv.api("/api/engineers/delete-one", { method: "POST", body: {} });
+  assert.equal(res.status, 401);
 });
 
 test("POST /api/external-contacts/sync-one sin contacto responde 400", async () => {
@@ -168,6 +176,19 @@ test("POST /api/external-contacts/sync-one sin contacto responde 400", async () 
 
 test("POST /api/engineers/tasks/sync-one sin datos responde 400", async () => {
   const res = await srv.api("/api/engineers/tasks/sync-one", { method: "POST", body: {} });
+  assert.ok(res.status === 400 || res.status === 503, `recibí ${res.status}`);
+});
+
+test("POST /api/engineers/tasks/sync-batch sin datos responde 400", async () => {
+  const res = await srv.api("/api/engineers/tasks/sync-batch", { method: "POST", body: {} });
+  assert.ok(res.status === 400 || res.status === 503, `recibí ${res.status}`);
+});
+
+test("POST /api/engineers/tasks/sync-batch con tasks que no es array responde 400", async () => {
+  const res = await srv.api("/api/engineers/tasks/sync-batch", {
+    method: "POST",
+    body: { engineer: { name: "Prueba" }, tasks: "no-es-array" },
+  });
   assert.ok(res.status === 400 || res.status === 503, `recibí ${res.status}`);
 });
 
@@ -222,6 +243,15 @@ test("GET /api/db-ping responde fuera de producción", async () => {
   // En producción devuelve 404 a propósito. Con NODE_ENV=test debe responder.
   const res = await srv.api("/api/db-ping");
   assert.notEqual(res.status, 401);
+});
+
+test("GET /healthz responde 200 sin X-API-Key (probe de Kubernetes)", async () => {
+  // Los probes del kubelet no mandan X-API-Key ni pasan por /api — esta ruta
+  // vive fuera de ese prefijo a propósito (ver server.cjs).
+  const res = await fetch(`${srv.baseUrl}/healthz`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.status, "ok");
 });
 
 // ── Rutas inexistentes ────────────────────────────────────────────────────────

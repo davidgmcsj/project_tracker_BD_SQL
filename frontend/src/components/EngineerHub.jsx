@@ -276,7 +276,7 @@ function MyWeekTab({ engineer, projects, onOpenActivity, onToggleUrgent, onReord
 
 export default function EngineerHub({
   engineers, projects,
-  onAdd, onUpdate, onToggleActive, onUpdateTasks,
+  onAdd, onUpdate, onToggleActive, onRemove, onUpdateTasks,
   onToggleUrgent,  // (projectId, activityId) => void — alterna es_urgente, ver App.jsx
   onReorderQueue,  // (engineerId, "orden_ahora"|"orden_proxima", ids[]) => void
   onOpenActivity,  // (projectId, activityId) => void — abre la tarjeta de detalle
@@ -400,7 +400,7 @@ export default function EngineerHub({
       {subtab === "equipo" && !isLocked && (
         <EngineersView
           engineers={engineers} projects={projects}
-          onAdd={onAdd} onUpdate={onUpdate} onToggleActive={onToggleActive} onUpdateTasks={onUpdateTasks}
+          onAdd={onAdd} onUpdate={onUpdate} onToggleActive={onToggleActive} onRemove={onRemove} onUpdateTasks={onUpdateTasks}
           onOpenActivity={onOpenActivity}
         />
       )}

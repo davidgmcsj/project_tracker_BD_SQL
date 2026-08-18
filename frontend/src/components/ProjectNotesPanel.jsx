@@ -59,7 +59,7 @@ export function ProjectNotesPanel({ proyectoAppID }) {
 
   const handleDelete = async (id) => {
     setNotes(prev => prev.filter(n => n.id !== id)); // optimista
-    const ok = await deleteProjectNote(id);
+    const ok = await deleteProjectNote(id, proyectoAppID);
     if (!ok) setVersion(v => v + 1); // revertir si falló
   };
 

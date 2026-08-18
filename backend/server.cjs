@@ -39,8 +39,8 @@ const { errorBody }                         = require("./middleware/error-handle
 // engineers.routes.cjs).
 const { db, ai, auth, reportsRouter } = require("./config/modules.cjs");
 
-const { getPool, saveWeekReportToDB, syncEngineerToSQL, syncEngineerTaskToSQL,
-        deleteEngineerTaskFromSQL, syncActividadesDetalle, syncExternalContactToSQL,
+const { getPool, saveWeekReportToDB, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL,
+        deleteEngineerTaskFromSQL, syncEngineerTasksBatch, syncActividadesDetalle, syncExternalContactToSQL,
         saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB,
         rebuildDataJsonFromSQL, maxSqlSavedAt,
         listUsers, createUser, updateUser } = db;
@@ -66,7 +66,7 @@ const { crearInit } = require("./lib/bootstrap.cjs");
 const init = crearInit({ rebuildDataJsonFromSQL, maxSqlSavedAt });
 
 // ── Routers (Fase 2.5) ───────────────────────────────────────────────────────
-const { crearDiagnosticsRouter }  = require("./routes/diagnostics.routes.cjs");
+const { crearDiagnosticsRouter, crearHealthRouter } = require("./routes/diagnostics.routes.cjs");
 const { crearAiRouter }           = require("./routes/ai.routes.cjs");
 const { crearUsersRouter }        = require("./routes/users.routes.cjs");
 const { crearAttachmentsRouter }  = require("./routes/attachments.routes.cjs");
@@ -82,6 +82,10 @@ const { crearAuthRouter }         = require("./routes/auth.routes.cjs");
 const app = express();
 const helmet = require("helmet");
 app.use(helmet());
+
+// /healthz: fuera de /api a propósito — no debe exigir X-API-Key (los
+// probes de Kubernetes no lo mandan) ni pasar por rate limiting/sesión.
+app.use(crearHealthRouter());
 // El body parser NO se registra a nivel global: la ruta de adjuntos necesita
 // un límite mucho mayor (base64 de hasta 10MB de archivo) que el resto de
 // rutas, que solo mueven JSON de proyectos/reportes (data.json actual: ~80KB).
@@ -157,7 +161,7 @@ app.use("/api/users", crearUsersRouter({ requireAdmin, listUsers, createUser, up
 
 app.use("/api/attachments", crearAttachmentsRouter({ attachmentJsonParser, saveAttachmentToDB, getAttachmentFromDB, deleteAttachmentFromDB, errorBody }));
 
-app.use("/api", crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, errorBody }));
+app.use("/api", crearEngineersRouter({ syncExternalContactToSQL, syncEngineerToSQL, deleteEngineerFromSQL, syncEngineerTaskToSQL, deleteEngineerTaskFromSQL, syncEngineerTasksBatch, errorBody, requireAdmin }));
 
 app.use("/api", crearHistoryRouter({ DATA_FILE, HISTORY_FILE, readJson, writeJson, saveWeekReportToDB, errorBody, requireAdmin }));
 

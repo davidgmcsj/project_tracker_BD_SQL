@@ -94,8 +94,11 @@ function EngineerProjectsTable({ eng, projects }) {
 
 // ── Tarjeta de ingeniero ──────────────────────────────────────────────────────
 
-function EngineerCard({ eng, projects, onUpdate, onToggleActive, onOpenDetail }) {
+function EngineerCard({ eng, projects, onUpdate, onToggleActive, onRemove, onOpenDetail }) {
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [message, setMessage] = useState(""); // motivo de bloqueo, o aviso de SQL
 
   if (editing) {
     return (
@@ -109,6 +112,18 @@ function EngineerCard({ eng, projects, onUpdate, onToggleActive, onOpenDetail })
     );
   }
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    setMessage("");
+    const result = await onRemove(eng.id);
+    setDeleting(false);
+    setConfirmingDelete(false);
+    // Si result.ok y sin sqlWarning, la tarjeta desaparece sola (el
+    // catálogo ya no lo incluye) — no hace falta hacer nada más aquí.
+    if (!result.ok) setMessage(result.reason);
+    else if (result.sqlWarning) setMessage(`Eliminado localmente. Aviso de SQL: ${result.sqlWarning}`);
+  };
+
   return (
     <div className={`project-card ${!eng.active ? "project-card--inactive" : ""}`} onClick={() => onOpenDetail(eng.id)}>
       <div className="project-card__header">
@@ -121,11 +136,33 @@ function EngineerCard({ eng, projects, onUpdate, onToggleActive, onOpenDetail })
       <div onClick={e => e.stopPropagation()}>
         <EngineerProjectsTable eng={eng} projects={projects} />
       </div>
+
+      {message && (
+        <p style={{ color: "var(--red)", fontSize: "12px", margin: "8px 0 0" }} onClick={e => e.stopPropagation()}>
+          {message}
+        </p>
+      )}
+
       <div className="project-card__actions" onClick={e => e.stopPropagation()}>
-        <button className="btn btn--card-export" onClick={() => setEditing(true)}>✎ Editar</button>
-        <button className="btn btn--card-report" onClick={() => onToggleActive(eng.id)}>
-          {eng.active ? "Desactivar" : "Reactivar"}
-        </button>
+        {confirmingDelete ? (
+          <>
+            <span style={{ fontSize: "13px", color: "var(--text-2)", alignSelf: "center" }}>¿Eliminar a {eng.name}?</span>
+            <button className="btn btn--secondary" onClick={() => setConfirmingDelete(false)} disabled={deleting}>Cancelar</button>
+            <button className="btn btn--danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Eliminando…" : "Sí, eliminar"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn--card-export" onClick={() => setEditing(true)}>✎ Editar</button>
+            <button className="btn btn--card-report" onClick={() => onToggleActive(eng.id)}>
+              {eng.active ? "Desactivar" : "Reactivar"}
+            </button>
+            <button className="btn btn--danger" onClick={() => { setConfirmingDelete(true); setMessage(""); }} title="Eliminar del catálogo (solo si no tiene actividades asignadas ni usuario vinculado)">
+              🗑 Eliminar
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -232,7 +269,7 @@ function EngineerDetail({ eng, projects, onUpdateTasks, onBack, onOpenActivity }
 
 // ── Vista principal ───────────────────────────────────────────────────────────
 
-export default function EngineersView({ engineers, projects, onAdd, onUpdate, onToggleActive, onUpdateTasks, onOpenActivity }) {
+export default function EngineersView({ engineers, projects, onAdd, onUpdate, onToggleActive, onRemove, onUpdateTasks, onOpenActivity }) {
   const [adding, setAdding] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [query, setQuery] = useState("");
@@ -263,7 +300,7 @@ export default function EngineersView({ engineers, projects, onAdd, onUpdate, on
 
       <div className="dashboard-grid">
         {visible.map(eng => (
-          <EngineerCard key={eng.id} eng={eng} projects={projects} onUpdate={onUpdate} onToggleActive={onToggleActive} onOpenDetail={setSelectedId} />
+          <EngineerCard key={eng.id} eng={eng} projects={projects} onUpdate={onUpdate} onToggleActive={onToggleActive} onRemove={onRemove} onOpenDetail={setSelectedId} />
         ))}
 
         {!query && (adding ? (
